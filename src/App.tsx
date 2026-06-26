@@ -2,6 +2,7 @@
 import type { ChangeEvent, ReactNode } from 'react'
 import './App.css'
 import './workout.css'
+import './home.css'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -66,9 +67,6 @@ type AppData = {
 
 type Screen =
   | { name: 'main' }
-  | { name: 'workouts' }
-  | { name: 'workout-menu'; workoutId: WorkoutId }
-  | { name: 'workout-history'; workoutId: WorkoutId }
   | { name: 'global-history' }
   | { name: 'settings' }
   | { name: 'session'; workoutId: WorkoutId; sessionId: string }
@@ -336,6 +334,12 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M15 18l-6-6 6-6" />
         </svg>
       )
+    case 'forward':
+      return (
+        <svg {...props}>
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      )
     case 'minus':
       return (
         <svg {...props}>
@@ -396,7 +400,6 @@ function App() {
   const [vibrationMessage, setVibrationMessage] = useState('')
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
-  const [expandedWorkoutId, setExpandedWorkoutId] = useState<WorkoutId | null>(null)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -526,94 +529,69 @@ function App() {
     pulseTimer.current = window.setTimeout(() => setRestPulse(false), 1100)
   }
 
-  const renderMain = () => (
-    <main className="app-shell main-shell" aria-label="Fitness Hub main menu">
-      <header className="app-title">
-        <h1>Fitness Hub</h1>
-        <p className="screen-subtitle">Fast gym controls for the current session.</p>
-      </header>
-
-      <nav className="card-list" aria-label="Primary">
-        <MenuCard icon="W" tone="workouts" label="Workouts" detail="Start or resume A / B" onClick={() => navigate({ name: 'workouts' })} />
-        <MenuCard icon="H" tone="history" label="History" detail={`${data.sessions.length} saved sessions`} onClick={() => navigate({ name: 'global-history' })} />
-        <MenuCard icon="S" tone="settings" label="Settings" detail="Backup, import, reset" onClick={() => navigate({ name: 'settings' })} />
-      </nav>
-    </main>
-  )
-
-  const renderWorkouts = () => (
-    <Page title="Workouts" eyebrow="Choose" onBack={() => goBack({ name: 'main' })}>
-      <div className="workout-picker">
-        {workouts.map((workout) => {
-          const latestSession = getLatestSession(data, workout.id)
-          const isExpanded = expandedWorkoutId === workout.id
-
-          return (
-            <section className={`workout-option ${isExpanded ? 'expanded' : ''}`} key={workout.id}>
-              <button
-                className={`menu-card menu-${workout.id === 'workout-a' ? 'workoutA' : 'workoutB'}`}
-                type="button"
-                aria-expanded={isExpanded}
-                onClick={() => setExpandedWorkoutId(isExpanded ? null : workout.id)}
-              >
-                <span className="menu-icon" aria-hidden="true">
-                  {workout.id === 'workout-a' ? 'A' : 'B'}
-                </span>
-                <span>
-                  <strong>{workout.name}</strong>
-                  <small>{getWorkoutSessions(data, workout.id).length} sessions</small>
-                </span>
-              </button>
-
-              {isExpanded && (
-                <div className="workout-option-actions">
-                  <button type="button" disabled={!latestSession} onClick={() => latestSession && openSession(workout.id, latestSession.id)}>
-                    <span>Resume latest</span>
-                    <small>{latestSession ? formatDate(latestSession.createdAt) : 'No sessions yet'}</small>
-                  </button>
-                  <button type="button" onClick={() => startSession(workout.id)}>
-                    <span>Start new</span>
-                    <small>Confirm, then autosave</small>
-                  </button>
-                  <button type="button" onClick={() => navigate({ name: 'workout-history', workoutId: workout.id })}>
-                    <span>History</span>
-                    <small>Open, edit, delete</small>
-                  </button>
-                </div>
-              )}
-            </section>
-          )
-        })}
-      </div>
-    </Page>
-  )
-
-  const renderWorkoutMenu = (workoutId: WorkoutId) => {
-    const workout = getWorkout(workoutId)
-    const latestSession = getLatestSession(data, workoutId)
+  const renderMain = () => {
+    const latest = sortedSessions[0]
+    const resumable =
+      latest && countDone(latest) < getWorkout(latest.workoutId).groups.length ? latest : undefined
+    const lastWorkoutId = latest?.workoutId
+    const suggestedId: WorkoutId = lastWorkoutId === 'workout-a' ? 'workout-b' : 'workout-a'
+    const otherId: WorkoutId = suggestedId === 'workout-a' ? 'workout-b' : 'workout-a'
+    const sessionCount = data.sessions.length
 
     return (
-      <Page title={workout.name} eyebrow="Workout" onBack={() => goBack({ name: 'workouts' })}>
-        <div className="card-list">
+      <main className="home" aria-label="Fitness Hub">
+        <header className="home-top">
+          <h1>Fitness Hub</h1>
+        </header>
+
+        {resumable && (
           <button
-            className="action-card secondary"
+            className="home-resume"
             type="button"
-            disabled={!latestSession}
-            onClick={() => latestSession && openSession(workoutId, latestSession.id)}
+            onClick={() => openSession(resumable.workoutId, resumable.id)}
           >
-            <span>Resume latest</span>
-            <small>{latestSession ? formatDate(latestSession.createdAt) : 'No sessions yet'}</small>
+            <span className="home-eyebrow">Resume</span>
+            <span className="home-resume-row">
+              <strong>{getWorkout(resumable.workoutId).name}</strong>
+              <Icon name="forward" size={20} />
+            </span>
+            <span className="home-rail" aria-hidden="true">
+              {getWorkout(resumable.workoutId).groups.map((group) => {
+                const groupEntry = resumable.groupEntries[group.id]
+                const result = groupEntry?.entries[groupEntry.activeVariantId]?.result
+                return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
+              })}
+            </span>
+            <span className="home-resume-sub">
+              {countDone(resumable)}/{getWorkout(resumable.workoutId).groups.length} done · {formatRelative(resumable.createdAt)}
+            </span>
           </button>
-          <button className="action-card primary" type="button" onClick={() => startSession(workoutId)}>
-            <span>Start new</span>
-            <small>Confirm, then autosave</small>
+        )}
+
+        <div className="home-start">
+          <button className="home-start-primary" type="button" onClick={() => startSession(suggestedId)}>
+            <span className="home-eyebrow">{lastWorkoutId ? `Last: ${getWorkout(lastWorkoutId).name}` : 'New session'}</span>
+            <span className="home-start-row">
+              <strong>Start {getWorkout(suggestedId).name}</strong>
+              <Icon name="plus" size={22} />
+            </span>
           </button>
-          <button className="action-card ghost" type="button" onClick={() => navigate({ name: 'workout-history', workoutId })}>
-            <span>History</span>
-            <small>Open, edit, delete</small>
+          <button className="home-start-alt" type="button" onClick={() => startSession(otherId)}>
+            Start {getWorkout(otherId).name} instead
           </button>
         </div>
-      </Page>
+
+        <div className="home-tiles">
+          <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
+            <span>History</span>
+            <small>{sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}</small>
+          </button>
+          <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
+            <span>Settings</span>
+            <small>Backup, reset</small>
+          </button>
+        </div>
+      </main>
     )
   }
 
@@ -687,7 +665,7 @@ function App() {
     return (
       <main className="ws-screen">
         <header className="ws-header">
-          <button className="ws-back" type="button" aria-label="Back" onClick={() => goBack({ name: 'workout-menu', workoutId: workout.id })}>
+          <button className="ws-back" type="button" aria-label="Back" onClick={() => goBack({ name: 'main' })}>
             <Icon name="back" />
           </button>
           <div className="ws-head-title">
@@ -923,10 +901,6 @@ function App() {
   }
 
   const startSession = (workoutId: WorkoutId) => {
-    if (!window.confirm(`Start a new ${getWorkout(workoutId).name} session?`)) {
-      return
-    }
-
     const sessionId = createId()
     const session = createSession(workoutId, data, sessionId)
     setData((current) => ({
@@ -1230,18 +1204,6 @@ function App() {
     setVibrationMessage(attempted ? 'Vibration attempted' : 'Vibration blocked or unavailable')
   }
 
-  if (screen.name === 'workouts') {
-    return renderWorkouts()
-  }
-
-  if (screen.name === 'workout-menu') {
-    return renderWorkoutMenu(screen.workoutId)
-  }
-
-  if (screen.name === 'workout-history') {
-    return renderHistory(getWorkoutSessions(data, screen.workoutId), () => goBack({ name: 'workout-menu', workoutId: screen.workoutId }), getWorkout(screen.workoutId).name)
-  }
-
   if (screen.name === 'global-history') {
     return renderHistory(sortedSessions, () => goBack({ name: 'main' }))
   }
@@ -1257,7 +1219,7 @@ function App() {
         {currentSession ? (
           renderSession(currentSession)
         ) : (
-          <Page title="Session unavailable" eyebrow="Missing" onBack={() => goBack({ name: 'workout-menu', workoutId: screen.workoutId })}>
+          <Page title="Session unavailable" eyebrow="Missing" onBack={() => goBack({ name: 'main' })}>
             <EmptyState text="This saved session no longer exists." />
           </Page>
         )}
@@ -1382,32 +1344,6 @@ function App() {
   return renderMain()
 }
 
-function MenuCard({
-  icon,
-  tone,
-  label,
-  detail,
-  onClick,
-}: {
-  icon: string
-  tone: 'workouts' | 'history' | 'settings' | 'workoutA' | 'workoutB'
-  label: string
-  detail: string
-  onClick: () => void
-}) {
-  return (
-    <button className={`menu-card menu-${tone}`} type="button" onClick={onClick}>
-      <span className="menu-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <span>
-        <strong>{label}</strong>
-        <small>{detail}</small>
-      </span>
-    </button>
-  )
-}
-
 function Page({ title, eyebrow, onBack, children }: { title: string; eyebrow: string; onBack: () => void; children: ReactNode }) {
   return (
     <main className="app-shell page-shell">
@@ -1515,12 +1451,8 @@ function normalizeScreen(value: unknown): Screen {
   }
 
   const screen = value as { name?: unknown; workoutId?: unknown; sessionId?: unknown }
-  if (screen.name === 'workouts' || screen.name === 'global-history' || screen.name === 'settings' || screen.name === 'main') {
+  if (screen.name === 'global-history' || screen.name === 'settings' || screen.name === 'main') {
     return { name: screen.name }
-  }
-
-  if ((screen.name === 'workout-menu' || screen.name === 'workout-history') && isWorkoutId(screen.workoutId)) {
-    return { name: screen.name, workoutId: screen.workoutId }
   }
 
   if (screen.name === 'session' && isWorkoutId(screen.workoutId) && typeof screen.sessionId === 'string') {
@@ -1573,14 +1505,6 @@ function createSessionEntry(data: AppData, workoutId: WorkoutId, variant: Exerci
 
 function getWorkout(workoutId: WorkoutId) {
   return workouts.find((workout) => workout.id === workoutId) ?? workouts[0]
-}
-
-function getWorkoutSessions(data: AppData, workoutId: WorkoutId) {
-  return data.sessions.filter((session) => session.workoutId === workoutId).sort((a, b) => b.createdAt - a.createdAt)
-}
-
-function getLatestSession(data: AppData, workoutId: WorkoutId) {
-  return getWorkoutSessions(data, workoutId)[0]
 }
 
 function getVariant(group: ExerciseGroup, variantId: string, data?: AppData) {
@@ -1814,6 +1738,29 @@ function formatTimer(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remainder = String(seconds % 60).padStart(2, '0')
   return `${minutes}:${remainder}`
+}
+
+function formatRelative(timestamp: number) {
+  const diff = Date.now() - timestamp
+  const mins = Math.round(diff / 60000)
+  if (mins < 1) {
+    return 'just now'
+  }
+  if (mins < 60) {
+    return `${mins}m ago`
+  }
+  const hours = Math.round(mins / 60)
+  if (hours < 24) {
+    return `${hours}h ago`
+  }
+  const days = Math.round(hours / 24)
+  if (days === 1) {
+    return 'yesterday'
+  }
+  if (days < 7) {
+    return `${days}d ago`
+  }
+  return formatDate(timestamp)
 }
 
 function formatDate(timestamp: number) {
