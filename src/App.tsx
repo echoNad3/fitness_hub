@@ -303,13 +303,13 @@ function singleExercise(variant: ExerciseVariant): ExerciseGroup {
 }
 
 const muscleColors: Record<Category, string> = {
-  CHEST: '#d18f6e',
-  BACK: '#46b6a4',
-  SHOULDERS: '#5bb0d6',
-  BICEPS: '#c79a57',
-  TRICEPS: '#8f93cf',
-  CORE: '#e48fbf',
-  LEGS: '#a98cf0',
+  CHEST: '#d6b252', // gold
+  BACK: '#b9c2cb', // silver
+  SHOULDERS: '#a37f50', // bronze
+  BICEPS: '#aa9fc9', // purplish silver
+  TRICEPS: '#d98c4e', // warm orange
+  CORE: '#e48fbf', // pink
+  LEGS: '#e48fbf', // pink (same as core)
 }
 
 function muscleColor(category: Category): string {
