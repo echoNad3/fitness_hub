@@ -1,0 +1,501 @@
+/* Workout (session) screen — Phase 1 redesign.
+   Muscle-group colors are applied inline per row (see muscleColor in App.tsx);
+   the rules below own layout, surfaces, and the semantic done/failed colors. */
+
+.ws-screen {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  min-height: 100svh;
+  padding: 0 12px calc(14px + env(safe-area-inset-bottom));
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 78% -12%, rgba(96, 116, 243, 0.1), transparent 30%),
+    var(--bg);
+}
+
+.ws-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -12px 6px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 38px 1fr 38px;
+  align-items: center;
+  gap: 8px;
+  background: rgba(34, 37, 46, 0.92);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+
+.ws-back {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.ws-head-title {
+  min-width: 0;
+  text-align: center;
+}
+
+.ws-head-title strong {
+  display: block;
+  overflow: hidden;
+  font-size: 1.02rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-head-title span {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.ws-rail {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 5px;
+}
+
+.ws-rail i {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ws-rail i.done {
+  background: var(--success);
+}
+
+.ws-rail i.failed {
+  background: var(--danger);
+}
+
+.ws-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ws-row {
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+
+.ws-row.is-done {
+  opacity: 0.6;
+}
+
+.ws-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--quiet);
+}
+
+.ws-num {
+  color: var(--quiet);
+  font-size: 0.66rem;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-meta {
+  color: var(--quiet);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-chip {
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ws-chip.done {
+  color: #0b2d18;
+  background: var(--success);
+}
+
+.ws-chip.failed {
+  color: #4b1116;
+  background: var(--danger);
+}
+
+.ws-card {
+  padding: 14px;
+  display: grid;
+  gap: 11px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1.5px solid var(--line);
+  border-radius: 15px;
+  box-shadow: var(--shadow);
+}
+
+.ws-card-head {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-card-name {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  font-size: 1.04rem;
+  font-weight: 800;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-cat {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ws-guide {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  align-items: center;
+  padding: 10px 12px;
+  color: var(--text);
+  text-align: left;
+  background: rgba(73, 75, 89, 0.4);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.ws-guide svg {
+  opacity: 0.85;
+}
+
+.ws-guide.increase {
+  color: #cdeed8;
+  background: rgba(81, 207, 123, 0.12);
+  border-color: rgba(81, 207, 123, 0.26);
+}
+
+.ws-guide.repeat {
+  color: #f7ccd0;
+  background: rgba(242, 118, 125, 0.12);
+  border-color: rgba(242, 118, 125, 0.26);
+}
+
+.ws-guide.none {
+  color: var(--muted);
+}
+
+.ws-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ws-fact {
+  min-height: 50px;
+  padding: 9px 12px;
+  display: grid;
+  gap: 3px;
+  color: var(--text);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.ws-fact span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.ws-fact strong {
+  overflow: hidden;
+  font-size: 0.96rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-step {
+  display: grid;
+  grid-template-columns: 56px 1fr 56px;
+  gap: 8px;
+}
+
+.ws-stepbtn {
+  height: 54px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.ws-weight {
+  height: 54px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1px;
+  color: var(--text);
+  background: rgba(20, 21, 27, 0.5);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.ws-weight strong {
+  font-size: 1.18rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-weight span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.ws-result {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ws-resultbtn {
+  height: 52px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.ws-resultbtn.done {
+  color: #cdebd5;
+  border-color: rgba(81, 207, 123, 0.42);
+}
+
+.ws-resultbtn.failed {
+  color: #f7ccd0;
+  border-color: rgba(242, 118, 125, 0.42);
+}
+
+.ws-resultbtn.done.sel {
+  color: #0b2d18;
+  background: var(--success);
+  border-color: transparent;
+}
+
+.ws-resultbtn.failed.sel {
+  color: #4b1116;
+  background: var(--danger);
+  border-color: transparent;
+}
+
+.ws-swap {
+  width: 100%;
+  height: 44px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.ws-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  margin: 4px -12px 0;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  background: linear-gradient(180deg, rgba(34, 37, 46, 0), var(--bg) 26%);
+}
+
+.ws-dock-start {
+  grid-column: 1 / -1;
+  height: 54px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.ws-dock-time {
+  height: 54px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  box-shadow: var(--shadow);
+}
+
+.ws-dock-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.ws-dock-start strong,
+.ws-dock-time strong {
+  font-size: 1.05rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-dock-cancel {
+  height: 54px;
+  padding: 0 18px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.ws-dock.pulse .ws-dock-start {
+  color: #0b2d18;
+  background: var(--success);
+  border-color: transparent;
+}
+
+.ws-dock.pulse .ws-dock-start .ws-dock-left {
+  color: #0b2d18;
+}
+
+.ws-row,
+.ws-card-name,
+.ws-guide,
+.ws-fact,
+.ws-stepbtn,
+.ws-weight,
+.ws-resultbtn,
+.ws-swap,
+.ws-back,
+.ws-dock-start,
+.ws-dock-cancel {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.ws-row:active,
+.ws-card-name:active,
+.ws-guide:active,
+.ws-fact:active,
+.ws-stepbtn:active,
+.ws-weight:active,
+.ws-resultbtn:active,
+.ws-swap:active,
+.ws-back:active,
+.ws-dock-start:active,
+.ws-dock-cancel:active {
+  transform: scale(0.985);
+}
+
+.ws-back:focus-visible,
+.ws-row:focus-visible,
+.ws-card-name:focus-visible,
+.ws-guide:focus-visible,
+.ws-fact:focus-visible,
+.ws-stepbtn:focus-visible,
+.ws-weight:focus-visible,
+.ws-resultbtn:focus-visible,
+.ws-swap:focus-visible,
+.ws-dock-start:focus-visible,
+.ws-dock-cancel:focus-visible {
+  outline: 2px solid #cbd5e1;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-row,
+  .ws-card-name,
+  .ws-guide,
+  .ws-fact,
+  .ws-stepbtn,
+  .ws-weight,
+  .ws-resultbtn,
+  .ws-swap,
+  .ws-back,
+  .ws-dock-start,
+  .ws-dock-cancel {
+    transition: none;
+  }
+}

@@ -14,7 +14,7 @@
   --danger: #f2767d;
   --warning: #f4cb59;
   --cat: var(--accent);
-  --radius: 20px;
+  --radius: 16px;
   --shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
   --soft-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
 }

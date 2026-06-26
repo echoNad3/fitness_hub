@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import './App.css'
+import './workout.css'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -298,6 +299,85 @@ function singleExercise(variant: ExerciseVariant): ExerciseGroup {
     id: variant.id,
     activeVariantId: variant.id,
     variants: [variant],
+  }
+}
+
+const muscleColors: Record<Category, string> = {
+  CHEST: '#d18f6e',
+  BACK: '#46b6a4',
+  SHOULDERS: '#5bb0d6',
+  BICEPS: '#c79a57',
+  TRICEPS: '#8f93cf',
+  CORE: '#e48fbf',
+  LEGS: '#a98cf0',
+}
+
+function muscleColor(category: Category): string {
+  return muscleColors[category]
+}
+
+function Icon({ name, size = 20 }: { name: string; size?: number }) {
+  const props = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  }
+
+  switch (name) {
+    case 'back':
+      return (
+        <svg {...props}>
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+      )
+    case 'minus':
+      return (
+        <svg {...props}>
+          <path d="M5 12h14" />
+        </svg>
+      )
+    case 'plus':
+      return (
+        <svg {...props}>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      )
+    case 'check':
+      return (
+        <svg {...props}>
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      )
+    case 'arrow-up':
+      return (
+        <svg {...props}>
+          <path d="M12 19V5M5 12l7-7 7 7" />
+        </svg>
+      )
+    case 'repeat':
+      return (
+        <svg {...props}>
+          <path d="M17 1l4 4-4 4" />
+          <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+          <path d="M7 23l-4-4 4-4" />
+          <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+        </svg>
+      )
+    case 'clock':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      )
+    default:
+      return null
   }
 }
 
@@ -605,25 +685,26 @@ function App() {
     const doneCount = countDone(session)
 
     return (
-      <main className="session-screen">
-        <header className="session-header">
-          <button className="back-button" type="button" onClick={() => goBack({ name: 'workout-menu', workoutId: workout.id })}>
-            Back
+      <main className="ws-screen">
+        <header className="ws-header">
+          <button className="ws-back" type="button" aria-label="Back" onClick={() => goBack({ name: 'workout-menu', workoutId: workout.id })}>
+            <Icon name="back" />
           </button>
-          <div className="session-title">
+          <div className="ws-head-title">
             <strong>{workout.name}</strong>
             <span>{doneCount}/{workout.groups.length} done</span>
           </div>
-          <div className="progress-dots" aria-label={`${doneCount} of ${workout.groups.length} exercises done`}>
+          <span aria-hidden="true" />
+          <div className="ws-rail" aria-label={`${doneCount} of ${workout.groups.length} exercises done`}>
             {workout.groups.map((group) => {
               const groupEntry = session.groupEntries[group.id]
-              const activeEntry = groupEntry?.entries[groupEntry.activeVariantId]
-              return <span className={activeEntry?.result ? 'complete' : ''} key={group.id} />
+              const result = groupEntry?.entries[groupEntry.activeVariantId]?.result
+              return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
             })}
           </div>
         </header>
 
-        <section className="ordered-exercise-list" aria-label={`${workout.name} ordered exercises`}>
+        <section className="ws-list" aria-label={`${workout.name} exercises`}>
           {workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))}
         </section>
 
@@ -647,176 +728,161 @@ function App() {
     const displayReps = getExerciseReps(entry, variant)
     const previous = getPreviousResult(data, workout.id, session, group.id, variant.id)
     const isExpanded = expandedGroupId === group.id
-    const rowClasses = [
-      'exercise-row',
-      isExpanded ? 'expanded' : '',
-      entry.result ? `result-${entry.result}` : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
+    const muscle = muscleColor(variant.category)
+    const numLabel = String(index + 1).padStart(2, '0')
+
+    if (!isExpanded) {
+      return (
+        <button
+          type="button"
+          className={`ws-row${entry.result ? ' is-done' : ''}`}
+          style={{ borderColor: `${muscle}52` }}
+          id={`exercise-${group.id}`}
+          key={group.id}
+          aria-expanded={false}
+          onClick={() => expandExercise(session.id, group.id)}
+        >
+          <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
+          <span className="ws-num">{numLabel}</span>
+          <span className="ws-name">{variant.name}</span>
+          {entry.result ? (
+            <span className={`ws-chip ${entry.result === 'success' ? 'done' : 'failed'}`}>{resultLabel(entry.result)}</span>
+          ) : (
+            <span className="ws-meta">{formatTarget(displaySets, displayReps)}</span>
+          )}
+        </button>
+      )
+    }
 
     return (
-      <article className={rowClasses} id={`exercise-${group.id}`} key={group.id}>
-        <div className="exercise-row-shell">
-          <div
-            className="exercise-row-summary"
-            role="button"
-            tabIndex={0}
-            aria-expanded={isExpanded}
-            onClick={() => expandExercise(session.id, group.id)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                expandExercise(session.id, group.id)
-              }
-            }}
+      <article className="ws-card" style={{ borderColor: `${muscle}b0` }} id={`exercise-${group.id}`} key={group.id}>
+        <div className="ws-card-head">
+          <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
+          <span className="ws-num">{numLabel}</span>
+          <button
+            className="ws-card-name"
+            type="button"
+            onClick={() =>
+              setNameDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: variant.name })
+            }
           >
-            <span className="row-index">{String(index + 1).padStart(2, '0')}</span>
-            <span className="row-main">
-              <span className="row-title-line">
-                <button
-                  className="exercise-name-button"
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setNameDialog({
-                      sessionId: session.id,
-                      groupId: group.id,
-                      variantId: variant.id,
-                      value: variant.name,
-                    })
-                  }}
-                >
-                  {variant.name}
-                </button>
-                <small>{categoryLabel(variant.category)}</small>
-              </span>
-            </span>
-          <span className="row-signals">
-            {entry.result && <span className={`row-status result-${entry.result}`}>{resultLabel(entry.result)}</span>}
+            {variant.name}
+          </button>
+          <span className="ws-cat" style={{ color: muscle }}>
+            {categoryLabel(variant.category)}
           </span>
-          </div>
         </div>
 
-        {isExpanded && (
-          <div className="expanded-row-controls">
-            <div className="fact-edit-row" aria-label={`${variant.name} editable setup and target`}>
-              <button
-                type="button"
-                onClick={() =>
-                  setSetupDialog({
-                    sessionId: session.id,
-                    groupId: group.id,
-                    variantId: variant.id,
-                    value: displaySetup,
-                  })
-                }
-              >
-                <span>Setup</span>
-                <strong>{formatSetup(displaySetup)}</strong>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setTargetDialog({
-                    sessionId: session.id,
-                    groupId: group.id,
-                    variantId: variant.id,
-                    sets: String(displaySets),
-                    reps: String(displayReps),
-                  })
-                }
-              >
-                <span>Target</span>
-                <strong>{formatTarget(displaySets, displayReps)}</strong>
-              </button>
-            </div>
-            <button
-              className={`guidance-line guidance-${guidanceClass(previous)}`}
-              type="button"
-              onClick={() =>
-                setPreviousDialog({
-                  workoutId: workout.id,
-                  sessionId: session.id,
-                  groupId: group.id,
-                  variantId: variant.id,
-                })
-              }
-            >
-              {guidanceSentence(previous)}
-            </button>
+        <button
+          className={`ws-guide ${guidanceClass(previous)}`}
+          type="button"
+          onClick={() =>
+            setPreviousDialog({ workoutId: workout.id, sessionId: session.id, groupId: group.id, variantId: variant.id })
+          }
+        >
+          <Icon name={previous === 'success' ? 'arrow-up' : previous === 'failure' ? 'repeat' : 'clock'} size={18} />
+          <span>{guidanceSentence(previous)}</span>
+        </button>
 
-            <div className="command-section">
-              <p className="control-label">Today's load</p>
-              <div className="weight-row" aria-label={`${variant.name} weight controls`}>
-                <button type="button" onClick={() => adjustWeight(session.id, group.id, variant.id, -1.25)}>
-                  -1.25
-                </button>
-                <button
-                  className="weight-display"
-                  type="button"
-                  onClick={() =>
-                    setWeightDialog({
-                      sessionId: session.id,
-                      groupId: group.id,
-                      variantId: variant.id,
-                      value: String(entry.weight),
-                    })
-                  }
-                >
-                  {formatLoad(entry.weight, variant.perHand)}
-                </button>
-                <button type="button" onClick={() => adjustWeight(session.id, group.id, variant.id, 1.25)}>
-                  +1.25
-                </button>
-              </div>
-            </div>
+        <div className="ws-facts">
+          <button
+            className="ws-fact"
+            type="button"
+            onClick={() =>
+              setSetupDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: displaySetup })
+            }
+          >
+            <span>Setup</span>
+            <strong>{formatSetup(displaySetup)}</strong>
+          </button>
+          <button
+            className="ws-fact"
+            type="button"
+            onClick={() =>
+              setTargetDialog({
+                sessionId: session.id,
+                groupId: group.id,
+                variantId: variant.id,
+                sets: String(displaySets),
+                reps: String(displayReps),
+              })
+            }
+          >
+            <span>Target</span>
+            <strong>{formatTarget(displaySets, displayReps)}</strong>
+          </button>
+        </div>
 
-            <div className="command-section">
-              <div className="section-label-row">
-                <p className="control-label">Result</p>
-              </div>
-              <div className="status-row" aria-label={`${variant.name} result controls`}>
-                <button
-                  className={`success-button ${entry.result === 'success' ? 'selected' : ''}`}
-                  type="button"
-                  aria-pressed={entry.result === 'success'}
-                  onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
-                >
-                  Done
-                </button>
-                <button
-                  className={`repeat-button ${entry.result === 'failure' ? 'selected' : ''}`}
-                  type="button"
-                  aria-pressed={entry.result === 'failure'}
-                  onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
-                >
-                  Failed
-                </button>
-              </div>
-            </div>
+        <div className="ws-step" aria-label={`${variant.name} weight`}>
+          <button
+            className="ws-stepbtn"
+            type="button"
+            aria-label="Decrease weight"
+            onClick={() => adjustWeight(session.id, group.id, variant.id, -1.25)}
+          >
+            <Icon name="minus" />
+          </button>
+          <button
+            className="ws-weight"
+            type="button"
+            onClick={() =>
+              setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
+            }
+          >
+            <strong>{formatWeight(entry.weight)}</strong>
+            <span>{variant.perHand ? 'per hand' : 'total'}</span>
+          </button>
+          <button
+            className="ws-stepbtn"
+            type="button"
+            aria-label="Increase weight"
+            onClick={() => adjustWeight(session.id, group.id, variant.id, 1.25)}
+          >
+            <Icon name="plus" />
+          </button>
+        </div>
 
-            {group.variants.length > 1 && (
-              <button className="swap-button" type="button" onClick={() => swapVariant(session.id, group)}>
-                Swap to {applyVariantOverride(data, getNextVariant(group, variant.id)).name}
-              </button>
-            )}
-          </div>
+        <div className="ws-result" aria-label={`${variant.name} result`}>
+          <button
+            className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
+            type="button"
+            aria-pressed={entry.result === 'success'}
+            onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
+          >
+            Done
+          </button>
+          <button
+            className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
+            type="button"
+            aria-pressed={entry.result === 'failure'}
+            onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
+          >
+            Failed
+          </button>
+        </div>
+
+        {group.variants.length > 1 && (
+          <button className="ws-swap" type="button" onClick={() => swapVariant(session.id, group)}>
+            Swap to {applyVariantOverride(data, getNextVariant(group, variant.id)).name}
+          </button>
         )}
       </article>
     )
   }
 
   const renderRestTimer = () => (
-    <section className={`rest-dock ${restRunning ? 'running' : ''} ${restPulse ? 'pulse' : ''}`} aria-label="Rest timer">
+    <section className={`ws-dock${restRunning ? ' running' : ''}${restPulse ? ' pulse' : ''}`} aria-label="Rest timer">
       {restRunning ? (
         <>
-          <div>
-            <span>Rest</span>
+          <div className="ws-dock-time">
+            <span className="ws-dock-left">
+              <Icon name="clock" size={18} />
+              Rest
+            </span>
             <strong>{formatTimer(restSeconds)}</strong>
           </div>
           <button
-            className="cancel-rest"
+            className="ws-dock-cancel"
             type="button"
             onClick={() => {
               setRestRunning(false)
@@ -828,15 +894,18 @@ function App() {
         </>
       ) : (
         <button
-          className="start-rest"
+          className="ws-dock-start"
           type="button"
           onClick={() => {
             setRestSeconds(REST_SECONDS)
             setRestRunning(true)
           }}
         >
-          <span>{restPulse ? 'Rest done' : 'Rest'}</span>
-          <strong>{REST_SECONDS}</strong>
+          <span className="ws-dock-left">
+            <Icon name={restPulse ? 'check' : 'clock'} size={18} />
+            {restPulse ? 'Rest done' : 'Rest timer'}
+          </span>
+          <strong>{restPulse ? '' : `Start · ${REST_SECONDS}s`}</strong>
         </button>
       )}
     </section>
@@ -1731,10 +1800,6 @@ function roundWeight(value: number) {
 
 function formatWeight(value: number) {
   return `${Number.isInteger(value) ? value.toFixed(0) : value} kg`
-}
-
-function formatLoad(value: number, perHand: boolean) {
-  return `${formatWeight(value)}${perHand ? '/hand' : ''}`
 }
 
 function formatSetup(setup: string) {
