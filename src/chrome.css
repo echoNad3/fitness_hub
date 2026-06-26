@@ -1,0 +1,183 @@
+/* Shared page chrome — History, Settings, and other Page screens */
+
+.page {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  min-height: 100svh;
+  padding: 14px 14px calc(20px + env(safe-area-inset-bottom));
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 82% -8%, rgba(96, 116, 243, 0.1), transparent 30%),
+    var(--bg);
+}
+
+.page-head {
+  padding: 4px 0 6px;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-head h1 {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.hist-list,
+.set-list {
+  display: grid;
+  gap: 9px;
+}
+
+.hist-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.hist-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.hist-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hist-main strong {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.hist-main small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.hist-chip {
+  padding: 5px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  font-size: 0.74rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-chip.complete {
+  color: #0b2d18;
+  background: var(--success);
+  border-color: transparent;
+}
+
+.hist-chip.partial {
+  color: #3a2c06;
+  background: var(--warning);
+  border-color: transparent;
+}
+
+.hist-chip.empty {
+  color: var(--quiet);
+}
+
+.hist-del {
+  width: 52px;
+  display: grid;
+  place-items: center;
+  color: var(--danger);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.set-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 15px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.set-row svg {
+  color: var(--muted);
+}
+
+.set-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.set-main strong {
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.set-main small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.set-row.danger {
+  border-color: rgba(242, 118, 125, 0.3);
+}
+
+.set-row.danger strong,
+.set-row.danger svg {
+  color: var(--danger);
+}
+
+.set-row input[type='file'] {
+  display: none;
+}
+
+.hist-open,
+.hist-del,
+.set-row {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.hist-open:active,
+.hist-del:active,
+.set-row:active {
+  transform: scale(0.99);
+}
+
+.hist-open:focus-visible,
+.hist-del:focus-visible,
+.set-row:focus-visible {
+  outline: 2px solid #cbd5e1;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hist-open,
+  .hist-del,
+  .set-row {
+    transition: none;
+  }
+}

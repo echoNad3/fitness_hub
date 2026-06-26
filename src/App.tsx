@@ -3,6 +3,7 @@ import type { ChangeEvent, ReactNode } from 'react'
 import './App.css'
 import './workout.css'
 import './home.css'
+import './chrome.css'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -340,6 +341,31 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M9 6l6 6-6 6" />
         </svg>
       )
+    case 'trash':
+      return (
+        <svg {...props}>
+          <path d="M4 7h16" />
+          <path d="M9 7V4h6v3" />
+          <path d="M6 7l1 13h10l1-13" />
+          <path d="M10 11v6M14 11v6" />
+        </svg>
+      )
+    case 'download':
+      return (
+        <svg {...props}>
+          <path d="M12 3v12" />
+          <path d="M7 10l5 5 5-5" />
+          <path d="M5 21h14" />
+        </svg>
+      )
+    case 'upload':
+      return (
+        <svg {...props}>
+          <path d="M12 21V9" />
+          <path d="M7 8l5-5 5 5" />
+          <path d="M5 21h14" />
+        </svg>
+      )
     case 'minus':
       return (
         <svg {...props}>
@@ -596,32 +622,30 @@ function App() {
   }
 
   const renderHistory = (sessions: WorkoutSession[], onBack: () => void, title = 'History') => (
-    <Page title={title} eyebrow={`${sessions.length} sessions`} onBack={onBack}>
+    <Page title={title} onBack={onBack}>
       {sessions.length === 0 ? (
-        <EmptyState text="No sessions saved yet." />
+        <EmptyState text="No sessions yet." />
       ) : (
-        <div className="history-list">
+        <div className="hist-list">
           {sessions.map((session) => {
             const workout = getWorkout(session.workoutId)
             const doneCount = countDone(session)
-            const status = completionStatus(doneCount, workout.groups.length)
+            const total = workout.groups.length
+            const status = completionStatus(doneCount, total)
             return (
-              <article className={`history-card ${status}`} key={session.id}>
-                <div>
-                  <strong>{workout.name}</strong>
-                  <span>{formatDate(session.createdAt)}</span>
-                  <small className="progress-chip">
-                    {doneCount}/{workout.groups.length} done
-                  </small>
-                </div>
-                <div className="history-actions">
-                  <button className="open-action" type="button" onClick={() => openSession(session.workoutId, session.id)}>
-                    Open
-                  </button>
-                  <button className="delete-action" type="button" onClick={() => deleteSession(session.id)}>
-                    Delete
-                  </button>
-                </div>
+              <article className="hist-card" key={session.id}>
+                <button className="hist-open" type="button" onClick={() => openSession(session.workoutId, session.id)}>
+                  <span className="hist-main">
+                    <strong>{workout.name}</strong>
+                    <small>{formatRelative(session.createdAt)}</small>
+                  </span>
+                  <span className={`hist-chip ${status}`}>
+                    {doneCount}/{total}
+                  </span>
+                </button>
+                <button className="hist-del" type="button" aria-label="Delete session" onClick={() => deleteSession(session.id)}>
+                  <Icon name="trash" size={18} />
+                </button>
               </article>
             )
           })}
@@ -631,27 +655,38 @@ function App() {
   )
 
   const renderSettings = () => (
-    <Page title="Settings" eyebrow="Local only" onBack={() => goBack({ name: 'main' })}>
-      <div className="settings-stack">
-        <button className="action-card export-action" type="button" onClick={exportData}>
-          <span>Export JSON</span>
-          <small>Download a backup</small>
+    <Page title="Settings" onBack={() => goBack({ name: 'main' })}>
+      <div className="set-list">
+        <button className="set-row" type="button" onClick={exportData}>
+          <span className="set-main">
+            <strong>Export backup</strong>
+            <small>Download all your data as a JSON file</small>
+          </span>
+          <Icon name="download" />
         </button>
 
-        <label className="action-card import-action file-card">
-          <span>Import JSON</span>
-          <small>Replace local data</small>
+        <label className="set-row">
+          <span className="set-main">
+            <strong>Import backup</strong>
+            <small>Replace your data from a JSON file</small>
+          </span>
+          <Icon name="upload" />
           <input type="file" accept="application/json,.json" onChange={importData} />
         </label>
 
-        <button className="action-card utility-action" type="button" onClick={testVibration}>
-          <span>Test vibration</span>
-          <small>{vibrationMessage || 'Calls navigator.vibrate(1000)'}</small>
+        <button className="set-row" type="button" onClick={testVibration}>
+          <span className="set-main">
+            <strong>Test vibration</strong>
+            <small>{vibrationMessage || 'Buzz the phone once'}</small>
+          </span>
         </button>
 
-        <button className="action-card danger reset-action" type="button" onClick={resetData}>
-          <span>Reset app data</span>
-          <small>Clear sessions and preferences</small>
+        <button className="set-row danger" type="button" onClick={resetData}>
+          <span className="set-main">
+            <strong>Reset app data</strong>
+            <small>Clear all sessions and changes</small>
+          </span>
+          <Icon name="trash" />
         </button>
       </div>
     </Page>
@@ -1219,7 +1254,7 @@ function App() {
         {currentSession ? (
           renderSession(currentSession)
         ) : (
-          <Page title="Session unavailable" eyebrow="Missing" onBack={() => goBack({ name: 'main' })}>
+          <Page title="Session unavailable" onBack={() => goBack({ name: 'main' })}>
             <EmptyState text="This saved session no longer exists." />
           </Page>
         )}
@@ -1344,17 +1379,14 @@ function App() {
   return renderMain()
 }
 
-function Page({ title, eyebrow, onBack, children }: { title: string; eyebrow: string; onBack: () => void; children: ReactNode }) {
+function Page({ title, onBack, children }: { title: string; onBack: () => void; children: ReactNode }) {
   return (
-    <main className="app-shell page-shell">
-      <header className="page-header">
-        <button className="back-button inline" type="button" onClick={onBack}>
-          Back
+    <main className="page">
+      <header className="page-head">
+        <button className="ws-back" type="button" aria-label="Back" onClick={onBack}>
+          <Icon name="back" />
         </button>
-        <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h1>{title}</h1>
-        </div>
+        <h1>{title}</h1>
       </header>
       {children}
     </main>
