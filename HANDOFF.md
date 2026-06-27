@@ -120,6 +120,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 6. Tech stack & architecture
 
 - **Vite 8 + React 19 + TypeScript**, plain CSS. Data in **localStorage**. Lint: `oxlint`.
+  PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
+  `public/app-icon.svg` via `@vite-pwa/assets-generator`.
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
 - **Single-component app.** Almost everything is in `src/App.tsx` (one big `App()` component with
   render helpers + module-level helpers). State is one `data: AppData` object + a `screen` object,
@@ -258,12 +260,19 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
 
 **NEXT (deferred features, in priority order):**
 
-1. **PWA** — installable / add-to-home-screen / offline.
+1. **PWA (IN PROGRESS — local checkpoint, NOT DEPLOYED)** — the manifest, dark Fitness Hub install
+   icon set (64/192/512, maskable, Apple touch, favicon), GitHub Pages base paths, and Workbox
+   precache are implemented. Production build passes and generates a 12-entry precache plus correct
+   `/fitness_hub/` manifest scope/start URL. **NEXT:** start `vite preview` with the same
+   `GITHUB_ACTIONS=true` and `GITHUB_REPOSITORY=echoNad3/fitness_hub` environment used for the build,
+   then prove an offline reload by loading once, stopping the preview server, and reloading. The
+   earlier blank local preview was diagnosed as a preview-time base mismatch (the built asset URL
+   returned `index.html`), not an app build failure. Do not deploy until this runtime check passes.
 2. **Native wrap (Capacitor)** so the **rest timer works while the phone is locked**. NOTE: a plain
    web app/PWA *cannot* reliably keep a countdown alive once locked — the OS suspends it. The real
    options are (a) a scheduled **local notification** at +Ns (fires even locked), or (b) the native
    wrap. Set this expectation with the user; don't promise locked-screen timing from PWA alone.
-3. **Cloud sync + login (IN PROGRESS — current focus).** Approach: **Supabase** (free tier, works
+3. **Cloud sync + login (COMPLETE).** Approach: **Supabase** (free tier, works
    from a static site; the Project URL + anon key are public-safe, protected by Row Level Security).
    Simple **email/password** auth, and **optional** — the app still works fully offline without
    login; signing in just enables cross-device sync. localStorage stays the local cache (offline-first).
@@ -290,8 +299,9 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
      90s. **Step 4a is deployed in `30cab0f` + `1320ae2`**: paused-sync retry UX, clearer
      sign-out/error handling, and monotonic timestamp conflict hardening. Tests, lint, build, and a
      390×844 Settings audit pass. Pages workflow run `28300808013` succeeded and the live URL
-     returned HTTP 200. **NEXT = monitor real-device use for any remaining conflict or recovery
-     edge cases before calling cloud sync complete.**
+     returned HTTP 200. The real-phone recovery test was confirmed on 2026-06-27: changing data
+     offline showed **Sync paused** + **Retry**, restoring the network and retrying returned to
+     **Synced**. Cloud sync is complete; only fix new issues if continued use exposes one.
    - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
      login; otherwise sign-up requires email confirmation before the first sign-in works.
 
