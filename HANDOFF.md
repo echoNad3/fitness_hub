@@ -89,8 +89,11 @@ CSS variables live in `src/App.css :root`. Use them; don't hardcode.
 - **Done/success `--success #51cf7b`** (soft green).
 - **Failed/danger `--danger #f2767d`** (soft coral).
 - **Warning `--warning #f4cb59`** (amber) — used for "partial" history chips.
-- Corners `--radius 16px` (deliberately *slightly* less rounded — "not a kids playground"). Cards
-  use 13–18px.
+- Focus `--focus #d9e0ef`; accent tint/line `--accent-soft` / `--accent-line`; shared page glow
+  `--page-glow rgba(96,116,243,0.08)`.
+- Corners: `--radius 16px`, `--radius-card 14px`, `--radius-control 11px` (deliberately *slightly*
+  less rounded — "not a kids playground"). Shared depth: `--shadow` for dialogs and
+  `--soft-shadow` for raised cards/docks. Do not add accent-colored glow shadows.
 
 **Muscle-group colors** ("metallic" theme — user-chosen). Defined in `muscleColors` in
 `src/App.tsx`. Shown as a subtle row outline (~32% alpha, hex suffix `52`), a dot, and the colored
@@ -128,6 +131,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/chrome.css` | Shared page chrome + History + Settings (`.page-*`, `.hist-*`, `.set-*`). |
 | `src/edit.css` | Edit mode + exercise editor (`.ws-edit-*`, `.ws-add`, `.ex-*`). |
 | `src/index.css` | Global resets, base dark background, font. |
+| `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
+| `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
+| `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
 | `index.html` | Page shell. |
 | `.claude/launch.json` | Dev-server config for the preview tooling (`npm run dev`, port 5173). |
 
@@ -149,6 +155,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 - `normalizeData` / `normalizeTemplates` migrate old saved data: missing `templates` are seeded
   from the default and any legacy `variantOverrides` are folded in. localStorage keys:
   `fitness-hub-v1` (data) and `fitness-hub-v1-screen` (current screen).
+- Imported JSON must pass `isValidBackup` before it can replace local data. Invalid or structurally
+  incomplete templates/sessions are rejected rather than trusted through a TypeScript cast.
 - TypeScript is strict (`noUnusedLocals`): unused functions/locals **fail the build**. Remove dead
   code as you go.
 - Screens: `main` (home hub), `global-history`, `settings`, `session`. (The old `workouts` /
@@ -160,6 +168,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `d271149` Release-candidate hardening and consistency polish
 - `940de51` Phase 3c: editable rest length setting (default 90s)
 - `ef6d80b` Phase 3b: edit mode with reorder, remove, add, and exercise editor
 - `9711846` Phase 3a: make workouts editable data (templates in localStorage)
@@ -183,25 +192,28 @@ Git history (newest first); each commit is a clean restore point:
 - **Full editing** — in-session field edits persist to the routine; **edit mode** (pencil in the
   session header) for reorder (up/down) / remove / add; a full **exercise editor** dialog
   (name, muscle group chips, sets, reps, setup, weight, per-hand) for add & edit.
+- **Release hardening** — edit mode now edits the variant active in that session, full-editor
+  setup/target/weight changes stay in sync with the open session, the final exercise cannot be
+  removed, backup imports are deeply validated, and React hook lint warnings are resolved.
+- **Automated safety net** — `npm test` runs nine Node-native unit tests covering result toggles,
+  ordering, auto-advance, rest bounds, active-variant selection, legacy migration acceptance,
+  template validation, and session validation.
+- **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
+  drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
+  are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
 - **Safety net** — real git repo (the original `.git` was empty/broken). "Undo everything" = ask
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
   lines of dead CSS, unused images. Project went 122 → ~20 tracked files.
 
-All phases above were verified live (build green + browser-preview screenshots) before committing.
+All phases above were verified live (build, lint, tests, browser DOM checks, console checks, and
+390×844 browser-preview screenshots) before committing.
 
 ---
 
 ## 8. What is left (the plan ahead)
 
-**NEXT — Consistency polish pass** (agreed before hosting). The user noticed the home hub has more
-accent "glow" than the calmer workout screen. Do a thorough screen-by-screen audit (home, workout,
-history, settings, dialogs, edit mode) and unify: glow/shadow depth, accent usage (one primary
-"pop" per screen), surfaces, spacing rhythm, corner radii, typography, button shapes, icon weights
-— so it feels designed by one UI designer. **Do the audit and show the findings + fix before
-silently changing things.**
-
-**Then — Phase 4: Hosting.** Make it a phone-usable website hosted on **GitHub Pages** with a
+**NEXT — Phase 4: Hosting.** Make it a phone-usable website hosted on **GitHub Pages** with a
 shareable link (user has a GitHub account). Needs the Vite `base` set correctly for the repo path
 and a deploy (GitHub Actions or `gh-pages`). The repo currently has **no remote** — set one up.
 
@@ -221,6 +233,7 @@ and a deploy (GitHub Actions or `gh-pages`). The repo currently has **no remote*
 ```sh
 npm install        # if node_modules missing
 npm run dev        # Vite dev server on http://localhost:5173
+npm test           # Node-native domain + backup-validation tests
 npm run build      # tsc -b && vite build  — MUST pass before committing
 npm run lint       # oxlint
 ```
