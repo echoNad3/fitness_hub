@@ -5,7 +5,13 @@ import './workout.css'
 import './home.css'
 import './chrome.css'
 import './edit.css'
-import { supabase } from './cloud'
+import { loadCloudState, saveCloudState, supabase } from './cloud'
+import {
+  chooseSyncDirection,
+  hasMeaningfulLocalData,
+  initialLocalTimestamp,
+  parseCloudTimestamp,
+} from './cloudSync'
 import { clampRestSeconds, moveItem, nextPendingId, selectActiveVariantId, toggleResult } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 
@@ -134,8 +140,17 @@ type AuthDialog = {
   busy: boolean
 }
 
+type CloudUser = {
+  id: string
+  email: string
+}
+
+type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error'
+
 const STORAGE_KEY = 'fitness-hub-v1'
 const SCREEN_KEY = 'fitness-hub-v1-screen'
+const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
+const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
 const CATEGORIES: Category[] = ['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS']
 
@@ -475,7 +490,9 @@ function App() {
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
   const [exerciseDialog, setExerciseDialog] = useState<ExerciseDialog | null>(null)
   const [editMode, setEditMode] = useState(false)
-  const [cloudEmail, setCloudEmail] = useState<string | null>(null)
+  const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [syncError, setSyncError] = useState('')
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
   const [restRunning, setRestRunning] = useState(false)
@@ -483,31 +500,190 @@ function App() {
   const [vibrationMessage, setVibrationMessage] = useState('')
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
+  const syncTimer = useRef<number | null>(null)
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const cloudUserRef = useRef(cloudUser)
+  cloudUserRef.current = cloudUser
+  const lastPersistedDataRef = useRef(data)
+  const applyingRemoteTimestampRef = useRef<number | null>(null)
+  const syncReadyRef = useRef(false)
+  const queueCloudPushRef = useRef<() => void>(() => undefined)
+  const [initialSyncTimestamp] = useState(() => {
+    const initialData = buildInitialData()
+    return initialLocalTimestamp(
+      localStorage.getItem(LOCAL_UPDATED_KEY),
+      hasMeaningfulLocalData(data, initialData),
+      Date.now(),
+    )
+  })
+  const localUpdatedAtRef = useRef(initialSyncTimestamp)
+
+  queueCloudPushRef.current = () => {
+    const user = cloudUserRef.current
+    if (!supabase || !user || !syncReadyRef.current) {
+      return
+    }
+
+    if (syncTimer.current !== null) {
+      window.clearTimeout(syncTimer.current)
+    }
+
+    setSyncStatus('syncing')
+    setSyncError('')
+    syncTimer.current = window.setTimeout(async () => {
+      const activeUser = cloudUserRef.current
+      if (!activeUser || activeUser.id !== user.id || !syncReadyRef.current) {
+        return
+      }
+
+      const payload = dataRef.current
+      const pushedAt = localUpdatedAtRef.current
+      try {
+        await saveCloudState(user.id, payload, pushedAt)
+        if (cloudUserRef.current?.id !== user.id) {
+          return
+        }
+
+        if (localUpdatedAtRef.current > pushedAt) {
+          queueCloudPushRef.current()
+        } else {
+          setSyncStatus('synced')
+        }
+      } catch (error) {
+        if (cloudUserRef.current?.id === user.id) {
+          setSyncStatus('error')
+          setSyncError(errorMessage(error))
+        }
+      }
+    }, SYNC_DEBOUNCE_MS)
+  }
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+
+    if (lastPersistedDataRef.current === data) {
+      return
+    }
+    lastPersistedDataRef.current = data
+
+    const remoteTimestamp = applyingRemoteTimestampRef.current
+    if (remoteTimestamp !== null) {
+      applyingRemoteTimestampRef.current = null
+      localUpdatedAtRef.current = remoteTimestamp
+      localStorage.setItem(LOCAL_UPDATED_KEY, String(remoteTimestamp))
+      return
+    }
+
+    const updatedAt = Date.now()
+    localUpdatedAtRef.current = updatedAt
+    localStorage.setItem(LOCAL_UPDATED_KEY, String(updatedAt))
+    queueCloudPushRef.current()
   }, [data])
+
+  useEffect(() => {
+    if (localUpdatedAtRef.current > 0 && !localStorage.getItem(LOCAL_UPDATED_KEY)) {
+      localStorage.setItem(LOCAL_UPDATED_KEY, String(localUpdatedAtRef.current))
+    }
+  }, [])
 
   useEffect(() => {
     if (!supabase) {
       return
     }
     let active = true
+    const updateCloudUser = (user: { id: string; email?: string | null } | undefined) => {
+      setCloudUser(user ? { id: user.id, email: user.email ?? 'Unknown email' } : null)
+    }
+
     supabase.auth.getSession().then(({ data: sessionData }) => {
       if (active) {
-        setCloudEmail(sessionData.session?.user.email ?? null)
+        updateCloudUser(sessionData.session?.user)
       }
     })
     const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCloudEmail(session?.user.email ?? null)
+      updateCloudUser(session?.user)
     })
     return () => {
       active = false
       authSub.subscription.unsubscribe()
     }
   }, [])
+
+  const cloudUserId = cloudUser?.id
+  useEffect(() => {
+    syncReadyRef.current = false
+    if (syncTimer.current !== null) {
+      window.clearTimeout(syncTimer.current)
+      syncTimer.current = null
+    }
+
+    if (!cloudUserId || !supabase) {
+      setSyncStatus('idle')
+      setSyncError('')
+      return
+    }
+
+    let cancelled = false
+    setSyncStatus('checking')
+    setSyncError('')
+
+    const syncOnSignIn = async () => {
+      try {
+        const remote = await loadCloudState(cloudUserId)
+        if (cancelled) {
+          return
+        }
+
+        const remoteUpdatedAt = remote ? parseCloudTimestamp(remote.updatedAt) : null
+        if (remote && remoteUpdatedAt === null) {
+          throw new Error('Cloud data has an invalid timestamp.')
+        }
+
+        const localUpdatedAt = localUpdatedAtRef.current
+        if (remote && remoteUpdatedAt !== null && chooseSyncDirection(remoteUpdatedAt, localUpdatedAt) === 'pull') {
+          if (!isValidBackup(remote.data)) {
+            throw new Error('Cloud data is invalid. Your local data was kept safe.')
+          }
+
+          applyingRemoteTimestampRef.current = remoteUpdatedAt
+          localUpdatedAtRef.current = remoteUpdatedAt
+          localStorage.setItem(LOCAL_UPDATED_KEY, String(remoteUpdatedAt))
+          syncReadyRef.current = true
+          setData(normalizeData(remote.data))
+          setSyncStatus('synced')
+          return
+        }
+
+        const pushedAt = Math.max(localUpdatedAt, Date.now())
+        localUpdatedAtRef.current = pushedAt
+        localStorage.setItem(LOCAL_UPDATED_KEY, String(pushedAt))
+        await saveCloudState(cloudUserId, dataRef.current, pushedAt)
+        if (cancelled) {
+          return
+        }
+
+        syncReadyRef.current = true
+        if (localUpdatedAtRef.current > pushedAt) {
+          queueCloudPushRef.current()
+        } else {
+          setSyncStatus('synced')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSyncStatus('error')
+          setSyncError(errorMessage(error))
+        }
+      }
+    }
+
+    void syncOnSignIn()
+    return () => {
+      cancelled = true
+    }
+  }, [cloudUserId])
 
   useEffect(() => {
     localStorage.setItem(SCREEN_KEY, JSON.stringify(screen))
@@ -594,6 +770,9 @@ function App() {
     return () => {
       if (pulseTimer.current !== null) {
         window.clearTimeout(pulseTimer.current)
+      }
+      if (syncTimer.current !== null) {
+        window.clearTimeout(syncTimer.current)
       }
     }
   }, [])
@@ -780,11 +959,15 @@ function App() {
     <Page title="Settings" onBack={() => goBack({ name: 'main' })}>
       <div className="set-list">
         {supabase &&
-          (cloudEmail ? (
+          (cloudUser ? (
             <div className="set-row set-cloud">
               <span className="set-main">
                 <strong>Cloud sync</strong>
-                <small>Signed in as {cloudEmail}</small>
+                <small>Signed in as {cloudUser.email}</small>
+                <span className={`sync-status ${syncStatus}`} aria-live="polite">
+                  <i aria-hidden="true" />
+                  {syncStatusLabel(syncStatus, syncError)}
+                </span>
               </span>
               <button className="set-pill" type="button" onClick={signOut}>
                 Sign out
@@ -2261,6 +2444,26 @@ function categoryLabel(category: Category) {
   }
 
   return labels[category]
+}
+
+function syncStatusLabel(status: SyncStatus, error: string) {
+  if (status === 'checking') {
+    return 'Checking cloud…'
+  }
+  if (status === 'syncing') {
+    return 'Syncing…'
+  }
+  if (status === 'synced') {
+    return 'Synced'
+  }
+  if (status === 'error') {
+    return `Sync paused: ${error}`
+  }
+  return 'Offline'
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error && error.message ? error.message : 'Could not reach the cloud.'
 }
 
 function createId() {

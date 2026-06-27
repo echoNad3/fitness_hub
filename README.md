@@ -2,7 +2,7 @@
 
 A personal, phone-first Workout A / Workout B companion built with React, TypeScript, and Vite. It tracks exercise setup, targets, weights, previous-result guidance, session results, workout history, and a configurable rest timer.
 
-Workout templates can be edited in the app. All data autosaves to browser `localStorage`, with JSON export and import for backups. There is currently no backend, account, or cross-device sync.
+Workout templates can be edited in the app. All data autosaves to browser `localStorage`, with JSON export and import for backups. Optional Supabase email/password sign-in adds offline-first cross-device sync; the app remains fully usable without an account.
 
 ## Development
 

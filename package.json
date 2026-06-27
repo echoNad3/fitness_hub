@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts",
+    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts tests/cloudSync.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
