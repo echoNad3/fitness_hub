@@ -13,9 +13,15 @@
   --success: #51cf7b;
   --danger: #f2767d;
   --warning: #f4cb59;
+  --focus: #d9e0ef;
+  --accent-soft: rgba(96, 116, 243, 0.16);
+  --accent-line: rgba(96, 116, 243, 0.42);
+  --page-glow: rgba(96, 116, 243, 0.08);
   --radius: 16px;
-  --shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
-  --soft-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+  --radius-card: 14px;
+  --radius-control: 11px;
+  --shadow: 0 16px 32px rgba(0, 0, 0, 0.26);
+  --soft-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 }
 
 button:focus:not(:focus-visible) {
@@ -103,7 +109,7 @@ h2 {
 }
 
 .dialog button:focus-visible {
-  outline: 2px solid #cbd5e1;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -120,11 +126,11 @@ h2 {
 
 .status-row button,
 .dialog-actions button {
-  min-height: 43px;
+  min-height: 44px;
   color: var(--text);
   background: rgba(73, 75, 89, 0.72);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
   font-size: 0.88rem;
   font-weight: 800;
@@ -155,7 +161,7 @@ h2 {
   color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   font-size: 1.1rem;
   font-weight: 800;
 }

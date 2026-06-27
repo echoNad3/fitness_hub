@@ -5,6 +5,8 @@ import './workout.css'
 import './home.css'
 import './chrome.css'
 import './edit.css'
+import { clampRestSeconds, moveItem, nextPendingId, selectActiveVariantId, toggleResult } from './domain'
+import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -110,6 +112,7 @@ type PreviousDialog = {
 
 type ExerciseDialog = {
   workoutId: WorkoutId
+  sessionId?: string
   groupId?: string
   variantId?: string
   name: string
@@ -462,6 +465,8 @@ function App() {
   const [vibrationMessage, setVibrationMessage] = useState('')
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
+  const scrollPositionsRef = useRef(data.scrollBySession)
+  scrollPositionsRef.current = data.scrollBySession
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -510,14 +515,14 @@ function App() {
     }, 1000)
 
     return () => window.clearInterval(intervalId)
-  }, [restRunning])
+  }, [data.restSeconds, restRunning])
 
   useEffect(() => {
     if (screen.name !== 'session') {
       return
     }
 
-    const savedY = data.scrollBySession[screen.sessionId] ?? 0
+    const savedY = scrollPositionsRef.current[screen.sessionId] ?? 0
     const restoreId = window.setTimeout(() => window.scrollTo({ top: savedY }), 0)
 
     const saveScroll = () => {
@@ -778,10 +783,10 @@ function App() {
 
         <section className="ws-list" aria-label={`${workout.name} exercises`}>
           {editMode
-            ? workout.groups.map((group, index) => renderEditRow(workout, group, index))
+            ? workout.groups.map((group, index) => renderEditRow(workout, session, group, index))
             : workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))}
           {editMode && (
-            <button className="ws-add" type="button" onClick={() => openExerciseEditor(workout.id)}>
+            <button className="ws-add" type="button" onClick={() => openExerciseEditor(workout.id, session.id)}>
               <Icon name="plus" size={18} />
               Add exercise
             </button>
@@ -793,8 +798,13 @@ function App() {
     )
   }
 
-  const renderEditRow = (workout: WorkoutTemplate, group: ExerciseGroup, index: number) => {
-    const variant = getVariant(group, group.activeVariantId)
+  const renderEditRow = (workout: WorkoutTemplate, session: WorkoutSession, group: ExerciseGroup, index: number) => {
+    const activeVariantId = selectActiveVariantId(
+      session.groupEntries[group.id]?.activeVariantId,
+      data.variantPrefs[group.id],
+      group.activeVariantId,
+    )
+    const variant = getVariant(group, activeVariantId)
     const muscle = muscleColor(variant.category)
     const isFirst = index === 0
     const isLast = index === workout.groups.length - 1
@@ -802,7 +812,7 @@ function App() {
     return (
       <div className="ws-edit-row" style={{ borderColor: `${muscle}52` }} key={group.id}>
         <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
-        <button className="ws-edit-main" type="button" onClick={() => openExerciseEditor(workout.id, group)}>
+        <button className="ws-edit-main" type="button" onClick={() => openExerciseEditor(workout.id, session.id, group, activeVariantId)}>
           <strong>{variant.name}</strong>
           <small>
             {categoryLabel(variant.category)} · {variant.sets}×{variant.reps}
@@ -815,7 +825,13 @@ function App() {
           <button type="button" aria-label="Move down" disabled={isLast} onClick={() => moveGroup(workout.id, group.id, 1)}>
             <Icon name="down" size={18} />
           </button>
-          <button className="ws-edit-del" type="button" aria-label="Remove exercise" onClick={() => removeGroup(workout.id, group.id)}>
+          <button
+            className="ws-edit-del"
+            type="button"
+            aria-label="Remove exercise"
+            disabled={workout.groups.length === 1}
+            onClick={() => removeGroup(workout.id, group.id)}
+          >
             <Icon name="trash" size={18} />
           </button>
         </div>
@@ -1059,20 +1075,21 @@ function App() {
         if (template.id !== workoutId) {
           return template
         }
-        const index = template.groups.findIndex((group) => group.id === groupId)
-        const target = index + direction
-        if (index < 0 || target < 0 || target >= template.groups.length) {
+        const groups = moveItem(template.groups, groupId, direction)
+        if (groups === template.groups) {
           return template
         }
-        const groups = [...template.groups]
-        const [moved] = groups.splice(index, 1)
-        groups.splice(target, 0, moved)
         return { ...template, groups }
       }),
     }))
   }
 
   const removeGroup = (workoutId: WorkoutId, groupId: string) => {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    if (!workout || workout.groups.length <= 1) {
+      return
+    }
+
     if (!window.confirm('Remove this exercise from the workout?')) {
       return
     }
@@ -1097,11 +1114,15 @@ function App() {
     }))
   }
 
-  const openExerciseEditor = (workoutId: WorkoutId, group?: ExerciseGroup) => {
+  const openExerciseEditor = (workoutId: WorkoutId, sessionId?: string, group?: ExerciseGroup, activeVariantId?: string) => {
     if (group) {
-      const variant = getVariant(group, group.activeVariantId)
+      const variant = getVariant(
+        group,
+        selectActiveVariantId(activeVariantId, data.variantPrefs[group.id], group.activeVariantId),
+      )
       setExerciseDialog({
         workoutId,
+        sessionId,
         groupId: group.id,
         variantId: variant.id,
         name: variant.name,
@@ -1113,7 +1134,7 @@ function App() {
         perHand: variant.perHand,
       })
     } else {
-      setExerciseDialog({ workoutId, name: '', category: 'CHEST', sets: '3', reps: '10', setup: '', weight: '0', perHand: false })
+      setExerciseDialog({ workoutId, sessionId, name: '', category: 'CHEST', sets: '3', reps: '10', setup: '', weight: '0', perHand: false })
     }
   }
 
@@ -1141,6 +1162,15 @@ function App() {
         weight: roundWeight(weight),
         perHand: exerciseDialog.perHand,
       })
+      if (exerciseDialog.sessionId) {
+        updateExerciseEntry(exerciseDialog.sessionId, exerciseDialog.groupId, exerciseDialog.variantId, (entry) => ({
+          ...entry,
+          setup,
+          sets,
+          reps,
+          weight: roundWeight(weight),
+        }))
+      }
     } else {
       addExercise(exerciseDialog.workoutId, {
         id: createId(),
@@ -1161,7 +1191,7 @@ function App() {
   const changeRest = (delta: number) => {
     setData((current) => ({
       ...current,
-      restSeconds: Math.min(600, Math.max(15, current.restSeconds + delta)),
+      restSeconds: clampRestSeconds(current.restSeconds, delta),
     }))
   }
 
@@ -1207,7 +1237,7 @@ function App() {
         }
 
         const entry = getEntry(session, groupId, variantId)
-        const nextResult = entry.result === status ? undefined : status
+        const nextResult = toggleResult(entry.result, status)
         updatedSession = updateSessionEntry(session, groupId, variantId, {
           ...entry,
           result: nextResult,
@@ -1423,7 +1453,10 @@ function App() {
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const parsed = JSON.parse(String(reader.result))
+        const parsed: unknown = JSON.parse(String(reader.result))
+        if (!isValidBackup(parsed)) {
+          throw new Error('Invalid Fitness Hub backup')
+        }
         setData(normalizeData(parsed))
         window.alert('Data imported.')
       } catch {
@@ -1774,14 +1807,14 @@ function loadScreen(): Screen {
 
 function normalizeData(value: unknown): AppData {
   const base = buildInitialData()
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return base
   }
 
   const partial = value as Partial<AppData>
 
   return {
-    sessions: Array.isArray(partial.sessions) ? partial.sessions : [],
+    sessions: isValidSessions(partial.sessions) ? (partial.sessions as WorkoutSession[]) : [],
     variantPrefs: { ...base.variantPrefs, ...(partial.variantPrefs ?? {}) },
     templates: normalizeTemplates(value),
     baselineResults: { ...base.baselineResults, ...(partial.baselineResults ?? {}) },
@@ -1794,7 +1827,7 @@ function normalizeData(value: unknown): AppData {
 
 function normalizeTemplates(value: unknown): WorkoutTemplate[] {
   const legacy = value as { templates?: unknown; variantOverrides?: Record<string, Partial<ExerciseVariant>> }
-  if (Array.isArray(legacy.templates) && legacy.templates.length > 0) {
+  if (isValidTemplates(legacy.templates)) {
     return legacy.templates as WorkoutTemplate[]
   }
 
@@ -2020,11 +2053,14 @@ function completionStatus(doneCount: number, totalCount: number) {
 
 function getNextPendingGroupId(session: WorkoutSession, currentGroupId: string) {
   const workout = getWorkout(session.workoutId)
-  const currentIndex = workout.groups.findIndex((group) => group.id === currentGroupId)
-  return workout.groups.slice(currentIndex + 1).find((group) => {
+  return nextPendingId(workout.groups.map((group) => group.id), currentGroupId, (groupId) => {
+    const group = workout.groups.find((candidate) => candidate.id === groupId)
+    if (!group) {
+      return true
+    }
     const groupEntry = session.groupEntries[group.id]
-    return !groupEntry?.entries[groupEntry.activeVariantId]?.result
-  })?.id
+    return Boolean(groupEntry?.entries[groupEntry.activeVariantId]?.result)
+  })
 }
 
 function guidanceSentence(previous: PreviousResult) {

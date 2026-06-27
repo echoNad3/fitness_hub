@@ -12,7 +12,7 @@
   padding: 9px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: var(--radius-card);
 }
 
 .ws-edit-main {
@@ -44,8 +44,8 @@
 }
 
 .ws-edit-actions button {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -71,7 +71,7 @@
   color: var(--accent);
   background: transparent;
   border: 1px dashed rgba(96, 116, 243, 0.45);
-  border-radius: 13px;
+  border-radius: var(--radius-card);
   font-size: 0.9rem;
   font-weight: 700;
 }
@@ -133,9 +133,9 @@
 }
 
 .ex-toggle.on {
-  color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
 }
 
 .ws-edit-main,
@@ -158,7 +158,7 @@
 .ws-edit-main:focus-visible,
 .ws-edit-actions button:focus-visible,
 .ws-add:focus-visible {
-  outline: 2px solid #cbd5e1;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 

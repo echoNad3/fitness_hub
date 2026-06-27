@@ -11,7 +11,7 @@
   align-content: start;
   gap: 10px;
   background:
-    radial-gradient(circle at 78% -12%, rgba(96, 116, 243, 0.1), transparent 30%),
+    radial-gradient(circle at 82% -8%, var(--page-glow), transparent 30%),
     var(--bg);
 }
 
@@ -22,17 +22,17 @@
   margin: 0 -12px 6px;
   padding: 10px 12px;
   display: grid;
-  grid-template-columns: 38px 1fr 38px;
+  grid-template-columns: 42px 1fr 42px;
   align-items: center;
   gap: 8px;
-  background: rgba(34, 37, 46, 0.92);
+  background: rgba(37, 39, 48, 0.94);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(12px);
 }
 
 .ws-back {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   color: var(--text);
@@ -103,7 +103,7 @@
   text-align: left;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: var(--radius-card);
 }
 
 .ws-row.is-done {
@@ -165,8 +165,8 @@
   color: var(--text);
   background: var(--surface-2);
   border: 1.5px solid var(--line);
-  border-radius: 15px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius);
+  box-shadow: var(--soft-shadow);
 }
 
 .ws-card-head {
@@ -210,7 +210,7 @@
   text-align: left;
   background: rgba(73, 75, 89, 0.4);
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius-control);
   font-size: 0.84rem;
   font-weight: 650;
   line-height: 1.3;
@@ -251,7 +251,7 @@
   text-align: left;
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius-control);
 }
 
 .ws-fact span {
@@ -381,7 +381,7 @@
   background: var(--raised);
   border: 1px solid var(--line);
   border-radius: 15px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--soft-shadow);
   font-size: 0.9rem;
   font-weight: 700;
 }
@@ -397,7 +397,7 @@
   background: var(--raised);
   border: 1px solid var(--line);
   border-radius: 15px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--soft-shadow);
 }
 
 .ws-dock-left {
@@ -480,7 +480,7 @@
 .ws-swap:focus-visible,
 .ws-dock-start:focus-visible,
 .ws-dock-cancel:focus-visible {
-  outline: 2px solid #cbd5e1;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
