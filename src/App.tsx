@@ -22,8 +22,6 @@ type ExerciseVariant = {
   lastResult: PreviousResult
 }
 
-type VariantOverride = Partial<Pick<ExerciseVariant, 'name' | 'setup' | 'sets' | 'reps'>>
-
 type ExerciseGroup = {
   id: string
   activeVariantId: string
@@ -59,7 +57,7 @@ type WorkoutSession = {
 type AppData = {
   sessions: WorkoutSession[]
   variantPrefs: Record<string, string>
-  variantOverrides: Record<string, VariantOverride>
+  templates: WorkoutTemplate[]
   baselineResults: Record<string, PreviousResult>
   expandedBySession: Record<string, string>
   scrollBySession: Record<string, number>
@@ -112,7 +110,7 @@ const STORAGE_KEY = 'fitness-hub-v1'
 const SCREEN_KEY = 'fitness-hub-v1-screen'
 const REST_SECONDS = 10
 
-const workouts: WorkoutTemplate[] = [
+const defaultWorkouts: WorkoutTemplate[] = [
   {
     id: 'workout-a',
     name: 'Workout A',
@@ -413,6 +411,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
 
 function App() {
   const [data, setData] = useState<AppData>(loadData)
+  templatesRef = data.templates
   const [screen, setScreenState] = useState<Screen>(loadScreen)
   const [, setScreenStack] = useState<Screen[]>([])
   const [weightDialog, setWeightDialog] = useState<WeightDialog | null>(null)
@@ -734,7 +733,7 @@ function App() {
     index: number,
   ) => {
     const sessionGroup = ensureSessionGroup(session, group, data)
-    const variant = getVariant(group, sessionGroup.activeVariantId, data)
+    const variant = getVariant(group, sessionGroup.activeVariantId)
     const entry = sessionGroup.entries[variant.id] ?? { weight: variant.weight }
     const displaySetup = getExerciseSetup(entry, variant)
     const displaySets = getExerciseSets(entry, variant)
@@ -876,7 +875,7 @@ function App() {
 
         {group.variants.length > 1 && (
           <button className="ws-swap" type="button" onClick={() => swapVariant(session.id, group)}>
-            Swap to {applyVariantOverride(data, getNextVariant(group, variant.id)).name}
+            Swap to {getNextVariant(group, variant.id).name}
           </button>
         )}
       </article>
@@ -1074,16 +1073,16 @@ function App() {
     }))
   }
 
-  const updateVariantOverride = (variantId: string, override: VariantOverride) => {
+  const updateTemplateVariant = (variantId: string, patch: Partial<ExerciseVariant>) => {
     setData((current) => ({
       ...current,
-      variantOverrides: {
-        ...current.variantOverrides,
-        [variantId]: {
-          ...(current.variantOverrides[variantId] ?? {}),
-          ...override,
-        },
-      },
+      templates: current.templates.map((template) => ({
+        ...template,
+        groups: template.groups.map((group) => ({
+          ...group,
+          variants: group.variants.map((variant) => (variant.id === variantId ? { ...variant, ...patch } : variant)),
+        })),
+      })),
     }))
   }
 
@@ -1114,7 +1113,7 @@ function App() {
       return
     }
 
-    updateVariantOverride(nameDialog.variantId, { name })
+    updateTemplateVariant(nameDialog.variantId, { name })
     setNameDialog(null)
   }
 
@@ -1124,7 +1123,7 @@ function App() {
     }
 
     const setup = setupDialog.value.trim()
-    updateVariantOverride(setupDialog.variantId, { setup })
+    updateTemplateVariant(setupDialog.variantId, { setup })
     updateExerciseEntry(setupDialog.sessionId, setupDialog.groupId, setupDialog.variantId, (entry) => ({
       ...entry,
       setup,
@@ -1143,7 +1142,7 @@ function App() {
       return
     }
 
-    updateVariantOverride(targetDialog.variantId, { sets: parsedSets, reps: parsedReps })
+    updateTemplateVariant(targetDialog.variantId, { sets: parsedSets, reps: parsedReps })
     updateExerciseEntry(targetDialog.sessionId, targetDialog.groupId, targetDialog.variantId, (entry) => ({
       ...entry,
       sets: parsedSets,
@@ -1412,7 +1411,7 @@ function buildInitialData(): AppData {
   const variantPrefs: Record<string, string> = {}
   const baselineResults: Record<string, PreviousResult> = {}
 
-  workouts.forEach((workout) => {
+  defaultWorkouts.forEach((workout) => {
     workout.groups.forEach((group) => {
       variantPrefs[group.id] = group.activeVariantId
       group.variants.forEach((variant) => {
@@ -1424,7 +1423,7 @@ function buildInitialData(): AppData {
   return {
     sessions: [],
     variantPrefs,
-    variantOverrides: {},
+    templates: cloneWorkouts(),
     baselineResults,
     expandedBySession: {},
     scrollBySession: {},
@@ -1469,12 +1468,36 @@ function normalizeData(value: unknown): AppData {
   return {
     sessions: Array.isArray(partial.sessions) ? partial.sessions : [],
     variantPrefs: { ...base.variantPrefs, ...(partial.variantPrefs ?? {}) },
-    variantOverrides: partial.variantOverrides ?? {},
+    templates: normalizeTemplates(value),
     baselineResults: { ...base.baselineResults, ...(partial.baselineResults ?? {}) },
     expandedBySession: partial.expandedBySession ?? {},
     scrollBySession: partial.scrollBySession ?? {},
     currentSessionByWorkout: partial.currentSessionByWorkout ?? {},
   }
+}
+
+function normalizeTemplates(value: unknown): WorkoutTemplate[] {
+  const legacy = value as { templates?: unknown; variantOverrides?: Record<string, Partial<ExerciseVariant>> }
+  if (Array.isArray(legacy.templates) && legacy.templates.length > 0) {
+    return legacy.templates as WorkoutTemplate[]
+  }
+
+  const templates = cloneWorkouts()
+  const overrides = legacy.variantOverrides
+  if (overrides && typeof overrides === 'object') {
+    templates.forEach((template) =>
+      template.groups.forEach((group) =>
+        group.variants.forEach((variant) => {
+          const override = overrides[variant.id]
+          if (override) {
+            Object.assign(variant, override)
+          }
+        }),
+      ),
+    )
+  }
+
+  return templates
 }
 
 function normalizeScreen(value: unknown): Screen {
@@ -1525,28 +1548,26 @@ function createSession(workoutId: WorkoutId, data: AppData, sessionId: string): 
 }
 
 function createSessionEntry(data: AppData, workoutId: WorkoutId, variant: ExerciseVariant): SessionExercise {
-  const savedVariant = applyVariantOverride(data, variant)
-
   return {
-    weight: getLatestWeight(data, workoutId, savedVariant.id) ?? savedVariant.weight,
-    setup: savedVariant.setup,
-    sets: savedVariant.sets,
-    reps: savedVariant.reps,
+    weight: getLatestWeight(data, workoutId, variant.id) ?? variant.weight,
+    setup: variant.setup,
+    sets: variant.sets,
+    reps: variant.reps,
   }
 }
 
+let templatesRef: WorkoutTemplate[] = defaultWorkouts
+
+function cloneWorkouts(): WorkoutTemplate[] {
+  return structuredClone(defaultWorkouts)
+}
+
 function getWorkout(workoutId: WorkoutId) {
-  return workouts.find((workout) => workout.id === workoutId) ?? workouts[0]
+  return templatesRef.find((workout) => workout.id === workoutId) ?? templatesRef[0]
 }
 
-function getVariant(group: ExerciseGroup, variantId: string, data?: AppData) {
-  const variant = group.variants.find((candidate) => candidate.id === variantId) ?? group.variants[0]
-  return data ? applyVariantOverride(data, variant) : variant
-}
-
-function applyVariantOverride(data: AppData, variant: ExerciseVariant): ExerciseVariant {
-  const override = data.variantOverrides[variant.id]
-  return override ? { ...variant, ...override } : variant
+function getVariant(group: ExerciseGroup, variantId: string) {
+  return group.variants.find((candidate) => candidate.id === variantId) ?? group.variants[0]
 }
 
 function getNextVariant(group: ExerciseGroup, currentVariantId: string) {
