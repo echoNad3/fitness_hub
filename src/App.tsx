@@ -63,6 +63,7 @@ type AppData = {
   expandedBySession: Record<string, string>
   scrollBySession: Record<string, number>
   currentSessionByWorkout: Partial<Record<WorkoutId, string>>
+  restSeconds: number
 }
 
 type Screen =
@@ -122,7 +123,7 @@ type ExerciseDialog = {
 
 const STORAGE_KEY = 'fitness-hub-v1'
 const SCREEN_KEY = 'fitness-hub-v1-screen'
-const REST_SECONDS = 10
+const DEFAULT_REST_SECONDS = 90
 const CATEGORIES: Category[] = ['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS']
 
 const defaultWorkouts: WorkoutTemplate[] = [
@@ -455,7 +456,7 @@ function App() {
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
   const [exerciseDialog, setExerciseDialog] = useState<ExerciseDialog | null>(null)
   const [editMode, setEditMode] = useState(false)
-  const [restSeconds, setRestSeconds] = useState(REST_SECONDS)
+  const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
   const [restRunning, setRestRunning] = useState(false)
   const [restPulse, setRestPulse] = useState(false)
   const [vibrationMessage, setVibrationMessage] = useState('')
@@ -501,7 +502,7 @@ function App() {
           window.clearInterval(intervalId)
           setRestRunning(false)
           triggerRestDone()
-          return REST_SECONDS
+          return data.restSeconds
         }
 
         return seconds - 1
@@ -715,6 +716,22 @@ function App() {
             <small>{vibrationMessage || 'Buzz the phone once'}</small>
           </span>
         </button>
+
+        <div className="set-row set-rest">
+          <span className="set-main">
+            <strong>Rest length</strong>
+            <small>Countdown after each set</small>
+          </span>
+          <div className="set-stepper">
+            <button type="button" aria-label="Less rest" onClick={() => changeRest(-15)}>
+              <Icon name="minus" size={18} />
+            </button>
+            <strong>{data.restSeconds}s</strong>
+            <button type="button" aria-label="More rest" onClick={() => changeRest(15)}>
+              <Icon name="plus" size={18} />
+            </button>
+          </div>
+        </div>
 
         <button className="set-row danger" type="button" onClick={resetData}>
           <span className="set-main">
@@ -979,7 +996,7 @@ function App() {
             type="button"
             onClick={() => {
               setRestRunning(false)
-              setRestSeconds(REST_SECONDS)
+              setRestSeconds(data.restSeconds)
             }}
           >
             Cancel
@@ -990,7 +1007,7 @@ function App() {
           className="ws-dock-start"
           type="button"
           onClick={() => {
-            setRestSeconds(REST_SECONDS)
+            setRestSeconds(data.restSeconds)
             setRestRunning(true)
           }}
         >
@@ -998,7 +1015,7 @@ function App() {
             <Icon name={restPulse ? 'check' : 'clock'} size={18} />
             {restPulse ? 'Rest done' : 'Rest timer'}
           </span>
-          <strong>{restPulse ? '' : `Start · ${REST_SECONDS}s`}</strong>
+          <strong>{restPulse ? '' : `Start · ${data.restSeconds}s`}</strong>
         </button>
       )}
     </section>
@@ -1139,6 +1156,13 @@ function App() {
     }
 
     setExerciseDialog(null)
+  }
+
+  const changeRest = (delta: number) => {
+    setData((current) => ({
+      ...current,
+      restSeconds: Math.min(600, Math.max(15, current.restSeconds + delta)),
+    }))
   }
 
   const deleteSession = (sessionId: string) => {
@@ -1718,6 +1742,7 @@ function buildInitialData(): AppData {
     expandedBySession: {},
     scrollBySession: {},
     currentSessionByWorkout: {},
+    restSeconds: DEFAULT_REST_SECONDS,
   }
 }
 
@@ -1763,6 +1788,7 @@ function normalizeData(value: unknown): AppData {
     expandedBySession: partial.expandedBySession ?? {},
     scrollBySession: partial.scrollBySession ?? {},
     currentSessionByWorkout: partial.currentSessionByWorkout ?? {},
+    restSeconds: typeof partial.restSeconds === 'number' && partial.restSeconds > 0 ? partial.restSeconds : DEFAULT_REST_SECONDS,
   }
 }
 
