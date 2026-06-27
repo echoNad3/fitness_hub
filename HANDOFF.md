@@ -231,8 +231,9 @@ Git history (newest first); each commit is a clean restore point:
   fresh devices do not overwrite an existing cloud row with defaults.
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
-and 390×844 browser-preview screenshots). Cloud sync step 3 passes build, lint, and unit tests;
-its real-account/two-device browser check is the next task.
+and 390×844 browser-preview screenshots). Cloud sync step 3 passes build, lint, and unit tests.
+Its authenticated upload path was verified locally with a reversible 90s → 105s → 90s change:
+both writes reached `Synced` with no console errors. Cross-device pull verification remains.
 
 ---
 
@@ -271,9 +272,10 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
      `@supabase/supabase-js` added; `src/cloud.ts` exposes the client; Settings has an optional
      email/password auth UI (sign-in/sign-up dialog) — verified that sign-in round-trips to Supabase
      ("Invalid login credentials" returned for a bogus account). Step 3 now implements pull-newer,
-     debounced push, validation, migration safety, and visible sync status. **NEXT = live signed-in
-     two-device verification, then Step 4 polish**: retry UX for paused sync, clearer sign-out/error
-     handling, and any conflict edge cases found during the live test.
+     debounced push, validation, migration safety, and visible sync status. Real-account upload was
+     verified locally on 2026-06-27. **NEXT = deploy this build, verify pull on a second device,
+     then Step 4 polish**: retry UX for paused sync, clearer sign-out/error handling, and any
+     conflict edge cases found during the live test.
    - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
      login; otherwise sign-up requires email confirmation before the first sign-in works.
 
