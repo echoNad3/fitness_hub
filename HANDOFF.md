@@ -60,7 +60,8 @@ generic SaaS-dashboard look, no childish/gamer styling.**
 - Weight changed **manually** via −/+ (1.25 steps) or manual edit. App carries the weight forward
   from the last session.
 - **Rest timer** (default **90s**, was 10s for testing — now a setting).
-- **Everything autosaves** to **localStorage** (no backend yet).
+- **Everything autosaves** to **localStorage** first. Optional Supabase sign-in syncs that local
+  cache across devices; the app remains fully usable without an account or network.
 - **Edit everything in-app, never return to code:** exercise name, setup, sets, reps, weight,
   muscle group, per-hand, the *previous result*, the *lineup* (add / remove / reorder / replace
   exercises), and settings (rest length). All done; see §7.
@@ -134,6 +135,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/chrome.css` | Shared page chrome + History + Settings (`.page-*`, `.hist-*`, `.set-*`). |
 | `src/edit.css` | Edit mode + exercise editor (`.ws-edit-*`, `.ws-add`, `.ex-*`). |
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
+| `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
@@ -159,7 +161,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   *current* template groups). Acceptable for a personal app; be aware.
 - `normalizeData` / `normalizeTemplates` migrate old saved data: missing `templates` are seeded
   from the default and any legacy `variantOverrides` are folded in. localStorage keys:
-  `fitness-hub-v1` (data) and `fitness-hub-v1-screen` (current screen).
+  `fitness-hub-v1` (data), `fitness-hub-v1-screen` (current screen), and
+  `fitness-hub-v1-updated-at` (last local/cloud change used for conflict resolution).
 - Imported JSON must pass `isValidBackup` before it can replace local data. Invalid or structurally
   incomplete templates/sessions are rejected rather than trusted through a TypeScript cast.
 - TypeScript is strict (`noUnusedLocals`): unused functions/locals **fail the build**. Remove dead
@@ -167,12 +170,21 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 - Screens: `main` (home hub), `global-history`, `settings`, `session`. (The old `workouts` /
   `workout-menu` / `workout-history` screens were removed in Phase 2.)
 - Icons are inline SVGs via the `Icon` component (`name` switch). No icon library.
+- Cloud sync is **offline-first and last-write-wins**: sign-in compares local and remote
+  `updated_at`; newer validated remote data is pulled, otherwise local data is upserted. Later
+  local changes debounce for 900ms before upload. Remote data must pass `isValidBackup` before it
+  can replace the local cache. Sign-out never deletes local data.
 
 ---
 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `eba9acf` Cloud sync step 3: pull, debounced push, and status
+- `1a078c2` Cloud sync step 2: Supabase client + optional sign-in in Settings
+- `c3f87a7` Plan cloud sync + login (Supabase) in the handoff
+- `47ef9f9` Update handoff: app is live on GitHub Pages
+- `021e0fd` Update handoff: GitHub repo `echoNad3/fitness_hub` created and pushed
 - `6044101` Prepare automated GitHub Pages deployment
 - `d271149` Release-candidate hardening and consistency polish
 - `940de51` Phase 3c: editable rest length setting (default 90s)
@@ -201,9 +213,9 @@ Git history (newest first); each commit is a clean restore point:
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.
-- **Automated safety net** — `npm test` runs nine Node-native unit tests covering result toggles,
+- **Automated safety net** — `npm test` runs thirteen Node-native unit tests covering result toggles,
   ordering, auto-advance, rest bounds, active-variant selection, legacy migration acceptance,
-  template validation, and session validation.
+  template/session validation, timestamp parsing, first-sync direction, and migration safety.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
@@ -213,9 +225,14 @@ Git history (newest first); each commit is a clean restore point:
   lines of dead CSS, unused images. Project went 122 → ~20 tracked files.
 - **LIVE** — deployed to GitHub Pages at **https://echonad3.github.io/fitness_hub/** via the
   Actions workflow; auto-deploys on every push to `main`.
+- **Cloud sync step 3** — on sign-in the app pulls newer validated cloud data or pushes the local
+  cache; later changes debounce-upsert the whole `AppData` row. Settings shows Checking, Syncing,
+  Synced, or a safe error state. Existing local installs receive a one-time migration timestamp;
+  fresh devices do not overwrite an existing cloud row with defaults.
 
-All phases above were verified live (build, lint, tests, browser DOM checks, console checks, and
-390×844 browser-preview screenshots) before committing.
+The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
+and 390×844 browser-preview screenshots). Cloud sync step 3 passes build, lint, and unit tests;
+its real-account/two-device browser check is the next task.
 
 ---
 
@@ -250,12 +267,13 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
    - **Config:** Supabase URL + **publishable** key (`sb_publishable_…`, the modern browser-safe
      key — note Supabase replaced the old `anon` JWT) live in `src/cloudConfig.ts` (committed;
      public-safe with RLS). Project: `jrsowjbxenkrmzzknnab.supabase.co`.
-   - **STATUS: Steps 1 & 2 DONE.** Backend is live (`app_state` table + RLS verified via REST).
+   - **STATUS: Steps 1, 2 & 3 IMPLEMENTED.** Backend is live (`app_state` table + RLS verified via REST).
      `@supabase/supabase-js` added; `src/cloud.ts` exposes the client; Settings has an optional
      email/password auth UI (sign-in/sign-up dialog) — verified that sign-in round-trips to Supabase
-     ("Invalid login credentials" returned for a bogus account). **NEXT = Step 3: the actual data
-     sync** — on login pull the remote row (last-write-wins by `updated_at`), and debounce-push the
-     whole `AppData` on every change; show a "synced" status. Then Step 4 polish.
+     ("Invalid login credentials" returned for a bogus account). Step 3 now implements pull-newer,
+     debounced push, validation, migration safety, and visible sync status. **NEXT = live signed-in
+     two-device verification, then Step 4 polish**: retry UX for paused sync, clearer sign-out/error
+     handling, and any conflict edge cases found during the live test.
    - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
      login; otherwise sign-up requires email confirmation before the first sign-in works.
 
