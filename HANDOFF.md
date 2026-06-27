@@ -133,6 +133,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/home.css` | The home hub (`.home-*`). |
 | `src/chrome.css` | Shared page chrome + History + Settings (`.page-*`, `.hist-*`, `.set-*`). |
 | `src/edit.css` | Edit mode + exercise editor (`.ws-edit-*`, `.ws-add`, `.ex-*`). |
+| `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
@@ -246,8 +247,17 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
      anon key. **(2)** add `@supabase/supabase-js`, a `src/cloud.ts` client, and a sign-in entry in
      Settings (login UI). **(3)** wire pull-on-login + debounced push-on-change + a "synced" status.
      **(4)** polish: errors, sign-out, conflict edge cases.
-   - **Config:** Supabase URL + anon key live in a committed config file (public-safe with RLS) or
-     Vite build env. **As of now: Step 1 — awaiting the user's Supabase project URL + anon key.**
+   - **Config:** Supabase URL + **publishable** key (`sb_publishable_…`, the modern browser-safe
+     key — note Supabase replaced the old `anon` JWT) live in `src/cloudConfig.ts` (committed;
+     public-safe with RLS). Project: `jrsowjbxenkrmzzknnab.supabase.co`.
+   - **STATUS: Steps 1 & 2 DONE.** Backend is live (`app_state` table + RLS verified via REST).
+     `@supabase/supabase-js` added; `src/cloud.ts` exposes the client; Settings has an optional
+     email/password auth UI (sign-in/sign-up dialog) — verified that sign-in round-trips to Supabase
+     ("Invalid login credentials" returned for a bogus account). **NEXT = Step 3: the actual data
+     sync** — on login pull the remote row (last-write-wins by `updated_at`), and debounce-push the
+     whole `AppData` on every change; show a "synced" status. Then Step 4 polish.
+   - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
+     login; otherwise sign-up requires email confirmation before the first sign-in works.
 
 ---
 

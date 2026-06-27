@@ -5,6 +5,7 @@ import './workout.css'
 import './home.css'
 import './chrome.css'
 import './edit.css'
+import { supabase } from './cloud'
 import { clampRestSeconds, moveItem, nextPendingId, selectActiveVariantId, toggleResult } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 
@@ -122,6 +123,15 @@ type ExerciseDialog = {
   setup: string
   weight: string
   perHand: boolean
+}
+
+type AuthDialog = {
+  mode: 'in' | 'up'
+  email: string
+  password: string
+  error: string
+  note: string
+  busy: boolean
 }
 
 const STORAGE_KEY = 'fitness-hub-v1'
@@ -383,6 +393,12 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M5 21h14" />
         </svg>
       )
+    case 'cloud':
+      return (
+        <svg {...props}>
+          <path d="M7 18h10.5a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.8-1.2A3.6 3.6 0 0 0 7 18z" />
+        </svg>
+      )
     case 'up':
       return (
         <svg {...props}>
@@ -459,6 +475,8 @@ function App() {
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
   const [exerciseDialog, setExerciseDialog] = useState<ExerciseDialog | null>(null)
   const [editMode, setEditMode] = useState(false)
+  const [cloudEmail, setCloudEmail] = useState<string | null>(null)
+  const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
   const [restRunning, setRestRunning] = useState(false)
   const [restPulse, setRestPulse] = useState(false)
@@ -471,6 +489,25 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   }, [data])
+
+  useEffect(() => {
+    if (!supabase) {
+      return
+    }
+    let active = true
+    supabase.auth.getSession().then(({ data: sessionData }) => {
+      if (active) {
+        setCloudEmail(sessionData.session?.user.email ?? null)
+      }
+    })
+    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCloudEmail(session?.user.email ?? null)
+    })
+    return () => {
+      active = false
+      authSub.subscription.unsubscribe()
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(SCREEN_KEY, JSON.stringify(screen))
@@ -695,9 +732,78 @@ function App() {
     </Page>
   )
 
+  const submitAuth = async () => {
+    if (!authDialog || !supabase) {
+      return
+    }
+
+    const email = authDialog.email.trim()
+    const password = authDialog.password
+    if (!email || !password) {
+      setAuthDialog({ ...authDialog, error: 'Enter your email and password.', note: '' })
+      return
+    }
+
+    setAuthDialog({ ...authDialog, busy: true, error: '', note: '' })
+
+    if (authDialog.mode === 'in') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+      } else {
+        setAuthDialog(null)
+      }
+      return
+    }
+
+    const { data: signUpData, error } = await supabase.auth.signUp({ email, password })
+    if (error) {
+      setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+    } else if (signUpData.session) {
+      setAuthDialog(null)
+    } else {
+      setAuthDialog((current) =>
+        current
+          ? { ...current, mode: 'in', password: '', busy: false, error: '', note: 'Account created. Confirm via the email we sent, then sign in.' }
+          : current,
+      )
+    }
+  }
+
+  const signOut = async () => {
+    if (supabase) {
+      await supabase.auth.signOut()
+    }
+  }
+
   const renderSettings = () => (
     <Page title="Settings" onBack={() => goBack({ name: 'main' })}>
       <div className="set-list">
+        {supabase &&
+          (cloudEmail ? (
+            <div className="set-row set-cloud">
+              <span className="set-main">
+                <strong>Cloud sync</strong>
+                <small>Signed in as {cloudEmail}</small>
+              </span>
+              <button className="set-pill" type="button" onClick={signOut}>
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button
+              className="set-row"
+              type="button"
+              onClick={() => setAuthDialog({ mode: 'in', email: '', password: '', error: '', note: '', busy: false })}
+            >
+              <span className="set-main">
+                <strong>Sign in to sync</strong>
+                <small>Back up and sync across your devices</small>
+              </span>
+              <Icon name="cloud" />
+            </button>
+          ))}
+
         <button className="set-row" type="button" onClick={exportData}>
           <span className="set-main">
             <strong>Export backup</strong>
@@ -746,6 +852,50 @@ function App() {
           <Icon name="trash" />
         </button>
       </div>
+      {authDialog && (
+        <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'} onClose={() => setAuthDialog(null)}>
+          <div className="ex-form">
+            <label className="ex-field">
+              <span>Email</span>
+              <input
+                className="number-input text-input"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={authDialog.email}
+                onChange={(event) => setAuthDialog({ ...authDialog, email: event.target.value, error: '' })}
+              />
+            </label>
+            <label className="ex-field">
+              <span>Password</span>
+              <input
+                className="number-input text-input"
+                type="password"
+                autoComplete={authDialog.mode === 'in' ? 'current-password' : 'new-password'}
+                value={authDialog.password}
+                onChange={(event) => setAuthDialog({ ...authDialog, password: event.target.value, error: '' })}
+              />
+            </label>
+            {authDialog.error && <p className="auth-error">{authDialog.error}</p>}
+            {authDialog.note && <p className="dialog-help">{authDialog.note}</p>}
+            <button
+              className="auth-switch"
+              type="button"
+              onClick={() => setAuthDialog({ ...authDialog, mode: authDialog.mode === 'in' ? 'up' : 'in', error: '', note: '' })}
+            >
+              {authDialog.mode === 'in' ? 'No account? Create one' : 'Have an account? Sign in'}
+            </button>
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setAuthDialog(null)}>
+                Cancel
+              </button>
+              <button className="primary-action" type="button" disabled={authDialog.busy} onClick={submitAuth}>
+                {authDialog.busy ? 'Working…' : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </Page>
   )
 
