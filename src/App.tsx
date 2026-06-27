@@ -4,6 +4,7 @@ import './App.css'
 import './workout.css'
 import './home.css'
 import './chrome.css'
+import './edit.css'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -106,9 +107,23 @@ type PreviousDialog = {
   variantId: string
 }
 
+type ExerciseDialog = {
+  workoutId: WorkoutId
+  groupId?: string
+  variantId?: string
+  name: string
+  category: Category
+  sets: string
+  reps: string
+  setup: string
+  weight: string
+  perHand: boolean
+}
+
 const STORAGE_KEY = 'fitness-hub-v1'
 const SCREEN_KEY = 'fitness-hub-v1-screen'
 const REST_SECONDS = 10
+const CATEGORIES: Category[] = ['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS']
 
 const defaultWorkouts: WorkoutTemplate[] = [
   {
@@ -364,6 +379,25 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M5 21h14" />
         </svg>
       )
+    case 'up':
+      return (
+        <svg {...props}>
+          <path d="M6 15l6-6 6 6" />
+        </svg>
+      )
+    case 'down':
+      return (
+        <svg {...props}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      )
+    case 'edit':
+      return (
+        <svg {...props}>
+          <path d="M4 20h4L19 9l-4-4L4 16z" />
+          <path d="M14 6l4 4" />
+        </svg>
+      )
     case 'minus':
       return (
         <svg {...props}>
@@ -419,6 +453,8 @@ function App() {
   const [setupDialog, setSetupDialog] = useState<SetupDialog | null>(null)
   const [targetDialog, setTargetDialog] = useState<TargetDialog | null>(null)
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
+  const [exerciseDialog, setExerciseDialog] = useState<ExerciseDialog | null>(null)
+  const [editMode, setEditMode] = useState(false)
   const [restSeconds, setRestSeconds] = useState(REST_SECONDS)
   const [restRunning, setRestRunning] = useState(false)
   const [restPulse, setRestPulse] = useState(false)
@@ -706,7 +742,14 @@ function App() {
             <strong>{workout.name}</strong>
             <span>{doneCount}/{workout.groups.length} done</span>
           </div>
-          <span aria-hidden="true" />
+          <button
+            className="ws-back ws-edit-toggle"
+            type="button"
+            aria-label={editMode ? 'Done editing' : 'Edit workout'}
+            onClick={() => setEditMode((value) => !value)}
+          >
+            <Icon name={editMode ? 'check' : 'edit'} />
+          </button>
           <div className="ws-rail" aria-label={`${doneCount} of ${workout.groups.length} exercises done`}>
             {workout.groups.map((group) => {
               const groupEntry = session.groupEntries[group.id]
@@ -717,11 +760,49 @@ function App() {
         </header>
 
         <section className="ws-list" aria-label={`${workout.name} exercises`}>
-          {workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))}
+          {editMode
+            ? workout.groups.map((group, index) => renderEditRow(workout, group, index))
+            : workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))}
+          {editMode && (
+            <button className="ws-add" type="button" onClick={() => openExerciseEditor(workout.id)}>
+              <Icon name="plus" size={18} />
+              Add exercise
+            </button>
+          )}
         </section>
 
-        {renderRestTimer()}
+        {!editMode && renderRestTimer()}
       </main>
+    )
+  }
+
+  const renderEditRow = (workout: WorkoutTemplate, group: ExerciseGroup, index: number) => {
+    const variant = getVariant(group, group.activeVariantId)
+    const muscle = muscleColor(variant.category)
+    const isFirst = index === 0
+    const isLast = index === workout.groups.length - 1
+
+    return (
+      <div className="ws-edit-row" style={{ borderColor: `${muscle}52` }} key={group.id}>
+        <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
+        <button className="ws-edit-main" type="button" onClick={() => openExerciseEditor(workout.id, group)}>
+          <strong>{variant.name}</strong>
+          <small>
+            {categoryLabel(variant.category)} · {variant.sets}×{variant.reps}
+          </small>
+        </button>
+        <div className="ws-edit-actions">
+          <button type="button" aria-label="Move up" disabled={isFirst} onClick={() => moveGroup(workout.id, group.id, -1)}>
+            <Icon name="up" size={18} />
+          </button>
+          <button type="button" aria-label="Move down" disabled={isLast} onClick={() => moveGroup(workout.id, group.id, 1)}>
+            <Icon name="down" size={18} />
+          </button>
+          <button className="ws-edit-del" type="button" aria-label="Remove exercise" onClick={() => removeGroup(workout.id, group.id)}>
+            <Icon name="trash" size={18} />
+          </button>
+        </div>
+      </div>
     )
   }
 
@@ -931,6 +1012,7 @@ function App() {
         [workoutId]: sessionId,
       },
     }))
+    setEditMode(false)
     navigate({ name: 'session', workoutId, sessionId })
   }
 
@@ -949,7 +1031,114 @@ function App() {
         [sessionId]: getWorkout(workoutId).groups[0]?.id ?? '',
       },
     }))
+    setEditMode(false)
     navigate({ name: 'session', workoutId, sessionId })
+  }
+
+  const moveGroup = (workoutId: WorkoutId, groupId: string, direction: -1 | 1) => {
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const index = template.groups.findIndex((group) => group.id === groupId)
+        const target = index + direction
+        if (index < 0 || target < 0 || target >= template.groups.length) {
+          return template
+        }
+        const groups = [...template.groups]
+        const [moved] = groups.splice(index, 1)
+        groups.splice(target, 0, moved)
+        return { ...template, groups }
+      }),
+    }))
+  }
+
+  const removeGroup = (workoutId: WorkoutId, groupId: string) => {
+    if (!window.confirm('Remove this exercise from the workout?')) {
+      return
+    }
+
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) =>
+        template.id === workoutId ? { ...template, groups: template.groups.filter((group) => group.id !== groupId) } : template,
+      ),
+    }))
+  }
+
+  const addExercise = (workoutId: WorkoutId, variant: ExerciseVariant) => {
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) =>
+        template.id === workoutId
+          ? { ...template, groups: [...template.groups, { id: variant.id, activeVariantId: variant.id, variants: [variant] }] }
+          : template,
+      ),
+      baselineResults: { ...current.baselineResults, [variant.id]: variant.lastResult },
+    }))
+  }
+
+  const openExerciseEditor = (workoutId: WorkoutId, group?: ExerciseGroup) => {
+    if (group) {
+      const variant = getVariant(group, group.activeVariantId)
+      setExerciseDialog({
+        workoutId,
+        groupId: group.id,
+        variantId: variant.id,
+        name: variant.name,
+        category: variant.category,
+        sets: String(variant.sets),
+        reps: String(variant.reps),
+        setup: variant.setup,
+        weight: String(variant.weight),
+        perHand: variant.perHand,
+      })
+    } else {
+      setExerciseDialog({ workoutId, name: '', category: 'CHEST', sets: '3', reps: '10', setup: '', weight: '0', perHand: false })
+    }
+  }
+
+  const saveExercise = () => {
+    if (!exerciseDialog) {
+      return
+    }
+
+    const name = exerciseDialog.name.trim()
+    const sets = Number(exerciseDialog.sets)
+    const reps = Number(exerciseDialog.reps)
+    const weight = Number(exerciseDialog.weight)
+    if (!name || !Number.isInteger(sets) || sets < 1 || !Number.isInteger(reps) || reps < 1 || !Number.isFinite(weight) || weight < 0) {
+      return
+    }
+
+    const setup = exerciseDialog.setup.trim()
+    if (exerciseDialog.groupId && exerciseDialog.variantId) {
+      updateTemplateVariant(exerciseDialog.variantId, {
+        name,
+        category: exerciseDialog.category,
+        sets,
+        reps,
+        setup,
+        weight: roundWeight(weight),
+        perHand: exerciseDialog.perHand,
+      })
+    } else {
+      addExercise(exerciseDialog.workoutId, {
+        id: createId(),
+        name,
+        category: exerciseDialog.category,
+        setup,
+        sets,
+        reps,
+        weight: roundWeight(weight),
+        perHand: exerciseDialog.perHand,
+        lastResult: 'missing',
+      })
+    }
+
+    setExerciseDialog(null)
   }
 
   const deleteSession = (sessionId: string) => {
@@ -1368,6 +1557,107 @@ function App() {
               <button className="clear-button" type="button" onClick={() => setPreviousResult('missing')}>
                 Clear
               </button>
+            </div>
+          </Dialog>
+        )}
+        {exerciseDialog && (
+          <Dialog title={exerciseDialog.groupId ? 'Edit exercise' : 'Add exercise'} onClose={() => setExerciseDialog(null)}>
+            <div className="ex-form">
+              <label className="ex-field">
+                <span>Name</span>
+                <input
+                  className="number-input text-input"
+                  type="text"
+                  placeholder="Exercise name"
+                  value={exerciseDialog.name}
+                  onChange={(event) => setExerciseDialog({ ...exerciseDialog, name: event.target.value })}
+                />
+              </label>
+              <div className="ex-field">
+                <span>Muscle group</span>
+                <div className="ex-muscles">
+                  {CATEGORIES.map((category) => {
+                    const selected = exerciseDialog.category === category
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        className={`ex-muscle ${selected ? 'sel' : ''}`}
+                        style={selected ? { background: muscleColor(category), borderColor: muscleColor(category) } : undefined}
+                        onClick={() => setExerciseDialog({ ...exerciseDialog, category })}
+                      >
+                        {categoryLabel(category)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="ex-row2">
+                <label className="ex-field">
+                  <span>Sets</span>
+                  <input
+                    className="number-input"
+                    inputMode="numeric"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={exerciseDialog.sets}
+                    onChange={(event) => setExerciseDialog({ ...exerciseDialog, sets: event.target.value })}
+                  />
+                </label>
+                <label className="ex-field">
+                  <span>Reps</span>
+                  <input
+                    className="number-input"
+                    inputMode="numeric"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={exerciseDialog.reps}
+                    onChange={(event) => setExerciseDialog({ ...exerciseDialog, reps: event.target.value })}
+                  />
+                </label>
+              </div>
+              <label className="ex-field">
+                <span>Setup</span>
+                <input
+                  className="number-input text-input"
+                  type="text"
+                  placeholder="20°, 5-top, N/A"
+                  value={exerciseDialog.setup}
+                  onChange={(event) => setExerciseDialog({ ...exerciseDialog, setup: event.target.value })}
+                />
+              </label>
+              <div className="ex-row2">
+                <label className="ex-field">
+                  <span>Weight (kg)</span>
+                  <input
+                    className="number-input"
+                    inputMode="decimal"
+                    type="number"
+                    min="0"
+                    step="1.25"
+                    value={exerciseDialog.weight}
+                    onChange={(event) => setExerciseDialog({ ...exerciseDialog, weight: event.target.value })}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={`ex-toggle ${exerciseDialog.perHand ? 'on' : ''}`}
+                  aria-pressed={exerciseDialog.perHand}
+                  onClick={() => setExerciseDialog({ ...exerciseDialog, perHand: !exerciseDialog.perHand })}
+                >
+                  Per hand
+                </button>
+              </div>
+              <div className="dialog-actions">
+                <button type="button" onClick={() => setExerciseDialog(null)}>
+                  Cancel
+                </button>
+                <button className="primary-action" type="button" onClick={saveExercise}>
+                  Save
+                </button>
+              </div>
             </div>
           </Dialog>
         )}
