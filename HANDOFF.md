@@ -180,6 +180,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `27ab282` Record authenticated cloud upload verification
 - `eba9acf` Cloud sync step 3: pull, debounced push, and status
 - `1a078c2` Cloud sync step 2: Supabase client + optional sign-in in Settings
 - `c3f87a7` Plan cloud sync + login (Supabase) in the handoff
@@ -273,9 +274,10 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
      email/password auth UI (sign-in/sign-up dialog) — verified that sign-in round-trips to Supabase
      ("Invalid login credentials" returned for a bogus account). Step 3 now implements pull-newer,
      debounced push, validation, migration safety, and visible sync status. Real-account upload was
-     verified locally on 2026-06-27. **NEXT = deploy this build, verify pull on a second device,
-     then Step 4 polish**: retry UX for paused sync, clearer sign-out/error handling, and any
-     conflict edge cases found during the live test.
+     verified locally on 2026-06-27. Commit `27ab282` then deployed successfully through Pages
+     workflow run `28300067832`, and the live URL returned HTTP 200. **NEXT = verify pull on a
+     second device, then Step 4 polish**: retry UX for paused sync, clearer sign-out/error handling,
+     and any conflict edge cases found during the live test.
    - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
      login; otherwise sign-up requires email confirmation before the first sign-in works.
 
