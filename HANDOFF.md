@@ -210,6 +210,8 @@ Git history (newest first); each commit is a clean restore point:
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
   lines of dead CSS, unused images. Project went 122 → ~20 tracked files.
+- **LIVE** — deployed to GitHub Pages at **https://echonad3.github.io/fitness_hub/** via the
+  Actions workflow; auto-deploys on every push to `main`.
 
 All phases above were verified live (build, lint, tests, browser DOM checks, console checks, and
 390×844 browser-preview screenshots) before committing.
@@ -218,17 +220,14 @@ All phases above were verified live (build, lint, tests, browser DOM checks, con
 
 ## 8. What is left (the plan ahead)
 
-**NEXT — finish Phase 4: Hosting (in progress).** The repo **`echoNad3/fitness_hub`** is created,
-the `origin` remote is set (`https://github.com/echoNad3/fitness_hub.git`), and **`main` has been
-pushed**. Vite derives the Pages base path from `GITHUB_REPOSITORY` (→ `/fitness_hub/`), and
-`.github/workflows/deploy.yml` runs tests, lint, build, and Pages deploy on every push to `main`.
+**✅ Phase 4: Hosting — DONE.** The app is **LIVE at https://echonad3.github.io/fitness_hub/**
+(verified HTTP 200; assets served correctly under `/fitness_hub/`). Repo `echoNad3/fitness_hub`,
+Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
+`.github/workflows/deploy.yml` (runs tests → lint → build → deploy). To ship a change: commit to
+`main` and `git push` — that's the whole release process now.
 
-Remaining: in the repo, set **Settings → Pages → Build and deployment → Source: GitHub Actions**
-(this MUST be enabled or the deploy job fails). Then push once more / re-run the workflow to deploy.
-**Live URL: https://echonad3.github.io/fitness_hub/**. (No `gh` CLI on the machine; pushes use Git
-Credential Manager, which worked for the first push.)
+**NEXT (deferred features, in priority order):**
 
-**Later (explicitly deferred, in order):**
 1. **PWA** — installable / add-to-home-screen / offline.
 2. **Native wrap (Capacitor)** so the **rest timer works while the phone is locked**. NOTE: a plain
    web app/PWA *cannot* reliably keep a countdown alive once locked — the OS suspends it. The real
