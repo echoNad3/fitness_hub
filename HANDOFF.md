@@ -180,6 +180,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `30cab0f` Cloud sync step 4: add recovery controls
+- `7aa17b1` Record successful cross-device cloud sync test
+- `bebfa42` Update handoff after cloud sync deployment
 - `27ab282` Record authenticated cloud upload verification
 - `eba9acf` Cloud sync step 3: pull, debounced push, and status
 - `1a078c2` Cloud sync step 2: Supabase client + optional sign-in in Settings
@@ -214,9 +217,10 @@ Git history (newest first); each commit is a clean restore point:
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.
-- **Automated safety net** — `npm test` runs thirteen Node-native unit tests covering result toggles,
+- **Automated safety net** — `npm test` runs fourteen Node-native unit tests covering result toggles,
   ordering, auto-advance, rest bounds, active-variant selection, legacy migration acceptance,
-  template/session validation, timestamp parsing, first-sync direction, and migration safety.
+  template/session validation, timestamp parsing, first-sync direction, migration safety, and
+  strictly monotonic local sync timestamps.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
@@ -230,6 +234,10 @@ Git history (newest first); each commit is a clean restore point:
   cache; later changes debounce-upsert the whole `AppData` row. Settings shows Checking, Syncing,
   Synced, or a safe error state. Existing local installs receive a one-time migration timestamp;
   fresh devices do not overwrite an existing cloud row with defaults.
+- **Cloud sync step 4a** — a paused sync now exposes an explicit **Retry** action, cloud errors are
+  separated from the short status label, sign-out shows a busy state and reports failures instead
+  of silently ignoring them, and local change timestamps always advance even when multiple changes
+  happen within one millisecond.
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
 and 390×844 browser-preview screenshots). Cloud sync step 3 passes build, lint, and unit tests.
@@ -278,8 +286,10 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
      verified locally on 2026-06-27. Commit `27ab282` then deployed successfully through Pages
      workflow run `28300067832`, and the live URL returned HTTP 200. A phone signed into the same
      account successfully pulled the 105s test marker; the value was then restored and synced at
-     90s. **NEXT = Step 4 polish**: retry UX for paused sync, clearer sign-out/error handling, and
-     any conflict edge cases found during continued use.
+     90s. **Step 4a is implemented locally in `30cab0f`**: paused-sync retry UX, clearer
+     sign-out/error handling, and monotonic timestamp conflict hardening. Tests, lint, build, and a
+     390×844 Settings audit pass. **NEXT = deploy Step 4a, then monitor real-device use for any
+     remaining conflict or recovery edge cases before calling cloud sync complete.**
    - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
      login; otherwise sign-up requires email confirmation before the first sign-in works.
 
