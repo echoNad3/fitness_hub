@@ -233,8 +233,21 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
    web app/PWA *cannot* reliably keep a countdown alive once locked — the OS suspends it. The real
    options are (a) a scheduled **local notification** at +Ns (fires even locked), or (b) the native
    wrap. Set this expectation with the user; don't promise locked-screen timing from PWA alone.
-3. **Cloud DB + login** so progress syncs across devices (moves storage off localStorage; adds
-   auth + backend).
+3. **Cloud sync + login (IN PROGRESS — current focus).** Approach: **Supabase** (free tier, works
+   from a static site; the Project URL + anon key are public-safe, protected by Row Level Security).
+   Simple **email/password** auth, and **optional** — the app still works fully offline without
+   login; signing in just enables cross-device sync. localStorage stays the local cache (offline-first).
+   - **Data model:** one row per user in `public.app_state` — `user_id uuid pk → auth.users`,
+     `data jsonb`, `updated_at timestamptz`. RLS restricts each row to its owner (own-row
+     select/insert/update policies). Sync = the whole `AppData` blob, **last-write-wins** by
+     `updated_at` (fine for one user): on login pull remote if newer; on change debounce-upsert.
+   - **Incremental steps (each its own commit, so usage limits don't lose progress):**
+     **(1)** user creates a Supabase project, runs the table+RLS SQL, and provides Project URL +
+     anon key. **(2)** add `@supabase/supabase-js`, a `src/cloud.ts` client, and a sign-in entry in
+     Settings (login UI). **(3)** wire pull-on-login + debounced push-on-change + a "synced" status.
+     **(4)** polish: errors, sign-out, conflict edge cases.
+   - **Config:** Supabase URL + anon key live in a committed config file (public-safe with RLS) or
+     Vite build env. **As of now: Step 1 — awaiting the user's Supabase project URL + anon key.**
 
 ---
 
