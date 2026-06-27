@@ -15,3 +15,7 @@ npm run build
 ```
 
 The development server runs at `http://localhost:5173` by default. `npm run build` performs strict TypeScript checking before creating the production bundle.
+
+## Deployment
+
+Pushing `main` to GitHub runs `.github/workflows/deploy.yml`, which tests, lints, builds, and deploys the site to GitHub Pages. During GitHub Actions builds, Vite derives the repository subpath from `GITHUB_REPOSITORY`; local development continues to use `/`.
