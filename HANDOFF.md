@@ -37,8 +37,11 @@ generic SaaS-dashboard look, no childish/gamer styling.**
   Explicitly asks for the "brutal no-bullshit truth." Define jargon briefly. Prefer concrete
   multiple-choice options over open-ended questions. When unsure, ask rather than guess.
 - Thinks **visually** — responds best to mockups/screenshots, not abstract descriptions.
-- GitHub username/account: **has one** (zackdresden90 / zackdresden90@gmail.com). Will be needed
-  for hosting.
+- **GitHub:** username **echoNad3**, repo **`echoNad3/fitness_hub`** (created, `main` pushed).
+  Aside: the local git commit author is `zackdresden90 <zackdresden90@gmail.com>` (the user's Claude
+  email, *not* necessarily their GitHub email) — cosmetic, can be changed if they care. Do NOT
+  assume the GitHub handle from the git author name (that earlier mistake is how `zackdresden90`
+  wrongly appeared).
 - Works on **Windows 11**, project at `C:\Users\kzaum\Documents\Projects\fitness_hub`.
 
 ---
@@ -215,15 +218,15 @@ All phases above were verified live (build, lint, tests, browser DOM checks, con
 
 ## 8. What is left (the plan ahead)
 
-**NEXT — finish Phase 4: Hosting.** Local preparation is done: Vite derives the Pages base path
-from `GITHUB_REPOSITORY`, and `.github/workflows/deploy.yml` runs tests, lint, build, artifact
-upload, and Pages deployment using the current official actions. A simulated
-`zackdresden90/fitness_hub` Actions build produced correct `/fitness_hub/` asset URLs.
+**NEXT — finish Phase 4: Hosting (in progress).** The repo **`echoNad3/fitness_hub`** is created,
+the `origin` remote is set (`https://github.com/echoNad3/fitness_hub.git`), and **`main` has been
+pushed**. Vite derives the Pages base path from `GITHUB_REPOSITORY` (→ `/fitness_hub/`), and
+`.github/workflows/deploy.yml` runs tests, lint, build, and Pages deploy on every push to `main`.
 
-Remaining external steps: install/authenticate GitHub CLI (or create the repo in GitHub's UI),
-create the `zackdresden90/fitness_hub` remote, push `main`, set Pages source to **GitHub Actions**,
-and verify the public URL. The local machine currently has no `gh` command and this repo still has
-no remote.
+Remaining: in the repo, set **Settings → Pages → Build and deployment → Source: GitHub Actions**
+(this MUST be enabled or the deploy job fails). Then push once more / re-run the workflow to deploy.
+**Live URL: https://echonad3.github.io/fitness_hub/**. (No `gh` CLI on the machine; pushes use Git
+Credential Manager, which worked for the first push.)
 
 **Later (explicitly deferred, in order):**
 1. **PWA** — installable / add-to-home-screen / offline.
