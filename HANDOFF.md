@@ -134,6 +134,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
+| `.github/workflows/deploy.yml` | GitHub Pages pipeline: install, test, lint, build, upload artifact, deploy. |
 | `index.html` | Page shell. |
 | `.claude/launch.json` | Dev-server config for the preview tooling (`npm run dev`, port 5173). |
 
@@ -168,6 +169,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `6044101` Prepare automated GitHub Pages deployment
 - `d271149` Release-candidate hardening and consistency polish
 - `940de51` Phase 3c: editable rest length setting (default 90s)
 - `ef6d80b` Phase 3b: edit mode with reorder, remove, add, and exercise editor
@@ -213,9 +215,15 @@ All phases above were verified live (build, lint, tests, browser DOM checks, con
 
 ## 8. What is left (the plan ahead)
 
-**NEXT — Phase 4: Hosting.** Make it a phone-usable website hosted on **GitHub Pages** with a
-shareable link (user has a GitHub account). Needs the Vite `base` set correctly for the repo path
-and a deploy (GitHub Actions or `gh-pages`). The repo currently has **no remote** — set one up.
+**NEXT — finish Phase 4: Hosting.** Local preparation is done: Vite derives the Pages base path
+from `GITHUB_REPOSITORY`, and `.github/workflows/deploy.yml` runs tests, lint, build, artifact
+upload, and Pages deployment using the current official actions. A simulated
+`zackdresden90/fitness_hub` Actions build produced correct `/fitness_hub/` asset URLs.
+
+Remaining external steps: install/authenticate GitHub CLI (or create the repo in GitHub's UI),
+create the `zackdresden90/fitness_hub` remote, push `main`, set Pages source to **GitHub Actions**,
+and verify the public URL. The local machine currently has no `gh` command and this repo still has
+no remote.
 
 **Later (explicitly deferred, in order):**
 1. **PWA** — installable / add-to-home-screen / offline.
