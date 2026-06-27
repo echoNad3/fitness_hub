@@ -180,6 +180,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `1320ae2` Update handoff after cloud sync recovery polish
 - `30cab0f` Cloud sync step 4: add recovery controls
 - `7aa17b1` Record successful cross-device cloud sync test
 - `bebfa42` Update handoff after cloud sync deployment
@@ -240,7 +241,7 @@ Git history (newest first); each commit is a clean restore point:
   happen within one millisecond.
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
-and 390×844 browser-preview screenshots). Cloud sync step 3 passes build, lint, and unit tests.
+and 390×844 browser-preview screenshots). Cloud sync steps 3 and 4a pass build, lint, and unit tests.
 Its authenticated upload path was verified locally with a reversible 90s → 105s → 90s change:
 both writes reached `Synced` with no console errors. Cross-device pull was then verified on the
 live phone app using a temporary 105s marker; the cloud value was restored to 90s afterward.
@@ -286,10 +287,11 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
      verified locally on 2026-06-27. Commit `27ab282` then deployed successfully through Pages
      workflow run `28300067832`, and the live URL returned HTTP 200. A phone signed into the same
      account successfully pulled the 105s test marker; the value was then restored and synced at
-     90s. **Step 4a is implemented locally in `30cab0f`**: paused-sync retry UX, clearer
+     90s. **Step 4a is deployed in `30cab0f` + `1320ae2`**: paused-sync retry UX, clearer
      sign-out/error handling, and monotonic timestamp conflict hardening. Tests, lint, build, and a
-     390×844 Settings audit pass. **NEXT = deploy Step 4a, then monitor real-device use for any
-     remaining conflict or recovery edge cases before calling cloud sync complete.**
+     390×844 Settings audit pass. Pages workflow run `28300808013` succeeded and the live URL
+     returned HTTP 200. **NEXT = monitor real-device use for any remaining conflict or recovery
+     edge cases before calling cloud sync complete.**
    - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
      login; otherwise sign-up requires email confirmation before the first sign-in works.
 
