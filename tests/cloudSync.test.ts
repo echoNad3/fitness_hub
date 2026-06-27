@@ -4,6 +4,7 @@ import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
   initialLocalTimestamp,
+  nextLocalTimestamp,
   parseCloudTimestamp,
 } from '../src/cloudSync.ts'
 
@@ -32,4 +33,10 @@ test('existing local changes receive a migration timestamp', () => {
   assert.equal(hasMeaningfulLocalData(changed, initial), true)
   assert.equal(initialLocalTimestamp(null, true, 500), 500)
   assert.equal(initialLocalTimestamp('250', true, 500), 250)
+})
+
+test('local timestamps always move forward', () => {
+  assert.equal(nextLocalTimestamp(100, 200), 200)
+  assert.equal(nextLocalTimestamp(200, 200), 201)
+  assert.equal(nextLocalTimestamp(250, 200), 251)
 })

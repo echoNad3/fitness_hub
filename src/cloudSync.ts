@@ -37,3 +37,7 @@ export function initialLocalTimestamp(storedValue: string | null, hasMeaningfulD
 
   return hasMeaningfulData ? now : 0
 }
+
+export function nextLocalTimestamp(previous: number, now: number) {
+  return Math.max(now, previous + 1)
+}

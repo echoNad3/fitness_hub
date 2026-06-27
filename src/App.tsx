@@ -10,6 +10,7 @@ import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
   initialLocalTimestamp,
+  nextLocalTimestamp,
   parseCloudTimestamp,
 } from './cloudSync'
 import { clampRestSeconds, moveItem, nextPendingId, selectActiveVariantId, toggleResult } from './domain'
@@ -493,6 +494,9 @@ function App() {
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [syncError, setSyncError] = useState('')
+  const [syncAttempt, setSyncAttempt] = useState(0)
+  const [cloudActionBusy, setCloudActionBusy] = useState(false)
+  const [cloudActionError, setCloudActionError] = useState('')
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
   const [restRunning, setRestRunning] = useState(false)
@@ -577,7 +581,7 @@ function App() {
       return
     }
 
-    const updatedAt = Date.now()
+    const updatedAt = nextLocalTimestamp(localUpdatedAtRef.current, Date.now())
     localUpdatedAtRef.current = updatedAt
     localStorage.setItem(LOCAL_UPDATED_KEY, String(updatedAt))
     queueCloudPushRef.current()
@@ -683,7 +687,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [cloudUserId])
+  }, [cloudUserId, syncAttempt])
 
   useEffect(() => {
     localStorage.setItem(SCREEN_KEY, JSON.stringify(screen))
@@ -949,10 +953,31 @@ function App() {
     }
   }
 
-  const signOut = async () => {
-    if (supabase) {
-      await supabase.auth.signOut()
+  const retryCloudSync = () => {
+    setCloudActionError('')
+    if (syncReadyRef.current) {
+      queueCloudPushRef.current()
+    } else {
+      setSyncAttempt((current) => current + 1)
     }
+  }
+
+  const signOut = async () => {
+    if (!supabase || cloudActionBusy) {
+      return
+    }
+
+    setCloudActionBusy(true)
+    setCloudActionError('')
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      setCloudActionBusy(false)
+      setCloudActionError(`Could not sign out. ${error.message}`)
+      return
+    }
+
+    setCloudActionBusy(false)
+    setCloudUser(null)
   }
 
   const renderSettings = () => (
@@ -966,12 +991,21 @@ function App() {
                 <small>Signed in as {cloudUser.email}</small>
                 <span className={`sync-status ${syncStatus}`} aria-live="polite">
                   <i aria-hidden="true" />
-                  {syncStatusLabel(syncStatus, syncError)}
+                  {syncStatusLabel(syncStatus)}
                 </span>
+                {syncStatus === 'error' && <span className="cloud-error">{syncError}</span>}
+                {cloudActionError && <span className="cloud-error" role="alert">{cloudActionError}</span>}
               </span>
-              <button className="set-pill" type="button" onClick={signOut}>
-                Sign out
-              </button>
+              <span className="set-cloud-actions">
+                {syncStatus === 'error' && (
+                  <button className="set-pill retry" type="button" onClick={retryCloudSync}>
+                    Retry
+                  </button>
+                )}
+                <button className="set-pill" type="button" onClick={signOut} disabled={cloudActionBusy}>
+                  {cloudActionBusy ? 'Signing out…' : 'Sign out'}
+                </button>
+              </span>
             </div>
           ) : (
             <button
@@ -2446,7 +2480,7 @@ function categoryLabel(category: Category) {
   return labels[category]
 }
 
-function syncStatusLabel(status: SyncStatus, error: string) {
+function syncStatusLabel(status: SyncStatus) {
   if (status === 'checking') {
     return 'Checking cloud…'
   }
@@ -2457,7 +2491,7 @@ function syncStatusLabel(status: SyncStatus, error: string) {
     return 'Synced'
   }
   if (status === 'error') {
-    return `Sync paused: ${error}`
+    return 'Sync paused'
   }
   return 'Offline'
 }

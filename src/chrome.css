@@ -264,6 +264,17 @@
   color: var(--danger);
 }
 
+.cloud-error {
+  color: var(--danger);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.set-cloud-actions {
+  display: grid;
+  gap: 7px;
+}
+
 .set-pill {
   padding: 8px 14px;
   color: var(--muted);
@@ -277,6 +288,15 @@
 
 .set-pill:active {
   transform: scale(0.97);
+}
+
+.set-pill.retry {
+  color: var(--accent);
+}
+
+.set-pill:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .set-pill:focus-visible {
