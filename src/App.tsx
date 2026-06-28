@@ -6,7 +6,6 @@ import './home.css'
 import './chrome.css'
 import './edit.css'
 import { loadCloudState, saveCloudState, supabase } from './cloud'
-import { Capacitor } from '@capacitor/core'
 import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
@@ -24,6 +23,7 @@ import {
 } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
+import { fetchLatestApkVersion } from './apkVersion'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -513,6 +513,7 @@ function App() {
   const [restPulse, setRestPulse] = useState(false)
   const [restNotificationMessage, setRestNotificationMessage] = useState('')
   const [vibrationMessage, setVibrationMessage] = useState('')
+  const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
   const syncTimer = useRef<number | null>(null)
@@ -575,6 +576,18 @@ function App() {
       }
     }, SYNC_DEBOUNCE_MS)
   }
+
+  useEffect(() => {
+    let active = true
+    void fetchLatestApkVersion().then((version) => {
+      if (active && version) {
+        setLatestApkVersion(version)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -1052,20 +1065,22 @@ function App() {
             </button>
           ))}
 
-        {!Capacitor.isNativePlatform() && (
-          <a
-            className="set-row set-link"
-            href="https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk"
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            <span className="set-main">
-              <strong>Get the Android app</strong>
-              <small>For rest alerts while your phone is locked</small>
-            </span>
-            <Icon name="download" />
-          </a>
-        )}
+        <a
+          className="set-row set-link"
+          href="https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          <span className="set-main">
+            <strong>Download the Android app</strong>
+            <small>
+              {latestApkVersion
+                ? `Latest APK — ${latestApkVersion}. Reinstall to update.`
+                : 'Latest APK. Reinstall to get the newest version.'}
+            </small>
+          </span>
+          <Icon name="download" />
+        </a>
 
         <button className="set-row" type="button" onClick={exportData}>
           <span className="set-main">
@@ -1445,7 +1460,11 @@ function App() {
             setRestRunning(true)
             setRestNotificationMessage('')
             void scheduleRestNotification(endsAt).then((result) => {
-              if (result === 'failed') {
+              if (result === 'outdated') {
+                setRestNotificationMessage(
+                  'Locked-screen buzz needs an app update — reinstall the latest APK. The visible timer still works.',
+                )
+              } else if (result === 'failed') {
                 setRestNotificationMessage('Locked-screen buzz unavailable. The visible timer still works.')
               }
             })
