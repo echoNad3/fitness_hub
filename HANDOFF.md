@@ -274,7 +274,9 @@ Git history (newest first); each commit is a clean restore point:
   happen within one millisecond.
 - **PWA** — installable manifest, dark Fitness Hub install icon set, standalone/portrait app mode,
   GitHub Pages-safe scope/start paths, and a Workbox service worker that precaches the full app shell.
-  Updates wait for the app to close rather than forcing a reload during a workout.
+  The service worker uses `registerType: 'autoUpdate'`, so a new deploy applies automatically on the
+  next load (no manual close needed). Expected, not a bug: a previously-cached client can still serve
+  the old version for a single load while the new SW activates in the background — reopen once.
 - **Native Android step 1** — Capacitor 8 wrapper, synced Local Notifications plugin, exact-alarm
   permission, branded launcher/splash/status icons, native permission/error fallback messaging, and
   a CI workflow that builds a downloadable debug APK. Local Android compilation is unavailable

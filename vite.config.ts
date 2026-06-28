@@ -18,7 +18,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['app-icon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         id: base,
