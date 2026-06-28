@@ -22,6 +22,8 @@ import {
   toggleResult,
 } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApkVersion } from './apkVersion'
 
@@ -768,7 +770,27 @@ function App() {
     }
 
     window.addEventListener('popstate', handlePopState)
-    return () => window.removeEventListener('popstate', handlePopState)
+
+    // On Android, Capacitor's hardware/gesture back does NOT navigate web history by default — it
+    // just exits the app. Handle it explicitly: from a sub-screen step back through history (which
+    // fires the popstate handler above and returns to the menu); only the menu exits the app.
+    let removeBackButton: (() => void) | undefined
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.addListener('backButton', () => {
+        if (screenRef.current.name !== 'main') {
+          window.history.back()
+        } else {
+          void CapacitorApp.exitApp()
+        }
+      }).then((handle) => {
+        removeBackButton = () => void handle.remove()
+      })
+    }
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      removeBackButton?.()
+    }
   }, [])
 
   useEffect(() => {
