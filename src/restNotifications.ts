@@ -23,7 +23,11 @@ export async function scheduleRestNotification(endsAt: number): Promise<RestNoti
       return { status: 'failed', detail: 'rest end time already passed' }
     }
     await RestAlarm.cancel()
-    const result = await RestAlarm.schedule({ at: endsAt })
+    // Capacitor's Android getDouble() reads Double/Integer/Float but NOT Long, and an epoch-ms
+    // timestamp is too large for an int — so a whole number arrives as a Long and reads back as
+    // null ("Missing 'at' timestamp"). Adding a fractional part forces the bridge to serialize it
+    // as a Double; the native side truncates the fraction with longValue(), so the time is exact.
+    const result = await RestAlarm.schedule({ at: endsAt + 0.5 })
     if (result.scheduled) {
       return { status: 'scheduled' }
     }

@@ -21,6 +21,27 @@ public class RestAlarmPlugin extends Plugin {
 
     private static final int REQUEST_CODE = 9101;
 
+    /**
+     * Reads the epoch-ms "at" value defensively. The Capacitor bridge may deliver a large
+     * timestamp as a Long, Integer, Double, or String depending on how it was serialized, so we
+     * accept any numeric or numeric-string form rather than relying on getDouble() (which returns
+     * null for Long values).
+     */
+    private Long readTimestamp(PluginCall call) {
+        Object raw = call.getData().opt("at");
+        if (raw instanceof Number) {
+            return ((Number) raw).longValue();
+        }
+        if (raw instanceof String) {
+            try {
+                return (long) Double.parseDouble(((String) raw).trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     private PendingIntent buildPendingIntent() {
         Context context = getContext();
         Intent intent = new Intent(context, RestVibrationReceiver.class);
@@ -33,9 +54,9 @@ public class RestAlarmPlugin extends Plugin {
 
     @PluginMethod
     public void schedule(PluginCall call) {
-        Double at = call.getDouble("at");
-        if (at == null) {
-            call.reject("Missing 'at' timestamp.");
+        Long triggerAtValue = readTimestamp(call);
+        if (triggerAtValue == null) {
+            call.reject("Missing or invalid 'at' timestamp.");
             return;
         }
 
@@ -46,7 +67,7 @@ public class RestAlarmPlugin extends Plugin {
             return;
         }
 
-        long triggerAt = at.longValue();
+        long triggerAt = triggerAtValue;
         PendingIntent pendingIntent = buildPendingIntent();
         boolean exact = true;
         try {
