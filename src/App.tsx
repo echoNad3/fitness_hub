@@ -492,7 +492,7 @@ function App() {
   const [data, setData] = useState<AppData>(loadData)
   templatesRef = data.templates
   const [screen, setScreenState] = useState<Screen>(loadScreen)
-  const [, setScreenStack] = useState<Screen[]>([])
+  const [screenStack, setScreenStack] = useState<Screen[]>([])
   const [weightDialog, setWeightDialog] = useState<WeightDialog | null>(null)
   const [nameDialog, setNameDialog] = useState<NameDialog | null>(null)
   const [setupDialog, setSetupDialog] = useState<SetupDialog | null>(null)
@@ -741,7 +741,8 @@ function App() {
     const handlePopState = () => {
       setScreenStack((currentStack) => {
         if (currentStack.length === 0) {
-          window.history.pushState({ fitnessHub: true }, '')
+          // At the root screen: let the back press behave normally (exit the app on
+          // Android / leave the page on the web) instead of trapping the user.
           return currentStack
         }
 
@@ -837,16 +838,15 @@ function App() {
   }
 
   const goBack = (fallback: Screen) => {
-    setScreenStack((currentStack) => {
-      if (currentStack.length === 0) {
-        setScreenState(fallback)
-        return currentStack
-      }
-
-      const previous = currentStack[currentStack.length - 1]
-      setScreenState(previous)
-      return currentStack.slice(0, -1)
-    })
+    // Drive the in-app back button through browser history so it behaves identically to the
+    // Android back gesture / browser back: history.back() fires popstate, which pops the stack.
+    // This keeps the navigation stack and the history stack in sync (the previous split path
+    // let them drift, which made the back gesture stop working).
+    if (screenStack.length > 0) {
+      window.history.back()
+    } else {
+      setScreenState(fallback)
+    }
   }
 
   const triggerRestDone = () => {
@@ -1460,12 +1460,14 @@ function App() {
             setRestRunning(true)
             setRestNotificationMessage('')
             void scheduleRestNotification(endsAt).then((result) => {
-              if (result === 'outdated') {
+              if (result.status === 'outdated') {
                 setRestNotificationMessage(
                   'Locked-screen buzz needs an app update — reinstall the latest APK. The visible timer still works.',
                 )
-              } else if (result === 'failed') {
-                setRestNotificationMessage('Locked-screen buzz unavailable. The visible timer still works.')
+              } else if (result.status === 'failed') {
+                setRestNotificationMessage(
+                  `Locked-screen buzz unavailable${result.detail ? ` (${result.detail})` : ''}. The visible timer still works.`,
+                )
               }
             })
           }}

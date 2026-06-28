@@ -4,7 +4,7 @@
   width: min(100%, 460px);
   margin: 0 auto;
   min-height: 100svh;
-  padding: 14px 14px calc(20px + env(safe-area-inset-bottom));
+  padding: calc(14px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
   display: grid;
   align-content: start;
   gap: 12px;
