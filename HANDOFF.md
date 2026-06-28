@@ -186,10 +186,21 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   `vite.config.ts` switches on `CAPACITOR_BUILD=true` (root) vs GitHub Actions (Pages subpath); the
   `android:sync` script sets `CAPACITOR_BUILD` via `cross-env`. Pages deploy (`npm run build`) keeps
   the subpath. Never let the Android build use the subpath.
+- **Android distribution + auto-update:** `capacitor.config.ts` sets `server.url` to the live Pages
+  site, so the installed APK loads the live app and **auto-updates with every web deploy** — rebuild
+  the APK only for *native* changes (config/plugins/icons). `android.yml` also publishes each APK to
+  a GitHub Release; the stable link
+  `https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk` is surfaced in
+  Settings as "Get the Android app" (hidden when running inside the native app). Native offline now
+  relies on the cached service worker after the first online launch.
 - Cloud sync is **offline-first and last-write-wins**: sign-in compares local and remote
   `updated_at`; newer validated remote data is pulled, otherwise local data is upserted. Later
   local changes debounce for 900ms before upload. Remote data must pass `isValidBackup` before it
-  can replace the local cache. Sign-out never deletes local data.
+  can replace the local cache. Sign-out never deletes local data. Offline edits advance the local
+  timestamp and upload on the next change or on reconnect (a `window` `online` listener re-runs the
+  sync), so single-device offline work is **preserved, not overwritten**. The only loss case is
+  editing the *same account on a second device* that synced more recently — that's true
+  last-write-wins by timestamp.
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
   a suspended/locked app from resuming with a stale countdown. Android uses `USE_EXACT_ALARM` because
   exact short rest timing is a core function; Android 13+ notification permission is requested on

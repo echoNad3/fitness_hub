@@ -225,6 +225,10 @@
   }
 }
 
+.set-link {
+  text-decoration: none;
+}
+
 .set-cloud {
   cursor: default;
 }

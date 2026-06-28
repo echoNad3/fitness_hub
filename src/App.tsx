@@ -6,6 +6,7 @@ import './home.css'
 import './chrome.css'
 import './edit.css'
 import { loadCloudState, saveCloudState, supabase } from './cloud'
+import { Capacitor } from '@capacitor/core'
 import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
@@ -177,7 +178,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
         reps: 7,
         weight: 32,
         perHand: true,
-        lastResult: 'failure',
+        lastResult: 'success',
       }),
       singleExercise({
         id: 'chest-supported-row-machine',
@@ -186,7 +187,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
         setup: '5-top',
         sets: 4,
         reps: 7,
-        weight: 42.5,
+        weight: 45,
         perHand: true,
         lastResult: 'success',
       }),
@@ -208,7 +209,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
         setup: '6-top',
         sets: 3,
         reps: 11,
-        weight: 12.5,
+        weight: 13.75,
         perHand: false,
         lastResult: 'success',
       }),
@@ -228,11 +229,11 @@ const defaultWorkouts: WorkoutTemplate[] = [
         name: 'Ab wheel',
         category: 'CORE',
         setup: '',
-        sets: 2,
+        sets: 3,
         reps: 11,
         weight: 0,
         perHand: false,
-        lastResult: 'missing',
+        lastResult: 'failure',
       }),
     ],
   },
@@ -258,7 +259,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
         setup: '7-top',
         sets: 4,
         reps: 7,
-        weight: 42.5,
+        weight: 43.75,
         perHand: false,
         lastResult: 'success',
       }),
@@ -269,9 +270,9 @@ const defaultWorkouts: WorkoutTemplate[] = [
         setup: '',
         sets: 3,
         reps: 9,
-        weight: 18,
+        weight: 20,
         perHand: true,
-        lastResult: 'success',
+        lastResult: 'failure',
       }),
       {
         id: 'chest-fly-group',
@@ -281,12 +282,12 @@ const defaultWorkouts: WorkoutTemplate[] = [
             id: 'seated-cable-chest-fly',
             name: 'Seated cable chest fly',
             category: 'CHEST',
-            setup: '15',
+            setup: '16',
             sets: 3,
             reps: 11,
-            weight: 5,
+            weight: 7.5,
             perHand: false,
-            lastResult: 'success',
+            lastResult: 'failure',
           },
           {
             id: 'pec-deck-machine-chest-fly',
@@ -314,7 +315,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
             reps: 11,
             weight: 2.5,
             perHand: false,
-            lastResult: 'success',
+            lastResult: 'failure',
           },
           {
             id: 'reverse-pec-deck-machine',
@@ -334,11 +335,11 @@ const defaultWorkouts: WorkoutTemplate[] = [
         name: 'Bulgarian split squat',
         category: 'LEGS',
         setup: '',
-        sets: 2,
+        sets: 3,
         reps: 11,
         weight: 0,
         perHand: false,
-        lastResult: 'missing',
+        lastResult: 'failure',
       }),
     ],
   },
@@ -700,6 +701,24 @@ function App() {
   }, [cloudUserId, syncAttempt])
 
   useEffect(() => {
+    if (!supabase) {
+      return
+    }
+    const handleOnline = () => {
+      if (!cloudUserRef.current) {
+        return
+      }
+      if (syncReadyRef.current) {
+        queueCloudPushRef.current()
+      } else {
+        setSyncAttempt((current) => current + 1)
+      }
+    }
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem(SCREEN_KEY, JSON.stringify(screen))
   }, [screen])
 
@@ -1032,6 +1051,21 @@ function App() {
               <Icon name="cloud" />
             </button>
           ))}
+
+        {!Capacitor.isNativePlatform() && (
+          <a
+            className="set-row set-link"
+            href="https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            <span className="set-main">
+              <strong>Get the Android app</strong>
+              <small>For rest alerts while your phone is locked</small>
+            </span>
+            <Icon name="download" />
+          </a>
+        )}
 
         <button className="set-row" type="button" onClick={exportData}>
           <span className="set-main">
