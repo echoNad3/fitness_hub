@@ -519,6 +519,9 @@ function App() {
   const syncTimer = useRef<number | null>(null)
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
+  // Mirror the current screen into a ref so the (mount-only) popstate handler can read it.
+  const screenRef = useRef(screen)
+  screenRef.current = screen
   const dataRef = useRef(data)
   dataRef.current = data
   const cloudUserRef = useRef(cloudUser)
@@ -738,17 +741,29 @@ function App() {
   useEffect(() => {
     window.history.replaceState({ fitnessHub: true }, '')
 
+    // The app reloads the page on each launch (the Android wrapper loads the live site), so it can
+    // start on a restored sub-screen with an empty stack. Seed a back step to the menu so the
+    // first back gesture returns there instead of immediately exiting the app.
+    if (screenRef.current.name !== 'main') {
+      setScreenStack([{ name: 'main' }])
+      window.history.pushState({ fitnessHub: true }, '')
+    }
+
     const handlePopState = () => {
       setScreenStack((currentStack) => {
-        if (currentStack.length === 0) {
-          // At the root screen: let the back press behave normally (exit the app on
-          // Android / leave the page on the web) instead of trapping the user.
-          return currentStack
+        if (currentStack.length > 0) {
+          const previous = currentStack[currentStack.length - 1]
+          setScreenState(previous)
+          return currentStack.slice(0, -1)
         }
 
-        const previous = currentStack[currentStack.length - 1]
-        setScreenState(previous)
-        return currentStack.slice(0, -1)
+        // Empty stack: only the main menu lets the back press exit the app. From anywhere else,
+        // fall back to the menu (and keep a history entry to consume) rather than exiting.
+        if (screenRef.current.name !== 'main') {
+          window.history.pushState({ fitnessHub: true }, '')
+          setScreenState({ name: 'main' })
+        }
+        return currentStack
       })
     }
 
