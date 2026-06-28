@@ -30,6 +30,10 @@ export function clampRestSeconds(current: number, delta: number) {
   return Math.min(600, Math.max(15, current + delta))
 }
 
+export function restSecondsRemaining(endsAt: number, now: number) {
+  return Math.max(0, Math.ceil((endsAt - now) / 1000))
+}
+
 export function selectActiveVariantId(
   sessionVariantId: string | undefined,
   preferredVariantId: string | undefined,

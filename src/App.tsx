@@ -13,8 +13,16 @@ import {
   nextLocalTimestamp,
   parseCloudTimestamp,
 } from './cloudSync'
-import { clampRestSeconds, moveItem, nextPendingId, selectActiveVariantId, toggleResult } from './domain'
+import {
+  clampRestSeconds,
+  moveItem,
+  nextPendingId,
+  restSecondsRemaining,
+  selectActiveVariantId,
+  toggleResult,
+} from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
+import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -500,7 +508,9 @@ function App() {
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
   const [restRunning, setRestRunning] = useState(false)
+  const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
   const [restPulse, setRestPulse] = useState(false)
+  const [restNotificationMessage, setRestNotificationMessage] = useState('')
   const [vibrationMessage, setVibrationMessage] = useState('')
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
@@ -714,25 +724,27 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!restRunning) {
+    if (!restRunning || restEndsAt === null) {
       return
     }
 
-    const intervalId = window.setInterval(() => {
-      setRestSeconds((seconds) => {
-        if (seconds <= 1) {
-          window.clearInterval(intervalId)
-          setRestRunning(false)
-          triggerRestDone()
-          return data.restSeconds
-        }
+    const updateTimer = () => {
+      const remaining = restSecondsRemaining(restEndsAt, Date.now())
+      if (remaining === 0) {
+        setRestRunning(false)
+        setRestEndsAt(null)
+        setRestSeconds(data.restSeconds)
+        triggerRestDone()
+        return
+      }
+      setRestSeconds(remaining)
+    }
 
-        return seconds - 1
-      })
-    }, 1000)
+    updateTimer()
+    const intervalId = window.setInterval(updateTimer, 1000)
 
     return () => window.clearInterval(intervalId)
-  }, [data.restSeconds, restRunning])
+  }, [data.restSeconds, restEndsAt, restRunning])
 
   useEffect(() => {
     if (screen.name !== 'session') {
@@ -1379,7 +1391,10 @@ function App() {
             type="button"
             onClick={() => {
               setRestRunning(false)
+              setRestEndsAt(null)
               setRestSeconds(data.restSeconds)
+              setRestNotificationMessage('')
+              void cancelRestNotification()
             }}
           >
             Cancel
@@ -1390,8 +1405,18 @@ function App() {
           className="ws-dock-start"
           type="button"
           onClick={() => {
+            const endsAt = Date.now() + data.restSeconds * 1000
             setRestSeconds(data.restSeconds)
+            setRestEndsAt(endsAt)
             setRestRunning(true)
+            setRestNotificationMessage('')
+            void scheduleRestNotification(endsAt).then((result) => {
+              if (result === 'denied') {
+                setRestNotificationMessage('Allow notifications for locked-screen rest alerts.')
+              } else if (result === 'failed') {
+                setRestNotificationMessage('Locked-screen alert unavailable. The visible timer still works.')
+              }
+            })
           }}
         >
           <span className="ws-dock-left">
@@ -1400,6 +1425,11 @@ function App() {
           </span>
           <strong>{restPulse ? '' : `Start · ${data.restSeconds}s`}</strong>
         </button>
+      )}
+      {restNotificationMessage && (
+        <small className="ws-dock-note" role="status">
+          {restNotificationMessage}
+        </small>
       )}
     </section>
   )

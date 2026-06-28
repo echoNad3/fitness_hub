@@ -16,6 +16,18 @@ npm run build
 
 The development server runs at `http://localhost:5173` by default. `npm run build` performs strict TypeScript checking before creating the production bundle.
 
+## Android
+
+```sh
+npm run android:sync
+npm run android:open
+```
+
+`android:sync` builds the web app and copies it into the Capacitor Android project. `android:open`
+requires Android Studio. GitHub Actions also builds a debug APK and keeps it as a workflow artifact
+for 14 days. The native wrapper schedules the rest-complete alert as a local notification so it can
+fire while the phone is locked.
+
 ## Deployment
 
 Pushing `main` to GitHub runs `.github/workflows/deploy.yml`, which tests, lints, builds, and deploys the site to GitHub Pages. During GitHub Actions builds, Vite derives the repository subpath from `GITHUB_REPOSITORY`; local development continues to use `/`.

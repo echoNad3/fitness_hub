@@ -122,6 +122,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 - **Vite 8 + React 19 + TypeScript**, plain CSS. Data in **localStorage**. Lint: `oxlint`.
   PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
   `public/app-icon.svg` via `@vite-pwa/assets-generator`.
+- **Capacitor 8 + Android** for the native wrapper. The official Local Notifications plugin schedules
+  the rest-complete alert outside the web runtime so it can fire while the phone is locked.
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
 - **Single-component app.** Almost everything is in `src/App.tsx` (one big `App()` component with
   render helpers + module-level helpers). State is one `data: AppData` object + a `screen` object,
@@ -138,11 +140,15 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/edit.css` | Edit mode + exercise editor (`.ws-edit-*`, `.ws-add`, `.ex-*`). |
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
+| `src/restNotifications.ts` | Native-only rest notification permission, scheduling, and cancellation; no-op on the web. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
 | `.github/workflows/deploy.yml` | GitHub Pages pipeline: install, test, lint, build, upload artifact, deploy. |
+| `.github/workflows/android.yml` | Android CI: test, Capacitor sync, compile a debug APK, upload it as an artifact. |
+| `capacitor.config.ts` / `android/` | Capacitor app identity/config plus the generated and customized Android Studio project. |
+| `scripts/generate-android-assets.mjs` / `resources/` | Rebuild branded Android launcher icons and splash screens from the Fitness Hub SVG sources. |
 | `vite.config.ts` | Vite base path plus PWA manifest and Workbox precache configuration. |
 | `pwa-assets.config.ts` | Deterministic generation settings for Android, Windows, and Apple install icons. |
 | `public/app-icon.svg` + generated icon files | Fitness Hub favicon, home-screen, Apple touch, and maskable install assets. |
@@ -179,6 +185,10 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   `updated_at`; newer validated remote data is pulled, otherwise local data is upserted. Later
   local changes debounce for 900ms before upload. Remote data must pass `isValidBackup` before it
   can replace the local cache. Sign-out never deletes local data.
+- Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
+  a suspended/locked app from resuming with a stale countdown. Android uses `USE_EXACT_ALARM` because
+  exact short rest timing is a core function; Android 13+ notification permission is requested on
+  the first native timer start.
 
 ---
 
@@ -225,10 +235,10 @@ Git history (newest first); each commit is a clean restore point:
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.
-- **Automated safety net** — `npm test` runs fourteen Node-native unit tests covering result toggles,
+- **Automated safety net** — `npm test` runs fifteen Node-native unit tests covering result toggles,
   ordering, auto-advance, rest bounds, active-variant selection, legacy migration acceptance,
   template/session validation, timestamp parsing, first-sync direction, migration safety, and
-  strictly monotonic local sync timestamps.
+  strictly monotonic local sync timestamps, and wall-clock rest countdown calculations.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
@@ -249,6 +259,10 @@ Git history (newest first); each commit is a clean restore point:
 - **PWA** — installable manifest, dark Fitness Hub install icon set, standalone/portrait app mode,
   GitHub Pages-safe scope/start paths, and a Workbox service worker that precaches the full app shell.
   Updates wait for the app to close rather than forcing a reload during a workout.
+- **Native Android step 1** — Capacitor 8 wrapper, synced Local Notifications plugin, exact-alarm
+  permission, branded launcher/splash/status icons, native permission/error fallback messaging, and
+  a CI workflow that builds a downloadable debug APK. Local Android compilation is unavailable
+  because this Windows machine has no Java or Android SDK; GitHub Actions compilation is pending.
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
 and 390×844 browser-preview screenshots). Cloud sync steps 3 and 4a pass build, lint, and unit tests.
@@ -275,10 +289,14 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
    workflow run `28315746883` succeeded; the live homepage, manifest, service worker, and PNG install
    icon all returned HTTP 200, the manifest exposes four icons, and the deployed worker contains the
    precache route.
-2. **NEXT: Native wrap (Capacitor)** so the **rest timer works while the phone is locked**. NOTE: a plain
-   web app/PWA *cannot* reliably keep a countdown alive once locked — the OS suspends it. The real
-   options are (a) a scheduled **local notification** at +Ns (fires even locked), or (b) the native
-   wrap. Set this expectation with the user; don't promise locked-screen timing from PWA alone.
+2. **Native wrap (Capacitor) — IN PROGRESS, current focus.** Android project and notification logic
+   are implemented and `cap sync android` passes. Starting a rest timer schedules an exact local
+   notification with `allowWhileIdle`; canceling rest cancels it; permission denial is shown without
+   breaking the visible timer. The timer itself now derives from its end timestamp, so it catches up
+   correctly after suspension. Web regression check passed at 15s with no console errors.
+   **NEXT:** push and verify `.github/workflows/android.yml` compiles the debug APK, then install that
+   APK on the user's Android phone and run the decisive locked-screen notification test. The local
+   machine has no Java/Android SDK/adb, so device installation cannot be completed here.
 3. **Cloud sync + login (COMPLETE).** Approach: **Supabase** (free tier, works
    from a static site; the Project URL + anon key are public-safe, protected by Row Level Security).
    Simple **email/password** auth, and **optional** — the app still works fully offline without

@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { clampRestSeconds, moveItem, nextPendingId, selectActiveVariantId, toggleResult } from '../src/domain.ts'
+import {
+  clampRestSeconds,
+  moveItem,
+  nextPendingId,
+  restSecondsRemaining,
+  selectActiveVariantId,
+  toggleResult,
+} from '../src/domain.ts'
 
 test('result buttons toggle, switch, and clear predictably', () => {
   assert.equal(toggleResult(undefined, 'success'), 'success')
@@ -27,6 +34,13 @@ test('rest length stays between 15 seconds and 10 minutes', () => {
   assert.equal(clampRestSeconds(15, -15), 15)
   assert.equal(clampRestSeconds(90, 15), 105)
   assert.equal(clampRestSeconds(600, 15), 600)
+})
+
+test('rest countdown follows its wall-clock end time', () => {
+  assert.equal(restSecondsRemaining(100_000, 90_000), 10)
+  assert.equal(restSecondsRemaining(100_000, 99_001), 1)
+  assert.equal(restSecondsRemaining(100_000, 100_000), 0)
+  assert.equal(restSecondsRemaining(100_000, 120_000), 0)
 })
 
 test('the current session variant wins in edit mode', () => {

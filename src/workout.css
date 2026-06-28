@@ -426,6 +426,14 @@
   font-weight: 800;
 }
 
+.ws-dock-note {
+  grid-column: 1 / -1;
+  padding: 0 4px 2px;
+  color: var(--danger);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .ws-dock.pulse .ws-dock-start {
   color: #0b2d18;
   background: var(--success);
