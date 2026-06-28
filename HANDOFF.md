@@ -185,6 +185,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `16db4be` Complete local PWA verification
 - `8a4ca64` Checkpoint PWA app shell and install assets
 - `1320ae2` Update handoff after cloud sync recovery polish
 - `30cab0f` Cloud sync step 4: add recovery controls
@@ -267,10 +268,13 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
 
 **NEXT (deferred features, in priority order):**
 
-1. **PWA — DONE locally, deployment pending.** Production tests, lint, and build pass; the manifest
+1. **PWA — DONE and LIVE.** Production tests, lint, and build pass; the manifest
    has the correct `/fitness_hub/` scope/start URL and Workbox precaches 12 entries. Offline behavior
    was proven on 2026-06-28 by loading the production preview, confirming the server was down, then
-   reloading the full Fitness Hub home screen from cache with no console warnings/errors.
+   reloading the full Fitness Hub home screen from cache with no console warnings/errors. Pages
+   workflow run `28315746883` succeeded; the live homepage, manifest, service worker, and PNG install
+   icon all returned HTTP 200, the manifest exposes four icons, and the deployed worker contains the
+   precache route.
 2. **NEXT: Native wrap (Capacitor)** so the **rest timer works while the phone is locked**. NOTE: a plain
    web app/PWA *cannot* reliably keep a countdown alive once locked — the OS suspends it. The real
    options are (a) a scheduled **local notification** at +Ns (fires even locked), or (b) the native
