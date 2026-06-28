@@ -143,6 +143,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
 | `.github/workflows/deploy.yml` | GitHub Pages pipeline: install, test, lint, build, upload artifact, deploy. |
+| `vite.config.ts` | Vite base path plus PWA manifest and Workbox precache configuration. |
+| `pwa-assets.config.ts` | Deterministic generation settings for Android, Windows, and Apple install icons. |
+| `public/app-icon.svg` + generated icon files | Fitness Hub favicon, home-screen, Apple touch, and maskable install assets. |
 | `index.html` | Page shell. |
 | `.claude/launch.json` | Dev-server config for the preview tooling (`npm run dev`, port 5173). |
 
@@ -182,6 +185,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- `8a4ca64` Checkpoint PWA app shell and install assets
 - `1320ae2` Update handoff after cloud sync recovery polish
 - `30cab0f` Cloud sync step 4: add recovery controls
 - `7aa17b1` Record successful cross-device cloud sync test
@@ -241,6 +245,9 @@ Git history (newest first); each commit is a clean restore point:
   separated from the short status label, sign-out shows a busy state and reports failures instead
   of silently ignoring them, and local change timestamps always advance even when multiple changes
   happen within one millisecond.
+- **PWA** — installable manifest, dark Fitness Hub install icon set, standalone/portrait app mode,
+  GitHub Pages-safe scope/start paths, and a Workbox service worker that precaches the full app shell.
+  Updates wait for the app to close rather than forcing a reload during a workout.
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
 and 390×844 browser-preview screenshots). Cloud sync steps 3 and 4a pass build, lint, and unit tests.
@@ -260,15 +267,11 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
 
 **NEXT (deferred features, in priority order):**
 
-1. **PWA (IN PROGRESS — local checkpoint, NOT DEPLOYED)** — the manifest, dark Fitness Hub install
-   icon set (64/192/512, maskable, Apple touch, favicon), GitHub Pages base paths, and Workbox
-   precache are implemented. Production build passes and generates a 12-entry precache plus correct
-   `/fitness_hub/` manifest scope/start URL. **NEXT:** start `vite preview` with the same
-   `GITHUB_ACTIONS=true` and `GITHUB_REPOSITORY=echoNad3/fitness_hub` environment used for the build,
-   then prove an offline reload by loading once, stopping the preview server, and reloading. The
-   earlier blank local preview was diagnosed as a preview-time base mismatch (the built asset URL
-   returned `index.html`), not an app build failure. Do not deploy until this runtime check passes.
-2. **Native wrap (Capacitor)** so the **rest timer works while the phone is locked**. NOTE: a plain
+1. **PWA — DONE locally, deployment pending.** Production tests, lint, and build pass; the manifest
+   has the correct `/fitness_hub/` scope/start URL and Workbox precaches 12 entries. Offline behavior
+   was proven on 2026-06-28 by loading the production preview, confirming the server was down, then
+   reloading the full Fitness Hub home screen from cache with no console warnings/errors.
+2. **NEXT: Native wrap (Capacitor)** so the **rest timer works while the phone is locked**. NOTE: a plain
    web app/PWA *cannot* reliably keep a countdown alive once locked — the OS suspends it. The real
    options are (a) a scheduled **local notification** at +Ns (fires even locked), or (b) the native
    wrap. Set this expectation with the user; don't promise locked-screen timing from PWA alone.
