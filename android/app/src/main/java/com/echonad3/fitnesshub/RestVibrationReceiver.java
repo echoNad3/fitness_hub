@@ -3,6 +3,7 @@ package com.echonad3.fitnesshub;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
 import android.os.Build;
 import android.os.PowerManager;
 import android.os.VibrationEffect;
@@ -35,7 +36,14 @@ public class RestVibrationReceiver extends BroadcastReceiver {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createWaveform(PATTERN, AMPLITUDES, -1));
+            // Mark this as an ALARM vibration. Without a usage, Android suppresses background
+            // vibrations while the screen is locked/off; USAGE_ALARM is allowed to play through a
+            // locked screen and through Do Not Disturb — which is exactly the rest-end alert we want.
+            AudioAttributes attributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+            vibrator.vibrate(VibrationEffect.createWaveform(PATTERN, AMPLITUDES, -1), attributes);
         } else {
             vibrator.vibrate(PATTERN, -1);
         }
