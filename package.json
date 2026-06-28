@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "android:sync": "npm run build && cap sync android",
+    "android:sync": "cross-env CAPACITOR_BUILD=true npm run build && cap sync android",
     "android:open": "cap open android",
     "generate-pwa-assets": "pwa-assets-generator",
     "generate-android-assets": "node scripts/generate-android-assets.mjs",
@@ -29,6 +29,7 @@
     "@types/react-dom": "^19.2.3",
     "@vite-pwa/assets-generator": "^1.0.2",
     "@vitejs/plugin-react": "^6.0.2",
+    "cross-env": "^10.1.0",
     "oxlint": "^1.69.0",
     "sharp": "^0.33.5",
     "typescript": "~6.0.2",

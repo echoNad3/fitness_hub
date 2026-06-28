@@ -181,6 +181,11 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 - Screens: `main` (home hub), `global-history`, `settings`, `session`. (The old `workouts` /
   `workout-menu` / `workout-history` screens were removed in Phase 2.)
 - Icons are inline SVGs via the `Icon` component (`name` switch). No icon library.
+- **Build base path (important):** GitHub Pages needs `base: '/fitness_hub/'`, but Capacitor needs
+  root `'/'` — it serves from the webview root, so a subpath makes every asset 404 → **blank APK**.
+  `vite.config.ts` switches on `CAPACITOR_BUILD=true` (root) vs GitHub Actions (Pages subpath); the
+  `android:sync` script sets `CAPACITOR_BUILD` via `cross-env`. Pages deploy (`npm run build`) keeps
+  the subpath. Never let the Android build use the subpath.
 - Cloud sync is **offline-first and last-write-wins**: sign-in compares local and remote
   `updated_at`; newer validated remote data is pulled, otherwise local data is upserted. Later
   local changes debounce for 900ms before upload. Remote data must pass `isValidBackup` before it
@@ -263,6 +268,9 @@ Git history (newest first); each commit is a clean restore point:
   permission, branded launcher/splash/status icons, native permission/error fallback messaging, and
   a CI workflow that builds a downloadable debug APK. Local Android compilation is unavailable
   because this Windows machine has no Java or Android SDK; GitHub Actions compilation is pending.
+  **Bug found + fixed during review: the APK was building with the GitHub Pages subpath base
+  (`/fitness_hub/`), which would have launched to a blank screen inside the Capacitor webview. The
+  Android build now forces root base (`CAPACITOR_BUILD`). Re-build the APK from the latest `main`.**
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
 and 390×844 browser-preview screenshots). Cloud sync steps 3 and 4a pass build, lint, and unit tests.

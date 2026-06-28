@@ -3,7 +3,14 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1]
-const base = process.env.GITHUB_ACTIONS === 'true' && repositoryName ? `/${repositoryName}/` : '/'
+// Capacitor serves the bundled app from the webview root, so it must build with
+// base '/', NOT the GitHub Pages subpath (otherwise every asset 404s -> blank app).
+const isCapacitorBuild = process.env.CAPACITOR_BUILD === 'true'
+const base = isCapacitorBuild
+  ? '/'
+  : process.env.GITHUB_ACTIONS === 'true' && repositoryName
+    ? `/${repositoryName}/`
+    : '/'
 
 // https://vite.dev/config/
 export default defineConfig({
