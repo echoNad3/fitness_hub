@@ -1,44 +1,23 @@
 import { Capacitor } from '@capacitor/core'
-import { LocalNotifications } from '@capacitor/local-notifications'
+import { RestAlarm } from './restAlarm'
 
-const REST_NOTIFICATION_ID = 9001
+export type RestNotificationResult = 'scheduled' | 'failed' | 'web'
 
-export type RestNotificationResult = 'scheduled' | 'denied' | 'failed' | 'web'
-
+// On the native Android app this schedules a heavy ~6s vibration (via an exact alarm) that fires
+// even when the phone is locked. On the web/PWA it is a no-op — browsers can't run code while
+// locked, so the visible in-app timer is the only alert there.
 export async function scheduleRestNotification(endsAt: number): Promise<RestNotificationResult> {
   if (!Capacitor.isNativePlatform()) {
     return 'web'
   }
 
   try {
-    let permission = await LocalNotifications.checkPermissions()
-    if (permission.display !== 'granted') {
-      permission = await LocalNotifications.requestPermissions()
-    }
-    if (permission.display !== 'granted') {
-      return 'denied'
-    }
-
-    await cancelRestNotification()
     if (endsAt <= Date.now()) {
       return 'failed'
     }
-
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: REST_NOTIFICATION_ID,
-          title: 'Rest complete',
-          body: 'Time for your next set.',
-          schedule: {
-            at: new Date(endsAt),
-            allowWhileIdle: true,
-          },
-          autoCancel: true,
-        },
-      ],
-    })
-    return 'scheduled'
+    await RestAlarm.cancel()
+    const result = await RestAlarm.schedule({ at: endsAt })
+    return result.scheduled ? 'scheduled' : 'failed'
   } catch {
     return 'failed'
   }
@@ -50,8 +29,8 @@ export async function cancelRestNotification() {
   }
 
   try {
-    await LocalNotifications.cancel({ notifications: [{ id: REST_NOTIFICATION_ID }] })
+    await RestAlarm.cancel()
   } catch {
-    // The visible timer still works if the native cancellation API is unavailable.
+    // The visible timer still works if the native cancellation is unavailable.
   }
 }

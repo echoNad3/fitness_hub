@@ -1445,10 +1445,8 @@ function App() {
             setRestRunning(true)
             setRestNotificationMessage('')
             void scheduleRestNotification(endsAt).then((result) => {
-              if (result === 'denied') {
-                setRestNotificationMessage('Allow notifications for locked-screen rest alerts.')
-              } else if (result === 'failed') {
-                setRestNotificationMessage('Locked-screen alert unavailable. The visible timer still works.')
+              if (result === 'failed') {
+                setRestNotificationMessage('Locked-screen buzz unavailable. The visible timer still works.')
               }
             })
           }}

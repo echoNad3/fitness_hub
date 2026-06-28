@@ -122,8 +122,10 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 - **Vite 8 + React 19 + TypeScript**, plain CSS. Data in **localStorage**. Lint: `oxlint`.
   PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
   `public/app-icon.svg` via `@vite-pwa/assets-generator`.
-- **Capacitor 8 + Android** for the native wrapper. The official Local Notifications plugin schedules
-  the rest-complete alert outside the web runtime so it can fire while the phone is locked.
+- **Capacitor 8 + Android** for the native wrapper. A **custom `RestAlarm` plugin** schedules an
+  exact AlarmManager alarm that fires a strong ~6s vibration (RestVibrationReceiver) when the rest
+  timer ends — felt while locked. (Earlier used Local Notifications, but a notification only gives a
+  brief light buzz; the user needs a heavy multi-second vibration, hence the native alarm.)
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
 - **Single-component app.** Almost everything is in `src/App.tsx` (one big `App()` component with
   render helpers + module-level helpers). State is one `data: AppData` object + a `screen` object,
@@ -140,7 +142,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/edit.css` | Edit mode + exercise editor (`.ws-edit-*`, `.ws-add`, `.ex-*`). |
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
-| `src/restNotifications.ts` | Native-only rest notification permission, scheduling, and cancellation; no-op on the web. |
+| `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest **vibration** via the custom `RestAlarm` plugin; no-op on web. |
+| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact-alarm + ~6s heavy vibration waveform for the locked-screen rest alert. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
@@ -202,9 +205,12 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   editing the *same account on a second device* that synced more recently — that's true
   last-write-wins by timestamp.
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
-  a suspended/locked app from resuming with a stale countdown. Android uses `USE_EXACT_ALARM` because
-  exact short rest timing is a core function; Android 13+ notification permission is requested on
-  the first native timer start.
+  a suspended/locked app from resuming with a stale countdown. The locked-screen alert is a **native
+  heavy vibration**, NOT a notification: `RestAlarmPlugin` (Java) schedules an exact alarm
+  (`USE_EXACT_ALARM`, `setExactAndAllowWhileIdle`) → `RestVibrationReceiver` plays a ~6s strong
+  waveform via Vibrator/VibratorManager (manifest also needs `VIBRATE` + `WAKE_LOCK`).
+  `src/restNotifications.ts` calls it through the `RestAlarm` plugin (`src/restAlarm.ts`); no-op on
+  web. Changing the vibration needs a native APK rebuild, not just a web deploy.
 
 ---
 
