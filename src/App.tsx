@@ -101,28 +101,6 @@ type WeightDialog = {
   value: string
 }
 
-type SetupDialog = {
-  sessionId: string
-  groupId: string
-  variantId: string
-  value: string
-}
-
-type TargetDialog = {
-  sessionId: string
-  groupId: string
-  variantId: string
-  sets: string
-  reps: string
-}
-
-type NameDialog = {
-  sessionId: string
-  groupId: string
-  variantId: string
-  value: string
-}
-
 type PreviousDialog = {
   workoutId: WorkoutId
   sessionId: string
@@ -524,9 +502,6 @@ function App() {
   const [screen, setScreenState] = useState<Screen>(loadScreen)
   const [screenStack, setScreenStack] = useState<Screen[]>([])
   const [weightDialog, setWeightDialog] = useState<WeightDialog | null>(null)
-  const [nameDialog, setNameDialog] = useState<NameDialog | null>(null)
-  const [setupDialog, setSetupDialog] = useState<SetupDialog | null>(null)
-  const [targetDialog, setTargetDialog] = useState<TargetDialog | null>(null)
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
   const [exerciseDialog, setExerciseDialog] = useState<ExerciseDialog | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -542,6 +517,7 @@ function App() {
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
   const [restPulse, setRestPulse] = useState(false)
   const [restNotificationMessage, setRestNotificationMessage] = useState('')
+  const [sessionFitsViewport, setSessionFitsViewport] = useState(false)
   const [vibrationMessage, setVibrationMessage] = useState('')
   const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
   const [restDraft, setRestDraft] = useState<string | null>(null)
@@ -560,9 +536,6 @@ function App() {
   // and a count so the mount-only history handler can read the latest values.
   const dialogOpen =
     weightDialog !== null ||
-    nameDialog !== null ||
-    setupDialog !== null ||
-    targetDialog !== null ||
     previousDialog !== null ||
     exerciseDialog !== null ||
     authDialog !== null ||
@@ -946,6 +919,41 @@ function App() {
   }, [screen])
 
   useEffect(() => {
+    if (screen.name !== 'session' || editMode) {
+      setSessionFitsViewport(false)
+      return
+    }
+
+    let frameId = 0
+    const measure = () => {
+      window.cancelAnimationFrame(frameId)
+      frameId = window.requestAnimationFrame(() => {
+        const sessionScreen = document.querySelector<HTMLElement>('.ws-screen')
+        const dock = document.querySelector<HTMLElement>('.ws-dock')
+        const dockMaskHeight = dock ? Number.parseFloat(window.getComputedStyle(dock, '::after').height) || 0 : 0
+        const overflow = sessionScreen
+          ? sessionScreen.scrollHeight - dockMaskHeight - window.innerHeight
+          : Number.POSITIVE_INFINITY
+        setSessionFitsViewport(overflow <= 64)
+      })
+    }
+
+    const observer = new ResizeObserver(measure)
+    const list = document.querySelector('.ws-list')
+    const dock = document.querySelector('.ws-dock')
+    if (list) observer.observe(list)
+    if (dock) observer.observe(dock)
+    window.addEventListener('resize', measure)
+    measure()
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [editMode, screen])
+
+  useEffect(() => {
     return () => {
       if (pulseTimer.current !== null) {
         window.clearTimeout(pulseTimer.current)
@@ -981,9 +989,6 @@ function App() {
 
   const closeAllDialogs = () => {
     setWeightDialog(null)
-    setNameDialog(null)
-    setSetupDialog(null)
-    setTargetDialog(null)
     setPreviousDialog(null)
     setExerciseDialog(null)
     setAuthDialog(null)
@@ -1439,7 +1444,7 @@ function App() {
     const doneCount = countDone(session)
 
     return (
-      <main className="ws-screen">
+      <main className={`ws-screen${sessionFitsViewport && !editMode ? ' is-fit' : ''}${editMode ? ' editing' : ''}`}>
         <header className="ws-header">
           <button className="ws-back" type="button" aria-label="Back" onClick={() => goBack({ name: 'main' })}>
             <Icon name="back" />
@@ -1569,15 +1574,7 @@ function App() {
         <div className="ws-card-head">
           <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
           <span className="ws-num">{numLabel}</span>
-          <button
-            className="ws-card-name"
-            type="button"
-            onClick={() =>
-              setNameDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: variant.name })
-            }
-          >
-            {variant.name}
-          </button>
+          <strong className="ws-card-name">{variant.name}</strong>
           <span className="ws-cat" style={{ color: muscle }}>
             {categoryLabel(variant.category)}
           </span>
@@ -1595,32 +1592,14 @@ function App() {
         </button>
 
         <div className="ws-facts">
-          <button
-            className="ws-fact"
-            type="button"
-            onClick={() =>
-              setSetupDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: displaySetup })
-            }
-          >
+          <div className="ws-fact">
             <span>Setup</span>
             <strong>{formatSetup(displaySetup)}</strong>
-          </button>
-          <button
-            className="ws-fact"
-            type="button"
-            onClick={() =>
-              setTargetDialog({
-                sessionId: session.id,
-                groupId: group.id,
-                variantId: variant.id,
-                sets: String(displaySets),
-                reps: String(displayReps),
-              })
-            }
-          >
+          </div>
+          <div className="ws-fact">
             <span>Target</span>
             <strong>{formatTarget(displaySets, displayReps)}</strong>
-          </button>
+          </div>
         </div>
 
         <div className="ws-step" aria-label={`${variant.name} weight`}>
@@ -2062,54 +2041,6 @@ function App() {
     setWeightDialog(null)
   }
 
-  const saveManualName = () => {
-    if (!nameDialog) {
-      return
-    }
-
-    const name = nameDialog.value.trim()
-    if (!name) {
-      return
-    }
-
-    updateTemplateVariant(nameDialog.variantId, { name })
-    setNameDialog(null)
-  }
-
-  const saveManualSetup = () => {
-    if (!setupDialog) {
-      return
-    }
-
-    const setup = setupDialog.value.trim()
-    updateTemplateVariant(setupDialog.variantId, { setup })
-    updateExerciseEntry(setupDialog.sessionId, setupDialog.groupId, setupDialog.variantId, (entry) => ({
-      ...entry,
-      setup,
-    }))
-    setSetupDialog(null)
-  }
-
-  const saveManualTarget = () => {
-    if (!targetDialog) {
-      return
-    }
-
-    const parsedSets = Number(targetDialog.sets)
-    const parsedReps = Number(targetDialog.reps)
-    if (!Number.isInteger(parsedSets) || !Number.isInteger(parsedReps) || parsedSets < 1 || parsedReps < 1) {
-      return
-    }
-
-    updateTemplateVariant(targetDialog.variantId, { sets: parsedSets, reps: parsedReps })
-    updateExerciseEntry(targetDialog.sessionId, targetDialog.groupId, targetDialog.variantId, (entry) => ({
-      ...entry,
-      sets: parsedSets,
-      reps: parsedReps,
-    }))
-    setTargetDialog(null)
-  }
-
   const setPreviousResult = (status: PreviousResult) => {
     if (!previousDialog) {
       return
@@ -2235,84 +2166,6 @@ function App() {
                 Cancel
               </button>
               <button className="primary-action" type="button" onClick={saveManualWeight}>
-                Save
-              </button>
-            </div>
-          </Dialog>
-        )}
-        {nameDialog && (
-          <Dialog title="Exercise name">
-            <input
-              className="number-input text-input"
-              inputMode="text"
-              type="text"
-              value={nameDialog.value}
-              onChange={(event) => setNameDialog({ ...nameDialog, value: event.target.value })}
-            />
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setNameDialog(null)}>
-                Cancel
-              </button>
-              <button className="primary-action" type="button" onClick={saveManualName}>
-                Save
-              </button>
-            </div>
-          </Dialog>
-        )}
-        {setupDialog && (
-          <Dialog title="Edit setup">
-            <input
-              className="number-input text-input"
-              inputMode="text"
-              type="text"
-              placeholder="N/A, 5-top, bottom, 20°"
-              value={setupDialog.value}
-              onChange={(event) => setSetupDialog({ ...setupDialog, value: event.target.value })}
-            />
-            <p className="dialog-help">Edit the full setup note. Examples: 20°, 5-top, bottom, feet height, N/A.</p>
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setSetupDialog(null)}>
-                Cancel
-              </button>
-              <button className="primary-action" type="button" onClick={saveManualSetup}>
-                Save
-              </button>
-            </div>
-          </Dialog>
-        )}
-        {targetDialog && (
-          <Dialog title="Edit target">
-            <div className="target-fields">
-              <label>
-                <span>Sets</span>
-                <input
-                  className="number-input"
-                  inputMode="numeric"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={targetDialog.sets}
-                  onChange={(event) => setTargetDialog({ ...targetDialog, sets: event.target.value })}
-                />
-              </label>
-              <label>
-                <span>Reps</span>
-                <input
-                  className="number-input"
-                  inputMode="numeric"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={targetDialog.reps}
-                  onChange={(event) => setTargetDialog({ ...targetDialog, reps: event.target.value })}
-                />
-              </label>
-            </div>
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setTargetDialog(null)}>
-                Cancel
-              </button>
-              <button className="primary-action" type="button" onClick={saveManualTarget}>
                 Save
               </button>
             </div>

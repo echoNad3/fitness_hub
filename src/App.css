@@ -201,22 +201,6 @@ h2 {
   line-height: 1.35;
 }
 
-.target-fields {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-
-.target-fields label {
-  display: grid;
-  gap: 6px;
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .dialog-actions .primary-action {
   color: #ffffff;
   background: var(--accent);

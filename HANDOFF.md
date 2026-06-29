@@ -101,8 +101,9 @@ default (16px); all sizing is expressed through the scale so proportions stay in
 
 **Spacing** — `--space-1..6` = 4/8/12/16/24… px. Cards and rows pad with **16px** (`--space-4`),
 list gaps are **12px** (`--space-3`). Interactive rows/controls target **`--tap` (48px)** min height.
-The workout screen is meant to **scroll** — exercise rows stay roomy; don't compress them to fit all
-on one screen.
+The workout screen **scrolls when its content genuinely exceeds the viewport** — exercise rows stay
+roomy; don't compress them to fit. A natural overrun of up to 64px is treated as layout slack and
+clipped so a fully visible default Workout A/B does not have a pointless small bounce.
 
 **Core UI tokens**
 - Background `--bg #252730`, surfaces `--surface #30323d`, `--surface-2 #363844`,
@@ -238,6 +239,24 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- Current change: suppress incidental workout scrolling, seal the rest dock's lower edge, and make
+  expanded exercise name/setup/target read-only (all routine edits remain under the header pencil).
+- `8c90072` Establish a type/spacing scale and apply it app-wide
+- `b1f53f5` Bigger UI, menu/settings icons, roomier tracker, cold-start to menu
+- `2bd4096` Redesign main menu, start prompt, and history
+- `2bbaf51` Universal back layers, dialog dismissal, free-entry rest length
+- `b2a6cb5` Handle the Android hardware/gesture back button explicitly
+- `f53555c` Back from a restored sub-screen returns to the menu, not app exit
+- `3b7716d` Vibrate as an alarm so the rest buzz plays on a locked screen
+- `26dadb1` Fix locked-screen buzz: timestamp lost in the Capacitor bridge
+- `4466fad` Fix back-gesture sync, Settings header inset, and surface buzz errors
+- `3d3941d` Edge-to-edge UI, clearer locked-buzz message, versioned APK download
+- `b93dd91` Locked-screen rest alert: heavy ~6s native vibration, not a notification
+- `1ef9f4b` PWA: auto-update the service worker on new deploys
+- `13c71a7` Auto-updating APK, reconnect sync, and easy one-tap install
+- `6cc245f` Fix Android APK blank screen: build with root base, not Pages subpath
+- `8cafaab` Add Android wrapper and locked-screen rest alerts
+- `2acf51f` Record successful PWA deployment
 - `16db4be` Complete local PWA verification
 - `8a4ca64` Checkpoint PWA app shell and install assets
 - `1320ae2` Update handoff after cloud sync recovery polish
@@ -264,17 +283,20 @@ Git history (newest first); each commit is a clean restore point:
 
 **Feature status:**
 - **Workout/session screen** — fixed-order list, active exercise expands in place, muscle colors
-  (outline + dot + category word), guidance sentence (green increase / coral repeat), Setup/Target
-  tiles (tap to edit), big weight stepper (−1.25/+1.25, tap value to edit), big Done/Failed
-  (tap-again clears, auto-advances to next pending), progress rail, full-width rest dock.
+  (outline + dot + category word), guidance sentence (green increase / coral repeat), read-only
+  exercise name and Setup/Target tiles, big weight stepper (−1.25/+1.25, tap value to edit), big
+  Done/Failed (tap-again clears, auto-advances to next pending), progress rail, and a full-width rest
+  dock whose opaque lower mask prevents exercise content leaking below it. Viewport-fit sessions
+  suppress up to 64px of incidental overflow; longer routines retain normal scrolling.
 - **Home hub** (`main`) — title, **Resume** card (only for an unfinished latest session, shows
   progress + relative time), **Start** (auto-suggests the opposite of the last workout, with a
   "Start X instead" alternate), and **History** / **Settings** tiles. No browser confirms.
 - **History** — clean cards, relative time, semantic done/partial chip, trash delete.
 - **Settings** — Export/Import JSON backup, Test vibration, **Rest length stepper**, Reset.
-- **Full editing** — in-session field edits persist to the routine; **edit mode** (pencil in the
-  session header) for reorder (up/down) / remove / add; a full **exercise editor** dialog
-  (name, muscle group chips, sets, reps, setup, weight, per-hand) for add & edit.
+- **Full editing** — **edit mode** (pencil in the session header) handles reorder (up/down), remove,
+  add, and all routine-detail changes through the full **exercise editor** dialog (name, muscle
+  group chips, sets, reps, setup, weight, per-hand). The expanded workout card no longer opens
+  separate name/setup/target editors; only session actions such as weight and result stay direct.
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.
@@ -313,7 +335,10 @@ Git history (newest first); each commit is a clean restore point:
   Android build now forces root base (`CAPACITOR_BUILD`). Re-build the APK from the latest `main`.**
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
-and 390×844 browser-preview screenshots). Cloud sync steps 3 and 4a pass build, lint, and unit tests.
+and phone browser-preview screenshots). The latest workout viewport fix was verified at 412×915:
+default Workout B has zero document overflow and the full dock remains visible; at 412×800 the fit
+class disengages and the document regains overflow. Tests (15), lint, and production build pass.
+Cloud sync steps 3 and 4a pass build, lint, and unit tests.
 Its authenticated upload path was verified locally with a reversible 90s → 105s → 90s change:
 both writes reached `Synced` with no console errors. Cross-device pull was then verified on the
 live phone app using a temporary 105s marker; the cloud value was restored to 90s afterward.

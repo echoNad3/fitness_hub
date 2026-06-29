@@ -6,13 +6,23 @@
   width: min(100%, 460px);
   margin: 0 auto;
   min-height: 100svh;
-  padding: 0 14px calc(16px + env(safe-area-inset-bottom));
+  padding: 0 14px;
   display: grid;
   align-content: start;
   gap: 12px;
   background:
     radial-gradient(circle at 82% -8%, var(--page-glow), transparent 30%),
     var(--bg);
+}
+
+.ws-screen.is-fit {
+  height: 100svh;
+  min-height: 0;
+  overflow-y: clip;
+}
+
+.ws-screen.editing {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
 .ws-header {
@@ -179,11 +189,8 @@
 .ws-card-name {
   min-width: 0;
   overflow: hidden;
-  padding: 0;
   color: var(--text);
   text-align: left;
-  background: transparent;
-  border: 0;
   font-size: var(--fs-heading);
   font-weight: var(--fw-bold);
   line-height: 1.15;
@@ -370,6 +377,17 @@
   background: linear-gradient(180deg, rgba(34, 37, 46, 0), var(--bg) 26%);
 }
 
+.ws-dock::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: max(32px, env(safe-area-inset-bottom));
+  pointer-events: none;
+  background: var(--bg);
+}
+
 .ws-dock-start {
   grid-column: 1 / -1;
   height: 54px;
@@ -445,9 +463,7 @@
 }
 
 .ws-row,
-.ws-card-name,
 .ws-guide,
-.ws-fact,
 .ws-stepbtn,
 .ws-weight,
 .ws-resultbtn,
@@ -464,9 +480,7 @@
 }
 
 .ws-row:active,
-.ws-card-name:active,
 .ws-guide:active,
-.ws-fact:active,
 .ws-stepbtn:active,
 .ws-weight:active,
 .ws-resultbtn:active,
@@ -479,9 +493,7 @@
 
 .ws-back:focus-visible,
 .ws-row:focus-visible,
-.ws-card-name:focus-visible,
 .ws-guide:focus-visible,
-.ws-fact:focus-visible,
 .ws-stepbtn:focus-visible,
 .ws-weight:focus-visible,
 .ws-resultbtn:focus-visible,
@@ -494,9 +506,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ws-row,
-  .ws-card-name,
   .ws-guide,
-  .ws-fact,
   .ws-stepbtn,
   .ws-weight,
   .ws-resultbtn,
