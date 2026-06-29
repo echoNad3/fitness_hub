@@ -88,13 +88,13 @@
 
 .ws-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .ws-row {
   width: 100%;
-  min-height: 54px;
-  padding: 12px 14px;
+  min-height: 60px;
+  padding: 15px 15px;
   display: grid;
   grid-template-columns: auto auto 1fr auto;
   align-items: center;
@@ -159,9 +159,9 @@
 }
 
 .ws-card {
-  padding: 14px;
+  padding: 16px;
   display: grid;
-  gap: 11px;
+  gap: 13px;
   color: var(--text);
   background: var(--surface-2);
   border: 1.5px solid var(--line);

@@ -161,7 +161,6 @@ type CloudUser = {
 type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error'
 
 const STORAGE_KEY = 'fitness-hub-v1'
-const SCREEN_KEY = 'fitness-hub-v1-screen'
 const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
@@ -492,6 +491,28 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M8 5v14l11-7z" />
         </svg>
       )
+    case 'history':
+      return (
+        <svg {...props}>
+          <path d="M3 3v5h5" />
+          <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+          <path d="M12 7v5l4 2" />
+        </svg>
+      )
+    case 'settings':
+      return (
+        <svg {...props}>
+          <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
+          <path d="M1 14h6M9 8h6M17 16h6" />
+        </svg>
+      )
+    case 'bell':
+      return (
+        <svg {...props}>
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+        </svg>
+      )
     default:
       return null
   }
@@ -767,10 +788,6 @@ function App() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(SCREEN_KEY, JSON.stringify(screen))
-  }, [screen])
-
-  useEffect(() => {
     window.history.replaceState({ fitnessHub: true }, '')
 
     // The app reloads the page on each launch (the Android wrapper loads the live site), so it can
@@ -1041,12 +1058,18 @@ function App() {
 
         <div className="home-tiles">
           <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
-            <span>History</span>
-            <small>{sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}</small>
+            <span className="home-tile-icon"><Icon name="history" size={22} /></span>
+            <span className="home-tile-text">
+              <span>History</span>
+              <small>{sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}</small>
+            </span>
           </button>
           <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
-            <span>Settings</span>
-            <small>Backup, reset</small>
+            <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
+            <span className="home-tile-text">
+              <span>Settings</span>
+              <small>Backup, reset</small>
+            </span>
           </button>
         </div>
 
@@ -1108,17 +1131,27 @@ function App() {
           <>
             <div className="hist-tracker" aria-label="Last 14 days">
               <div className="hist-tracker-row">
-                {tracker.map((day) => (
-                  <button
-                    key={day.key}
-                    type="button"
-                    className={`hist-day ${day.status}`}
-                    disabled={!day.sessionId}
-                    aria-label={`${day.label}${day.status === 'done' ? ' · finished' : day.status === 'unfinished' ? ' · unfinished' : ''}`}
-                    title={day.label}
-                    onClick={() => day.sessionId && scrollToSession(day.sessionId)}
-                  />
-                ))}
+                {tracker.map((day) => {
+                  const last = day.sessions[day.sessions.length - 1]
+                  const label = day.sessions.length
+                    ? `${day.label} · ${day.sessions.map((s) => (s.status === 'done' ? 'finished' : 'unfinished')).join(', ')}`
+                    : `${day.label} · rest day`
+                  return (
+                    <button
+                      key={day.key}
+                      type="button"
+                      className={`hist-day ${day.sessions.length ? 'has' : 'empty'}`}
+                      disabled={!last}
+                      aria-label={label}
+                      title={label}
+                      onClick={() => last && scrollToSession(last.sessionId)}
+                    >
+                      {day.sessions.map((session, index) => (
+                        <i className={`hist-seg ${session.status}`} key={index} />
+                      ))}
+                    </button>
+                  )
+                })}
               </div>
               <div className="hist-tracker-legend">
                 <span><i className="dot done" />Finished</span>
@@ -1308,6 +1341,7 @@ function App() {
             <strong>Test vibration</strong>
             <small>{vibrationMessage || 'Buzz the phone once'}</small>
           </span>
+          <Icon name="bell" />
         </button>
 
         <div className="set-row set-rest">
@@ -2476,17 +2510,11 @@ function loadData(): AppData {
   }
 }
 
+// Always start on the main menu. A cold start (force-stop / closed from recents) reloads the
+// page and lands here; minimizing the app keeps the running React state, so the current screen is
+// preserved on resume without persisting it.
 function loadScreen(): Screen {
-  const saved = localStorage.getItem(SCREEN_KEY)
-  if (!saved) {
-    return { name: 'main' }
-  }
-
-  try {
-    return normalizeScreen(JSON.parse(saved))
-  } catch {
-    return { name: 'main' }
-  }
+  return { name: 'main' }
 }
 
 function normalizeData(value: unknown): AppData {
@@ -2531,27 +2559,6 @@ function normalizeTemplates(value: unknown): WorkoutTemplate[] {
   }
 
   return templates
-}
-
-function normalizeScreen(value: unknown): Screen {
-  if (!value || typeof value !== 'object' || !('name' in value)) {
-    return { name: 'main' }
-  }
-
-  const screen = value as { name?: unknown; workoutId?: unknown; sessionId?: unknown }
-  if (screen.name === 'global-history' || screen.name === 'settings' || screen.name === 'main') {
-    return { name: screen.name }
-  }
-
-  if (screen.name === 'session' && isWorkoutId(screen.workoutId) && typeof screen.sessionId === 'string') {
-    return { name: 'session', workoutId: screen.workoutId, sessionId: screen.sessionId }
-  }
-
-  return { name: 'main' }
-}
-
-function isWorkoutId(value: unknown): value is WorkoutId {
-  return value === 'workout-a' || value === 'workout-b'
 }
 
 function createSession(workoutId: WorkoutId, data: AppData, sessionId: string): WorkoutSession {
@@ -2730,39 +2737,34 @@ function isSessionFinished(session: WorkoutSession) {
   return total > 0 && countDone(session) === total
 }
 
-type DayStatus = { key: string; label: string; status: 'done' | 'unfinished' | 'none'; sessionId?: string }
+type DaySession = { status: 'done' | 'unfinished'; sessionId: string; createdAt: number }
+type DayCell = { key: string; label: string; sessions: DaySession[] }
 
-// The last 14 days, today first (left). Each day is green (a finished workout), red (an unfinished
-// one), or empty (a rest day). The session id lets a tap scroll to that day's entry.
-function buildTwoWeekTracker(sessions: WorkoutSession[]): DayStatus[] {
-  const byDay = new Map<string, WorkoutSession[]>()
+// The last 14 days, today first (left). Each day holds every session done that day (earliest first)
+// so the cell can stack their colours — green (finished) over red (unfinished). The session ids let
+// a tap scroll to that day's entry.
+function buildTwoWeekTracker(sessions: WorkoutSession[]): DayCell[] {
+  const byDay = new Map<string, DaySession[]>()
   for (const session of sessions) {
     const key = dayKey(session.createdAt)
     const arr = byDay.get(key) ?? []
-    arr.push(session)
+    arr.push({
+      status: isSessionFinished(session) ? 'done' : 'unfinished',
+      sessionId: session.id,
+      createdAt: session.createdAt,
+    })
     byDay.set(key, arr)
   }
 
   const today = new Date()
-  const days: DayStatus[] = []
+  const days: DayCell[] = []
   for (let i = 0; i < 14; i += 1) {
     const date = new Date(today)
     date.setDate(today.getDate() - i)
     const key = dayKey(date.getTime())
     const label = i === 0 ? 'Today' : new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)
-    const daySessions = byDay.get(key) ?? []
-    if (daySessions.length === 0) {
-      days.push({ key, label, status: 'none' })
-      continue
-    }
-    const finished = daySessions.find((session) => isSessionFinished(session))
-    const latest = [...daySessions].sort((a, b) => b.createdAt - a.createdAt)[0]
-    days.push({
-      key,
-      label,
-      status: finished ? 'done' : 'unfinished',
-      sessionId: (finished ?? latest).id,
-    })
+    const daySessions = (byDay.get(key) ?? []).sort((a, b) => a.createdAt - b.createdAt)
+    days.push({ key, label, sessions: daySessions })
   }
   return days
 }

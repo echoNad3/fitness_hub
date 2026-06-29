@@ -215,11 +215,11 @@
 }
 
 .home-tile {
-  min-height: 76px;
-  padding: 14px;
-  display: grid;
-  gap: 3px;
-  align-content: center;
+  min-height: 80px;
+  padding: 15px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   color: var(--text);
   text-align: left;
   background: var(--surface);
@@ -227,14 +227,30 @@
   border-radius: var(--radius-card);
 }
 
-.home-tile span {
-  font-size: 1rem;
+.home-tile-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--surface-3);
+  border-radius: 12px;
+}
+
+.home-tile-text {
+  display: grid;
+  gap: 2px;
+}
+
+.home-tile-text span {
+  font-size: 1.05rem;
   font-weight: 800;
 }
 
-.home-tile small {
+.home-tile-text small {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
 }
 
 .home-resume,

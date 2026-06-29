@@ -43,7 +43,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 13px 15px;
+  padding: 15px 16px;
   color: var(--text);
   text-align: left;
   background: var(--surface);
@@ -148,36 +148,47 @@
 .hist-tracker-row {
   display: grid;
   grid-template-columns: repeat(14, 1fr);
-  gap: 4px;
+  gap: 5px;
 }
 
 .hist-day {
-  height: 26px;
+  height: 54px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 7px;
   background: rgba(255, 255, 255, 0.07);
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
 }
 
-.hist-day.done {
+.hist-seg {
+  flex: 1;
+  border-radius: 3px;
+}
+
+.hist-seg.done {
   background: var(--success);
 }
 
-.hist-day.unfinished {
+.hist-seg.unfinished {
   background: var(--danger);
 }
 
-.hist-day:not(:disabled) {
+.hist-day.has {
   cursor: pointer;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.hist-day:not(:disabled):active {
-  transform: scale(0.92);
+.hist-day.has:active {
+  transform: scale(0.94);
 }
 
 .hist-day:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .hist-tracker-legend {
@@ -229,7 +240,7 @@
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 12px;
-  padding: 14px 15px;
+  padding: 16px 16px;
   color: var(--text);
   text-align: left;
   background: var(--surface);
