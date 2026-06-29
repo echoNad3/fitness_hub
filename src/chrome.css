@@ -173,6 +173,44 @@
   font-variant-numeric: tabular-nums;
 }
 
+.set-rest-field {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.set-rest-field input {
+  width: 46px;
+  padding: 7px 2px;
+  text-align: center;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.set-rest-field input::-webkit-outer-spin-button,
+.set-rest-field input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.set-rest-field input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.set-rest-field span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .set-stepper button {
   width: 42px;
   height: 42px;

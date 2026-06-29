@@ -15,6 +15,7 @@ import {
 } from './cloudSync'
 import {
   clampRestSeconds,
+  clampRestValue,
   moveItem,
   nextPendingId,
   restSecondsRemaining,
@@ -516,6 +517,7 @@ function App() {
   const [restNotificationMessage, setRestNotificationMessage] = useState('')
   const [vibrationMessage, setVibrationMessage] = useState('')
   const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
+  const [restDraft, setRestDraft] = useState<string | null>(null)
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
   const syncTimer = useRef<number | null>(null)
@@ -524,6 +526,25 @@ function App() {
   // Mirror the current screen into a ref so the (mount-only) popstate handler can read it.
   const screenRef = useRef(screen)
   screenRef.current = screen
+  // Dismissable "back layers" stacked on top of a screen: edit mode and any open dialog. The back
+  // gesture closes the topmost one before leaving the screen. We mirror their open-state into refs
+  // and a count so the mount-only history handler can read the latest values.
+  const dialogOpen =
+    weightDialog !== null ||
+    nameDialog !== null ||
+    setupDialog !== null ||
+    targetDialog !== null ||
+    previousDialog !== null ||
+    exerciseDialog !== null ||
+    authDialog !== null
+  const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
+  const editModeRef = useRef(editMode)
+  editModeRef.current = editMode
+  const dialogOpenRef = useRef(dialogOpen)
+  dialogOpenRef.current = dialogOpen
+  const overlayBuffersRef = useRef(0)
+  const closingOverlayViaPopstateRef = useRef(false)
+  const ignorePopstateRef = useRef(0)
   const dataRef = useRef(data)
   dataRef.current = data
   const cloudUserRef = useRef(cloudUser)
@@ -752,6 +773,24 @@ function App() {
     }
 
     const handlePopState = () => {
+      // History entries consumed by the overlay sync effect (closing a dialog/edit mode via a
+      // Cancel/Done tap) must not also pop a screen — skip them.
+      if (ignorePopstateRef.current > 0) {
+        ignorePopstateRef.current -= 1
+        return
+      }
+
+      // A back layer (open dialog, then edit mode) is dismissed before the screen changes.
+      if (overlayBuffersRef.current > 0) {
+        closingOverlayViaPopstateRef.current = true
+        if (dialogOpenRef.current) {
+          closeAllDialogs()
+        } else if (editModeRef.current) {
+          setEditMode(false)
+        }
+        return
+      }
+
       setScreenStack((currentStack) => {
         if (currentStack.length > 0) {
           const previous = currentStack[currentStack.length - 1]
@@ -772,12 +811,12 @@ function App() {
     window.addEventListener('popstate', handlePopState)
 
     // On Android, Capacitor's hardware/gesture back does NOT navigate web history by default — it
-    // just exits the app. Handle it explicitly: from a sub-screen step back through history (which
-    // fires the popstate handler above and returns to the menu); only the menu exits the app.
+    // just exits the app. Handle it explicitly: step back through history (which fires the popstate
+    // handler above to close a dialog/edit layer or return to the menu); only the bare menu exits.
     let removeBackButton: (() => void) | undefined
     if (Capacitor.isNativePlatform()) {
       void CapacitorApp.addListener('backButton', () => {
-        if (screenRef.current.name !== 'main') {
+        if (overlayBuffersRef.current > 0 || screenRef.current.name !== 'main') {
           window.history.back()
         } else {
           void CapacitorApp.exitApp()
@@ -792,6 +831,34 @@ function App() {
       removeBackButton?.()
     }
   }, [])
+
+  // Keep the browser history in sync with the open back layers (edit mode / dialogs). Opening a
+  // layer pushes a history entry so the back gesture has something to consume; closing one via the
+  // UI (Cancel/Done) steps that entry back off so the history stays aligned with what's on screen.
+  useEffect(() => {
+    const pushed = overlayBuffersRef.current
+    if (overlayCount > pushed) {
+      for (let i = pushed; i < overlayCount; i += 1) {
+        window.history.pushState({ fitnessHub: true, overlay: true }, '')
+      }
+      overlayBuffersRef.current = overlayCount
+      return
+    }
+    if (overlayCount < pushed) {
+      const toConsume = pushed - overlayCount
+      overlayBuffersRef.current = overlayCount
+      if (closingOverlayViaPopstateRef.current) {
+        // The back gesture already removed the entry; just clear the flag.
+        closingOverlayViaPopstateRef.current = false
+      } else {
+        // Closed via the UI: remove the matching history entries ourselves.
+        ignorePopstateRef.current += toConsume
+        for (let i = 0; i < toConsume; i += 1) {
+          window.history.back()
+        }
+      }
+    }
+  }, [overlayCount])
 
   useEffect(() => {
     if (!restRunning || restEndsAt === null) {
@@ -884,6 +951,16 @@ function App() {
     } else {
       setScreenState(fallback)
     }
+  }
+
+  const closeAllDialogs = () => {
+    setWeightDialog(null)
+    setNameDialog(null)
+    setSetupDialog(null)
+    setTargetDialog(null)
+    setPreviousDialog(null)
+    setExerciseDialog(null)
+    setAuthDialog(null)
   }
 
   const triggerRestDone = () => {
@@ -1152,7 +1229,25 @@ function App() {
             <button type="button" aria-label="Less rest" onClick={() => changeRest(-15)}>
               <Icon name="minus" size={18} />
             </button>
-            <strong>{data.restSeconds}s</strong>
+            <label className="set-rest-field">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={15}
+                max={600}
+                aria-label="Rest length in seconds"
+                value={restDraft ?? String(data.restSeconds)}
+                onFocus={() => setRestDraft(String(data.restSeconds))}
+                onChange={(event) => setRestDraft(event.target.value)}
+                onBlur={commitRestDraft}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur()
+                  }
+                }}
+              />
+              <span>s</span>
+            </label>
             <button type="button" aria-label="More rest" onClick={() => changeRest(15)}>
               <Icon name="plus" size={18} />
             </button>
@@ -1168,7 +1263,7 @@ function App() {
         </button>
       </div>
       {authDialog && (
-        <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'} onClose={() => setAuthDialog(null)}>
+        <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'}>
           <div className="ex-form">
             <label className="ex-field">
               <span>Email</span>
@@ -1682,6 +1777,16 @@ function App() {
     }))
   }
 
+  const commitRestDraft = () => {
+    setRestDraft((draft) => {
+      if (draft !== null && draft.trim() !== '') {
+        const next = clampRestValue(Number(draft))
+        setData((current) => ({ ...current, restSeconds: next }))
+      }
+      return null
+    })
+  }
+
   const deleteSession = (sessionId: string) => {
     if (!window.confirm('Delete this session?')) {
       return
@@ -1991,7 +2096,7 @@ function App() {
           </Page>
         )}
         {weightDialog && (
-          <Dialog title="Edit weight" onClose={() => setWeightDialog(null)}>
+          <Dialog title="Edit weight">
             <input
               className="number-input"
               inputMode="decimal"
@@ -2012,7 +2117,7 @@ function App() {
           </Dialog>
         )}
         {nameDialog && (
-          <Dialog title="Exercise name" onClose={() => setNameDialog(null)}>
+          <Dialog title="Exercise name">
             <input
               className="number-input text-input"
               inputMode="text"
@@ -2031,7 +2136,7 @@ function App() {
           </Dialog>
         )}
         {setupDialog && (
-          <Dialog title="Edit setup" onClose={() => setSetupDialog(null)}>
+          <Dialog title="Edit setup">
             <input
               className="number-input text-input"
               inputMode="text"
@@ -2052,7 +2157,7 @@ function App() {
           </Dialog>
         )}
         {targetDialog && (
-          <Dialog title="Edit target" onClose={() => setTargetDialog(null)}>
+          <Dialog title="Edit target">
             <div className="target-fields">
               <label>
                 <span>Sets</span>
@@ -2090,7 +2195,7 @@ function App() {
           </Dialog>
         )}
         {previousDialog && (
-          <Dialog title="Previous session result" onClose={() => setPreviousDialog(null)}>
+          <Dialog title="Previous session result">
             <div className="status-row dialog-status">
               <button className="success-button" type="button" onClick={() => setPreviousResult('success')}>
                 Done
@@ -2105,7 +2210,7 @@ function App() {
           </Dialog>
         )}
         {exerciseDialog && (
-          <Dialog title={exerciseDialog.groupId ? 'Edit exercise' : 'Add exercise'} onClose={() => setExerciseDialog(null)}>
+          <Dialog title={exerciseDialog.groupId ? 'Edit exercise' : 'Add exercise'}>
             <div className="ex-form">
               <label className="ex-field">
                 <span>Name</span>
@@ -2226,10 +2331,12 @@ function Page({ title, onBack, children }: { title: string; onBack: () => void; 
   )
 }
 
-function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+function Dialog({ title, children }: { title: string; children: ReactNode }) {
+  // Intentionally no tap-outside-to-close: dialogs are dismissed only via their Cancel button or
+  // the system back gesture (handled by the overlay history sync), so a stray tap can't discard input.
   return (
-    <div className="dialog-backdrop" role="presentation" onClick={onClose}>
-      <section className="dialog" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+    <div className="dialog-backdrop" role="presentation">
+      <section className="dialog" role="dialog" aria-modal="true" aria-label={title}>
         <h2>{title}</h2>
         {children}
       </section>

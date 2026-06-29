@@ -27,7 +27,15 @@ export function nextPendingId(
 }
 
 export function clampRestSeconds(current: number, delta: number) {
-  return Math.min(600, Math.max(15, current + delta))
+  return clampRestValue(current + delta)
+}
+
+// Clamp a directly-entered rest length to the supported 15s–600s range.
+export function clampRestValue(value: number) {
+  if (!Number.isFinite(value)) {
+    return 15
+  }
+  return Math.min(600, Math.max(15, Math.round(value)))
 }
 
 export function restSecondsRemaining(endsAt: number, now: number) {
