@@ -1132,7 +1132,7 @@ function App() {
             <div className="hist-tracker" aria-label="Last 14 days">
               <div className="hist-tracker-row">
                 {tracker.map((day) => {
-                  const last = day.sessions[day.sessions.length - 1]
+                  const latest = day.sessions[0]
                   const label = day.sessions.length
                     ? `${day.label} · ${day.sessions.map((s) => (s.status === 'done' ? 'finished' : 'unfinished')).join(', ')}`
                     : `${day.label} · rest day`
@@ -1141,10 +1141,10 @@ function App() {
                       key={day.key}
                       type="button"
                       className={`hist-day ${day.sessions.length ? 'has' : 'empty'}`}
-                      disabled={!last}
+                      disabled={!latest}
                       aria-label={label}
                       title={label}
-                      onClick={() => last && scrollToSession(last.sessionId)}
+                      onClick={() => latest && scrollToSession(latest.sessionId)}
                     >
                       {day.sessions.map((session, index) => (
                         <i className={`hist-seg ${session.status}`} key={index} />
@@ -2740,9 +2740,9 @@ function isSessionFinished(session: WorkoutSession) {
 type DaySession = { status: 'done' | 'unfinished'; sessionId: string; createdAt: number }
 type DayCell = { key: string; label: string; sessions: DaySession[] }
 
-// The last 14 days, today first (left). Each day holds every session done that day (earliest first)
-// so the cell can stack their colours — green (finished) over red (unfinished). The session ids let
-// a tap scroll to that day's entry.
+// The last 14 days, today first (left). Each day holds every session done that day (latest first,
+// matching the history list order) so the cell stacks their colours top-down the same way. The
+// session ids let a tap scroll to that day's entry.
 function buildTwoWeekTracker(sessions: WorkoutSession[]): DayCell[] {
   const byDay = new Map<string, DaySession[]>()
   for (const session of sessions) {
@@ -2763,7 +2763,7 @@ function buildTwoWeekTracker(sessions: WorkoutSession[]): DayCell[] {
     date.setDate(today.getDate() - i)
     const key = dayKey(date.getTime())
     const label = i === 0 ? 'Today' : new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)
-    const daySessions = (byDay.get(key) ?? []).sort((a, b) => a.createdAt - b.createdAt)
+    const daySessions = (byDay.get(key) ?? []).sort((a, b) => b.createdAt - a.createdAt)
     days.push({ key, label, sessions: daySessions })
   }
   return days

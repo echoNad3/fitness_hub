@@ -27,15 +27,15 @@
 
 .ws-edit-main strong {
   overflow: hidden;
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ws-edit-main small {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-meta);
 }
 
 .ws-edit-actions {
@@ -72,8 +72,8 @@
   background: transparent;
   border: 1px dashed rgba(96, 116, 243, 0.45);
   border-radius: var(--radius-card);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
 }
 
 .ex-form {
@@ -88,8 +88,8 @@
 
 .ex-field > span {
   color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 800;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -112,8 +112,8 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   border-radius: 9px;
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
 }
 
 .ex-muscle.sel {
@@ -128,8 +128,8 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   border-radius: 14px;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
 }
 
 .ex-toggle.on {

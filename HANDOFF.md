@@ -82,7 +82,27 @@ generic SaaS-dashboard look, no childish/gamer styling.**
 
 ## 5. Design language
 
-CSS variables live in `src/App.css :root`. Use them; don't hardcode.
+CSS variables live in `src/App.css :root`. Use them; don't hardcode. **Every font size and weight
+must use a token below — no one-off `rem`/numeric values.** Root font-size stays at the browser
+default (16px); all sizing is expressed through the scale so proportions stay intentional.
+
+**Type scale** (the only font sizes in the app):
+| Token | Size | Use |
+|---|---|---|
+| `--fs-display` | 26px | App title, screen titles |
+| `--fs-title` | 22px | Primary buttons (Resume / Start), the weight value |
+| `--fs-heading` | 19px | Card / exercise names |
+| `--fs-body` | 17px | Default body, row labels, button text |
+| `--fs-label` | 15px | Subtitles, secondary text |
+| `--fs-meta` | 13px | Meta info, captions |
+| `--fs-caption` | 11px | Eyebrows, tiny tags, numerals (uppercase labels) |
+
+**Weights** — three only: `--fw-medium 600`, `--fw-semibold 700`, `--fw-bold 800`.
+
+**Spacing** — `--space-1..6` = 4/8/12/16/24… px. Cards and rows pad with **16px** (`--space-4`),
+list gaps are **12px** (`--space-3`). Interactive rows/controls target **`--tap` (48px)** min height.
+The workout screen is meant to **scroll** — exercise rows stay roomy; don't compress them to fit all
+on one screen.
 
 **Core UI tokens**
 - Background `--bg #252730`, surfaces `--surface #30323d`, `--surface-2 #363844`,
@@ -92,7 +112,8 @@ CSS variables live in `src/App.css :root`. Use them; don't hardcode.
 - **Accent (soft blue) `--accent #6074f3`** — primary actions / interactive bits only.
 - **Done/success `--success #51cf7b`** (soft green).
 - **Failed/danger `--danger #f2767d`** (soft coral).
-- **Warning `--warning #f4cb59`** (amber) — used for "partial" history chips.
+- **Warning `--warning #f4cb59`** (amber) — reserved; available for cautions. (History now uses
+  **green = finished / red = unfinished** per session, not an amber "partial" state.)
 - Focus `--focus #d9e0ef`; accent tint/line `--accent-soft` / `--accent-line`; shared page glow
   `--page-glow rgba(96,116,243,0.08)`.
 - Corners: `--radius 16px`, `--radius-card 14px`, `--radius-control 11px` (deliberately *slightly*

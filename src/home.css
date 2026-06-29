@@ -18,15 +18,15 @@
 }
 
 .home-top h1 {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
   letter-spacing: -0.01em;
 }
 
 .home-eyebrow {
   color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 800;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -51,8 +51,8 @@
 }
 
 .home-resume-row strong {
-  font-size: 1.35rem;
-  font-weight: 800;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
 }
 
 .home-resume-row svg {
@@ -82,8 +82,8 @@
 
 .home-resume-sub {
   color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
 }
 
 .home-start-primary {
@@ -106,14 +106,14 @@
 }
 
 .home-start-main strong {
-  font-size: 1.35rem;
-  font-weight: 800;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
 }
 
 .home-start-main small {
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
 }
 
 /* Start-workout prompt */
@@ -144,22 +144,22 @@
 
 .start-next-main small {
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .start-next-main strong {
-  font-size: 1.2rem;
-  font-weight: 800;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
 }
 
 .start-or {
   margin: 6px 2px 0;
   color: var(--quiet);
-  font-size: 0.76rem;
-  font-weight: 700;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
 }
 
 .start-other {
@@ -173,8 +173,8 @@
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
 }
 
@@ -189,8 +189,8 @@
   background: transparent;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
 }
 
@@ -244,13 +244,13 @@
 }
 
 .home-tile-text span {
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-size: var(--fs-heading);
+  font-weight: var(--fw-bold);
 }
 
 .home-tile-text small {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-meta);
 }
 
 .home-resume,

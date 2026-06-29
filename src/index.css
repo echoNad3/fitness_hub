@@ -16,8 +16,6 @@
 html {
   min-height: 100%;
   background: var(--bg, #252730);
-  /* Slightly larger base so all rem-based text across the app reads bigger and less cramped. */
-  font-size: 17.5px;
 }
 
 body {
