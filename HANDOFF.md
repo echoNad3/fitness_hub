@@ -357,6 +357,20 @@ Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
    - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
      login; otherwise sign-up requires email confirmation before the first sign-in works.
 
+4. **Selectable workout splits (FUTURE IDEA — not built yet).** Today the only split is the fixed
+   two-workout rotation (Workout A / Workout B). The longer-term goal is to let the end user pick a
+   **split type** (e.g. **Push / Pull / Legs**, upper/lower, full-body, custom) — chosen once in
+   **Settings** — so the app is usable by the public, not just one person. Design rules to preserve
+   when this is built:
+   - The main menu already reads from a generic rotation: "up next" is "the workout after your last
+     session" in whatever ordered list the active split defines, and the **Start new workout** prompt
+     lists every *other* workout in that split under "Or pick another". Adding PPL is mostly a matter
+     of letting the split define more than two workouts — the menu UI does not need to change.
+   - **Never mix splits.** A/B sessions and PPL sessions must not appear in the same rotation; the
+     active split owns the whole list. Switching split type in Settings swaps the rotation wholesale.
+   - History, the 14-day tracker, and resume all key off sessions generically, so they already work
+     for any number of workouts per split.
+
 ---
 
 ## 9. How to run, build, and verify

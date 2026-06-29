@@ -33,12 +33,12 @@
 
 .home-resume {
   display: grid;
-  gap: 9px;
-  padding: 15px 16px;
+  gap: 11px;
+  padding: 17px 17px;
   color: var(--text);
   text-align: left;
   background: var(--surface-2);
-  border: 1px solid rgba(96, 116, 243, 0.22);
+  border: 1px solid rgba(81, 207, 123, 0.42);
   border-radius: var(--radius);
   box-shadow: var(--soft-shadow);
 }
@@ -51,12 +51,12 @@
 }
 
 .home-resume-row strong {
-  font-size: 1.16rem;
+  font-size: 1.35rem;
   font-weight: 800;
 }
 
 .home-resume-row svg {
-  color: var(--accent);
+  color: var(--success);
 }
 
 .home-rail {
@@ -86,15 +86,12 @@
   font-weight: 600;
 }
 
-.home-start {
-  display: grid;
-  gap: 8px;
-}
-
 .home-start-primary {
-  display: grid;
-  gap: 4px;
-  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px;
   color: #ffffff;
   text-align: left;
   background: var(--accent);
@@ -103,30 +100,111 @@
   box-shadow: var(--soft-shadow);
 }
 
-.home-start-primary .home-eyebrow {
-  color: rgba(255, 255, 255, 0.82);
+.home-start-main {
+  display: grid;
+  gap: 3px;
 }
 
-.home-start-row {
+.home-start-main strong {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.home-start-main small {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* Start-workout prompt */
+
+.start-sheet {
+  display: grid;
+  gap: 9px;
+}
+
+.start-next {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 16px 16px;
+  color: #ffffff;
+  text-align: left;
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-card);
+  cursor: pointer;
 }
 
-.home-start-row strong {
+.start-next-main {
+  display: grid;
+  gap: 2px;
+}
+
+.start-next-main small {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.start-next-main strong {
   font-size: 1.2rem;
   font-weight: 800;
 }
 
-.home-start-alt {
-  min-height: 46px;
+.start-or {
+  margin: 6px 2px 0;
+  color: var(--quiet);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.start-other {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 15px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.start-other svg {
+  color: var(--quiet);
+}
+
+.start-cancel {
+  margin-top: 4px;
+  min-height: 44px;
   color: var(--muted);
   background: transparent;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  font-size: 0.88rem;
+  border-radius: var(--radius-control);
+  font-size: 0.9rem;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.start-next:active,
+.start-other:active,
+.start-cancel:active {
+  transform: scale(0.99);
+}
+
+.start-next:focus-visible,
+.start-other:focus-visible,
+.start-cancel:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .home-tiles {
@@ -161,7 +239,6 @@
 
 .home-resume,
 .home-start-primary,
-.home-start-alt,
 .home-tile {
   cursor: pointer;
   transition:
@@ -172,14 +249,12 @@
 
 .home-resume:active,
 .home-start-primary:active,
-.home-start-alt:active,
 .home-tile:active {
   transform: scale(0.99);
 }
 
 .home-resume:focus-visible,
 .home-start-primary:focus-visible,
-.home-start-alt:focus-visible,
 .home-tile:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -188,7 +263,6 @@
 @media (prefers-reduced-motion: reduce) {
   .home-resume,
   .home-start-primary,
-  .home-start-alt,
   .home-tile {
     transition: none;
   }

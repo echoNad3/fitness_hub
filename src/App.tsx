@@ -486,6 +486,12 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M12 7v5l3 2" />
         </svg>
       )
+    case 'play':
+      return (
+        <svg {...props} fill="currentColor" stroke="none">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      )
     default:
       return null
   }
@@ -518,6 +524,8 @@ function App() {
   const [vibrationMessage, setVibrationMessage] = useState('')
   const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
   const [restDraft, setRestDraft] = useState<string | null>(null)
+  const [startDialogOpen, setStartDialogOpen] = useState(false)
+  const [highlightSession, setHighlightSession] = useState<string | null>(null)
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
   const syncTimer = useRef<number | null>(null)
@@ -536,7 +544,8 @@ function App() {
     targetDialog !== null ||
     previousDialog !== null ||
     exerciseDialog !== null ||
-    authDialog !== null
+    authDialog !== null ||
+    startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
   const editModeRef = useRef(editMode)
   editModeRef.current = editMode
@@ -961,6 +970,16 @@ function App() {
     setPreviousDialog(null)
     setExerciseDialog(null)
     setAuthDialog(null)
+    setStartDialogOpen(false)
+  }
+
+  const scrollToSession = (sessionId: string) => {
+    const card = document.getElementById(`hist-${sessionId}`)
+    card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightSession(sessionId)
+    window.setTimeout(() => {
+      setHighlightSession((current) => (current === sessionId ? null : current))
+    }, 1800)
   }
 
   const triggerRestDone = () => {
@@ -980,7 +999,7 @@ function App() {
       latest && countDone(latest) < getWorkout(latest.workoutId).groups.length ? latest : undefined
     const lastWorkoutId = latest?.workoutId
     const suggestedId: WorkoutId = lastWorkoutId === 'workout-a' ? 'workout-b' : 'workout-a'
-    const otherId: WorkoutId = suggestedId === 'workout-a' ? 'workout-b' : 'workout-a'
+    const otherWorkouts = data.templates.filter((template) => template.id !== suggestedId)
     const sessionCount = data.sessions.length
 
     return (
@@ -995,10 +1014,12 @@ function App() {
             type="button"
             onClick={() => openSession(resumable.workoutId, resumable.id)}
           >
-            <span className="home-eyebrow">Resume</span>
             <span className="home-resume-row">
-              <strong>{getWorkout(resumable.workoutId).name}</strong>
-              <Icon name="forward" size={20} />
+              <strong>Resume workout</strong>
+              <Icon name="play" size={24} />
+            </span>
+            <span className="home-resume-sub">
+              {getWorkout(resumable.workoutId).name} · {countDone(resumable)} of {getWorkout(resumable.workoutId).groups.length} done
             </span>
             <span className="home-rail" aria-hidden="true">
               {getWorkout(resumable.workoutId).groups.map((group) => {
@@ -1007,24 +1028,16 @@ function App() {
                 return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
               })}
             </span>
-            <span className="home-resume-sub">
-              {countDone(resumable)}/{getWorkout(resumable.workoutId).groups.length} done · {formatRelative(resumable.createdAt)}
-            </span>
           </button>
         )}
 
-        <div className="home-start">
-          <button className="home-start-primary" type="button" onClick={() => startSession(suggestedId)}>
-            <span className="home-eyebrow">{lastWorkoutId ? `Last: ${getWorkout(lastWorkoutId).name}` : 'New session'}</span>
-            <span className="home-start-row">
-              <strong>Start {getWorkout(suggestedId).name}</strong>
-              <Icon name="plus" size={22} />
-            </span>
-          </button>
-          <button className="home-start-alt" type="button" onClick={() => startSession(otherId)}>
-            Start {getWorkout(otherId).name} instead
-          </button>
-        </div>
+        <button className="home-start-primary" type="button" onClick={() => setStartDialogOpen(true)}>
+          <span className="home-start-main">
+            <strong>Start new workout</strong>
+            <small>Up next · {getWorkout(suggestedId).name}</small>
+          </span>
+          <Icon name="forward" size={24} />
+        </button>
 
         <div className="home-tiles">
           <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
@@ -1036,42 +1049,119 @@ function App() {
             <small>Backup, reset</small>
           </button>
         </div>
+
+        {startDialogOpen && (
+          <Dialog title="Start workout">
+            <div className="start-sheet">
+              <button
+                className="start-next"
+                type="button"
+                onClick={() => {
+                  setStartDialogOpen(false)
+                  startSession(suggestedId)
+                }}
+              >
+                <span className="start-next-main">
+                  <small>Up next</small>
+                  <strong>{getWorkout(suggestedId).name}</strong>
+                </span>
+                <Icon name="play" size={22} />
+              </button>
+
+              {otherWorkouts.length > 0 && (
+                <>
+                  <p className="start-or">Or pick another</p>
+                  {otherWorkouts.map((workout) => (
+                    <button
+                      key={workout.id}
+                      className="start-other"
+                      type="button"
+                      onClick={() => {
+                        setStartDialogOpen(false)
+                        startSession(workout.id)
+                      }}
+                    >
+                      <span>{workout.name}</span>
+                      <Icon name="forward" size={18} />
+                    </button>
+                  ))}
+                </>
+              )}
+
+              <button className="start-cancel" type="button" onClick={() => setStartDialogOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </Dialog>
+        )}
       </main>
     )
   }
 
-  const renderHistory = (sessions: WorkoutSession[], onBack: () => void, title = 'History') => (
-    <Page title={title} onBack={onBack}>
-      {sessions.length === 0 ? (
-        <EmptyState text="No sessions yet." />
-      ) : (
-        <div className="hist-list">
-          {sessions.map((session) => {
-            const workout = getWorkout(session.workoutId)
-            const doneCount = countDone(session)
-            const total = workout.groups.length
-            const status = completionStatus(doneCount, total)
-            return (
-              <article className="hist-card" key={session.id}>
-                <button className="hist-open" type="button" onClick={() => openSession(session.workoutId, session.id)}>
-                  <span className="hist-main">
-                    <strong>{workout.name}</strong>
-                    <small>{formatRelative(session.createdAt)}</small>
-                  </span>
-                  <span className={`hist-chip ${status}`}>
-                    {doneCount}/{total}
-                  </span>
-                </button>
-                <button className="hist-del" type="button" aria-label="Delete session" onClick={() => deleteSession(session.id)}>
-                  <Icon name="trash" size={18} />
-                </button>
-              </article>
-            )
-          })}
-        </div>
-      )}
-    </Page>
-  )
+  const renderHistory = (sessions: WorkoutSession[], onBack: () => void, title = 'History') => {
+    const tracker = buildTwoWeekTracker(sessions)
+    return (
+      <Page title={title} onBack={onBack}>
+        {sessions.length === 0 ? (
+          <EmptyState text="No sessions yet." />
+        ) : (
+          <>
+            <div className="hist-tracker" aria-label="Last 14 days">
+              <div className="hist-tracker-row">
+                {tracker.map((day) => (
+                  <button
+                    key={day.key}
+                    type="button"
+                    className={`hist-day ${day.status}`}
+                    disabled={!day.sessionId}
+                    aria-label={`${day.label}${day.status === 'done' ? ' · finished' : day.status === 'unfinished' ? ' · unfinished' : ''}`}
+                    title={day.label}
+                    onClick={() => day.sessionId && scrollToSession(day.sessionId)}
+                  />
+                ))}
+              </div>
+              <div className="hist-tracker-legend">
+                <span><i className="dot done" />Finished</span>
+                <span><i className="dot unfinished" />Unfinished</span>
+                <span className="hist-tracker-ends">today → 2 weeks</span>
+              </div>
+            </div>
+
+            <div className="hist-list">
+              {sessions.map((session) => {
+                const workout = getWorkout(session.workoutId)
+                const doneCount = countDone(session)
+                const total = workout.groups.length
+                const finished = doneCount === total
+                return (
+                  <article
+                    className={`hist-card ${highlightSession === session.id ? 'highlight' : ''}`}
+                    id={`hist-${session.id}`}
+                    key={session.id}
+                  >
+                    <button className="hist-open" type="button" onClick={() => openSession(session.workoutId, session.id)}>
+                      <span className="hist-main">
+                        <strong>{workout.name}</strong>
+                        <small>{formatAbsolute(session.createdAt)}</small>
+                        <small className="hist-ago">{formatRelative(session.createdAt)}</small>
+                      </span>
+                      <span className={`hist-chip ${finished ? 'done' : 'unfinished'}`}>
+                        {finished ? 'Done' : 'Unfinished'}
+                        <em>{doneCount}/{total}</em>
+                      </span>
+                    </button>
+                    <button className="hist-del" type="button" aria-label="Delete session" onClick={() => deleteSession(session.id)}>
+                      <Icon name="trash" size={18} />
+                    </button>
+                  </article>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </Page>
+    )
+  }
 
   const submitAuth = async () => {
     if (!authDialog || !supabase) {
@@ -2633,16 +2723,53 @@ function countDone(session: WorkoutSession) {
   }).length
 }
 
-function completionStatus(doneCount: number, totalCount: number) {
-  if (doneCount === totalCount) {
-    return 'complete'
+// A session is "finished" when every exercise has a logged result (done or failed); otherwise the
+// workout was left part-way. Used for the green/red status across history and the tracker.
+function isSessionFinished(session: WorkoutSession) {
+  const total = getWorkout(session.workoutId).groups.length
+  return total > 0 && countDone(session) === total
+}
+
+type DayStatus = { key: string; label: string; status: 'done' | 'unfinished' | 'none'; sessionId?: string }
+
+// The last 14 days, today first (left). Each day is green (a finished workout), red (an unfinished
+// one), or empty (a rest day). The session id lets a tap scroll to that day's entry.
+function buildTwoWeekTracker(sessions: WorkoutSession[]): DayStatus[] {
+  const byDay = new Map<string, WorkoutSession[]>()
+  for (const session of sessions) {
+    const key = dayKey(session.createdAt)
+    const arr = byDay.get(key) ?? []
+    arr.push(session)
+    byDay.set(key, arr)
   }
 
-  if (doneCount === 0) {
-    return 'empty'
+  const today = new Date()
+  const days: DayStatus[] = []
+  for (let i = 0; i < 14; i += 1) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - i)
+    const key = dayKey(date.getTime())
+    const label = i === 0 ? 'Today' : new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)
+    const daySessions = byDay.get(key) ?? []
+    if (daySessions.length === 0) {
+      days.push({ key, label, status: 'none' })
+      continue
+    }
+    const finished = daySessions.find((session) => isSessionFinished(session))
+    const latest = [...daySessions].sort((a, b) => b.createdAt - a.createdAt)[0]
+    days.push({
+      key,
+      label,
+      status: finished ? 'done' : 'unfinished',
+      sessionId: (finished ?? latest).id,
+    })
   }
+  return days
+}
 
-  return 'partial'
+function dayKey(timestamp: number) {
+  const date = new Date(timestamp)
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
 }
 
 function getNextPendingGroupId(session: WorkoutSession, currentGroupId: string) {
@@ -2761,31 +2888,38 @@ function formatTimer(seconds: number) {
 
 function formatRelative(timestamp: number) {
   const diff = Date.now() - timestamp
-  const mins = Math.round(diff / 60000)
+  const mins = Math.floor(diff / 60000)
   if (mins < 1) {
     return 'just now'
   }
   if (mins < 60) {
-    return `${mins}m ago`
+    return plural(mins, 'minute')
   }
-  const hours = Math.round(mins / 60)
+  const hours = Math.floor(mins / 60)
   if (hours < 24) {
-    return `${hours}h ago`
+    return plural(hours, 'hour')
   }
-  const days = Math.round(hours / 24)
-  if (days === 1) {
-    return 'yesterday'
+  const days = Math.floor(hours / 24)
+  if (days < 30) {
+    return plural(days, 'day')
   }
-  if (days < 7) {
-    return `${days}d ago`
+  const months = Math.floor(days / 30)
+  if (months < 12) {
+    return plural(months, 'month')
   }
-  return formatDate(timestamp)
+  return plural(Math.floor(days / 365), 'year')
 }
 
-function formatDate(timestamp: number) {
+function plural(count: number, unit: string) {
+  return `${count} ${unit}${count === 1 ? '' : 's'} ago`
+}
+
+// Weekday, day, month and time — e.g. "Tue 24 Jun, 19:40". Shown alongside the relative label.
+function formatAbsolute(timestamp: number) {
   return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
+    weekday: 'short',
     day: 'numeric',
+    month: 'short',
     hour: '2-digit',
     minute: '2-digit',
   }).format(timestamp)

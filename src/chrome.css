@@ -94,6 +94,126 @@
   color: var(--quiet);
 }
 
+.hist-chip.done,
+.hist-chip.unfinished {
+  display: grid;
+  gap: 1px;
+  justify-items: center;
+  border-color: transparent;
+}
+
+.hist-chip.done {
+  color: #0b2d18;
+  background: var(--success);
+}
+
+.hist-chip.unfinished {
+  color: #3a0d10;
+  background: var(--danger);
+}
+
+.hist-chip em {
+  font-style: normal;
+  font-size: 0.66rem;
+  font-weight: 800;
+  opacity: 0.82;
+}
+
+.hist-ago {
+  color: var(--quiet) !important;
+  font-size: 0.72rem !important;
+}
+
+.hist-card {
+  scroll-margin-top: calc(70px + env(safe-area-inset-top));
+  border-radius: var(--radius-card);
+  transition: box-shadow 200ms ease;
+}
+
+.hist-card.highlight {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Last-14-days tracker (today first / leftmost) */
+
+.hist-tracker {
+  display: grid;
+  gap: 8px;
+  padding: 12px 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.hist-tracker-row {
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  gap: 4px;
+}
+
+.hist-day {
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 0;
+}
+
+.hist-day.done {
+  background: var(--success);
+}
+
+.hist-day.unfinished {
+  background: var(--danger);
+}
+
+.hist-day:not(:disabled) {
+  cursor: pointer;
+}
+
+.hist-day:not(:disabled):active {
+  transform: scale(0.92);
+}
+
+.hist-day:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.hist-tracker-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--quiet);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.hist-tracker-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hist-tracker-legend .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.hist-tracker-legend .dot.done {
+  background: var(--success);
+}
+
+.hist-tracker-legend .dot.unfinished {
+  background: var(--danger);
+}
+
+.hist-tracker-ends {
+  margin-left: auto;
+  color: var(--quiet);
+}
+
 .hist-del {
   width: 52px;
   display: grid;
