@@ -1767,9 +1767,10 @@ function App() {
                   'Locked-screen buzz needs an app update — reinstall the latest APK. The visible timer still works.',
                 )
               } else if (result.status === 'failed') {
-                setRestNotificationMessage(
-                  `Locked-screen buzz unavailable${result.detail ? ` (${result.detail})` : ''}. The visible timer still works.`,
-                )
+                if (result.detail) {
+                  console.warn('Rest alarm failed:', result.detail)
+                }
+                setRestNotificationMessage('Locked-screen buzz unavailable. The visible timer still works.')
               }
             })
           }}

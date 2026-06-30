@@ -13,22 +13,6 @@
     var(--bg);
 }
 
-.home > * {
-  animation: rise-in 320ms ease both;
-}
-
-.home > *:nth-child(2) {
-  animation-delay: 45ms;
-}
-
-.home > *:nth-child(3) {
-  animation-delay: 90ms;
-}
-
-.home > *:nth-child(4) {
-  animation-delay: 135ms;
-}
-
 .home-top {
   padding: 4px 2px 2px;
 }
@@ -78,7 +62,7 @@
   height: 5px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
-  transition: background-color 260ms ease;
+  transition: background-color 220ms ease;
 }
 
 .home-rail i.done {
@@ -206,7 +190,7 @@
 .start-next:active,
 .start-other:active,
 .start-cancel:active {
-  transform: scale(0.99);
+  transform: scale(0.98);
 }
 
 .start-next:focus-visible,
@@ -275,7 +259,7 @@
 .home-resume:active,
 .home-start-primary:active,
 .home-tile:active {
-  transform: scale(0.99);
+  transform: scale(0.98);
 }
 
 .home-resume:focus-visible,

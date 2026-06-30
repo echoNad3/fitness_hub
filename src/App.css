@@ -116,13 +116,7 @@ h2 {
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.97);
-  }
-}
-
-@keyframes press-pop {
-  40% {
-    transform: scale(1.05);
+    transform: translateY(8px) scale(0.98);
   }
 }
 
@@ -147,7 +141,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  animation: pop-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .dialog h2 {
@@ -159,7 +153,7 @@ h2 {
 }
 
 .dialog button:active {
-  transform: scale(0.985);
+  transform: scale(0.98);
 }
 
 .dialog button:focus-visible {
@@ -231,7 +225,7 @@ h2 {
 }
 
 .choice:active {
-  transform: scale(0.99);
+  transform: scale(0.98);
 }
 
 .choice:focus-visible {

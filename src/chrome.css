@@ -13,18 +13,6 @@
     var(--bg);
 }
 
-.page > * {
-  animation: rise-in 300ms ease both;
-}
-
-.page > *:nth-child(2) {
-  animation-delay: 50ms;
-}
-
-.page > *:nth-child(3) {
-  animation-delay: 100ms;
-}
-
 .page-head {
   padding: 4px 0 6px;
   display: grid;
@@ -179,7 +167,7 @@
 }
 
 .hist-day.has:active {
-  transform: scale(0.94);
+  transform: scale(0.95);
 }
 
 .hist-day:focus-visible {
@@ -351,7 +339,7 @@
 }
 
 .set-stepper button:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
 }
 
 .set-stepper button:focus-visible {
@@ -372,7 +360,7 @@
 .hist-open:active,
 .hist-del:active,
 .set-row:active {
-  transform: scale(0.99);
+  transform: scale(0.98);
 }
 
 .hist-open:focus-visible,
@@ -456,7 +444,7 @@
 }
 
 .set-pill:active {
-  transform: scale(0.97);
+  transform: scale(0.95);
 }
 
 .set-pill.retry {
