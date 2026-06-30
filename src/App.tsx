@@ -526,7 +526,6 @@ function App() {
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
   const [restPulse, setRestPulse] = useState(false)
   const [restNotificationMessage, setRestNotificationMessage] = useState('')
-  const [sessionFitsViewport, setSessionFitsViewport] = useState(false)
   const [vibrationMessage, setVibrationMessage] = useState('')
   const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
   const [restDraft, setRestDraft] = useState<string | null>(null)
@@ -538,6 +537,7 @@ function App() {
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
   const expandedRef = useRef<string | null>(null)
+  const holdRef = useRef<{ timeout?: number; interval?: number }>({})
   // Mirror the current screen into a ref so the (mount-only) popstate handler can read it.
   const screenRef = useRef(screen)
   screenRef.current = screen
@@ -954,41 +954,6 @@ function App() {
   }, [data.expandedBySession, screen])
 
   useEffect(() => {
-    if (screen.name !== 'session' || editMode) {
-      setSessionFitsViewport(false)
-      return
-    }
-
-    let frameId = 0
-    const measure = () => {
-      window.cancelAnimationFrame(frameId)
-      frameId = window.requestAnimationFrame(() => {
-        const sessionScreen = document.querySelector<HTMLElement>('.ws-screen')
-        const dock = document.querySelector<HTMLElement>('.ws-dock')
-        const dockMaskHeight = dock ? Number.parseFloat(window.getComputedStyle(dock, '::after').height) || 0 : 0
-        const overflow = sessionScreen
-          ? sessionScreen.scrollHeight - dockMaskHeight - window.innerHeight
-          : Number.POSITIVE_INFINITY
-        setSessionFitsViewport(overflow <= 64)
-      })
-    }
-
-    const observer = new ResizeObserver(measure)
-    const list = document.querySelector('.ws-list')
-    const dock = document.querySelector('.ws-dock')
-    if (list) observer.observe(list)
-    if (dock) observer.observe(dock)
-    window.addEventListener('resize', measure)
-    measure()
-
-    return () => {
-      window.cancelAnimationFrame(frameId)
-      observer.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [editMode, screen])
-
-  useEffect(() => {
     return () => {
       if (pulseTimer.current !== null) {
         window.clearTimeout(pulseTimer.current)
@@ -996,6 +961,7 @@ function App() {
       if (syncTimer.current !== null) {
         window.clearTimeout(syncTimer.current)
       }
+      stopHold()
     }
   }, [])
 
@@ -1196,7 +1162,7 @@ function App() {
               <div className="hist-tracker-legend">
                 <span><i className="dot done" />Finished</span>
                 <span><i className="dot unfinished" />Unfinished</span>
-                <span className="hist-tracker-ends">today → 2 weeks</span>
+                <span className="hist-tracker-ends">last 14 days</span>
               </div>
             </div>
 
@@ -1445,7 +1411,7 @@ function App() {
     const doneCount = countDone(session)
 
     return (
-      <main className={`ws-screen${sessionFitsViewport && !editMode ? ' is-fit' : ''}${editMode ? ' editing' : ''}`}>
+      <main className={`ws-screen${editMode ? ' editing' : ''}`}>
         <header className="ws-header">
           {editMode ? (
             <button className="ws-back" type="button" aria-label="Discard changes" onClick={() => window.history.back()}>
@@ -1674,7 +1640,16 @@ function App() {
             className="ws-stepbtn"
             type="button"
             aria-label="Decrease weight"
-            onClick={() => adjustWeight(session.id, group.id, variant.id, -1.25)}
+            onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, -1.25))}
+            onPointerUp={stopHold}
+            onPointerLeave={stopHold}
+            onPointerCancel={stopHold}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                adjustWeight(session.id, group.id, variant.id, -1.25)
+              }
+            }}
           >
             <Icon name="minus" />
           </button>
@@ -1692,7 +1667,16 @@ function App() {
             className="ws-stepbtn"
             type="button"
             aria-label="Increase weight"
-            onClick={() => adjustWeight(session.id, group.id, variant.id, 1.25)}
+            onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
+            onPointerUp={stopHold}
+            onPointerLeave={stopHold}
+            onPointerCancel={stopHold}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                adjustWeight(session.id, group.id, variant.id, 1.25)
+              }
+            }}
           >
             <Icon name="plus" />
           </button>
@@ -1994,6 +1978,26 @@ function App() {
       ...entry,
       weight: roundWeight(Math.max(0, entry.weight + delta)),
     }))
+  }
+
+  // Press-and-hold to repeat (weight steppers): fire once immediately, then auto-repeat after a
+  // short delay so big load changes don't need a dozen taps. Released on pointer up/leave/cancel.
+  const startHold = (action: () => void) => {
+    stopHold()
+    action()
+    holdRef.current.timeout = window.setTimeout(() => {
+      holdRef.current.interval = window.setInterval(action, 110)
+    }, 380)
+  }
+
+  const stopHold = () => {
+    if (holdRef.current.timeout !== undefined) {
+      window.clearTimeout(holdRef.current.timeout)
+    }
+    if (holdRef.current.interval !== undefined) {
+      window.clearInterval(holdRef.current.interval)
+    }
+    holdRef.current = {}
   }
 
   const setExerciseResult = (sessionId: string, groupId: string, variantId: string, status: ResultStatus) => {

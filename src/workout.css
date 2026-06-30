@@ -15,12 +15,6 @@
     var(--bg);
 }
 
-.ws-screen.is-fit {
-  height: 100svh;
-  min-height: 0;
-  overflow-y: clip;
-}
-
 .ws-screen.editing {
   padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
@@ -178,7 +172,7 @@
   background: var(--surface-2);
   border: 1.5px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: var(--soft-shadow);
+  box-shadow: var(--shadow);
   animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

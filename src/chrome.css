@@ -131,14 +131,14 @@
 
 .hist-tracker-row {
   display: grid;
-  grid-template-columns: repeat(14, 1fr);
-  gap: 5px;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
 }
 
 .hist-day {
-  height: 54px;
+  height: 46px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 9px;
   background: rgba(255, 255, 255, 0.07);
   padding: 0;
   display: flex;
