@@ -105,15 +105,18 @@ The workout screen **scrolls when its content genuinely exceeds the viewport** �
 roomy; don't compress them to fit. A natural overrun of up to 64px is treated as layout slack and
 clipped so a fully visible default Workout A/B does not have a pointless small bounce.
 
-**Motion** — shared keyframes in `App.css` (`fade-in`, `rise-in`, `pop-in`, `press-pop`). Keep it
-subtle and purposeful: screen containers fade/rise in (home and Page lists stagger their children),
-dialogs `pop-in`, the active exercise card and the running rest timer `pop-in`, and result taps /
-the rest-done dock get a short `press-pop`; progress-rail dots and result chips also animate, and
-Done/Failed smooth-scrolls the next exercise into view. A global `prefers-reduced-motion` rule
-neutralizes all of it — never rely on animation for meaning, and reuse these keyframes rather than
-adding one-offs. **Cold-start:** `index.html` paints `#252730` and a spinner (`#app-boot`, removed
-when React mounts), and the Android launch theme (`styles.xml`) forces a dark window + system bars,
-so a fresh APK launch fades from the app's background instead of flashing black with grey bars.
+**Motion** — shared keyframes in `App.css` (`fade-in`, `rise-in`, `pop-in`). All transitions sit in
+~100–250ms with no scale overshoot/bounce. **Navigation between menu pages is instant** (no screen
+entrance animation). Motion is reserved for explaining change: dialogs `pop-in` (160ms); the
+exercise item **genuinely grows** open/closed via `grid-template-rows: 0fr→1fr` on `.ws-item-body`
+(the collapsed row and expanded card are one morphing `.ws-item`, not a swap); progress-rail dots
+and result chips animate; Done/Failed smooth-scrolls the next exercise in. Press feedback is one
+rule: large surfaces `scale(0.98)`, small controls `scale(0.95)`, 120ms. A global
+`prefers-reduced-motion` rule neutralizes all of it — never rely on animation for meaning, and reuse
+these keyframes rather than adding one-offs. **Cold-start:** `index.html` paints `#252730` and a
+spinner (`#app-boot`, removed when React mounts), and the Android launch theme (`styles.xml`) forces
+a dark window + system bars, so a fresh APK launch fades from the app's background instead of
+flashing black with grey bars. **Reorder** in edit mode is drag-and-drop (`@dnd-kit`, grip handle).
 
 **Core UI tokens**
 - Background `--bg #252730`, surfaces `--surface #30323d`, `--surface-2 #363844`,
@@ -180,6 +183,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
+| `src/haptics.ts` | Purposeful haptics — `hapticTick()` (selection: swap / preset / muscle / reorder) and `hapticConfirm()` (Done/Failed, rest start/cancel). `@capacitor/haptics` on native, `navigator.vibrate` fallback on web. Never on routine taps (e.g. not on weight hold-repeat). |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |

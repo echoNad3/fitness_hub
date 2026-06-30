@@ -44,6 +44,7 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApkVersion } from './apkVersion'
 import { getStored, setStored } from './storage'
+import { hapticConfirm, hapticTick } from './haptics'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -1051,6 +1052,7 @@ function App() {
     if (!over || active.id === over.id) {
       return
     }
+    hapticTick()
     setEditDirty(true)
     setData((current) => ({
       ...current,
@@ -1661,133 +1663,132 @@ function App() {
     const muscle = muscleColor(variant.category)
     const numLabel = String(index + 1).padStart(2, '0')
 
-    if (!isExpanded) {
-      return (
+    return (
+      <article
+        className={`ws-item${isExpanded ? ' open' : ''}${entry.result ? ' is-done' : ''}`}
+        style={{ borderColor: isExpanded ? `${muscle}b0` : `${muscle}52` }}
+        id={`exercise-${group.id}`}
+        key={group.id}
+      >
         <button
+          className="ws-item-head"
           type="button"
-          className={`ws-row${entry.result ? ' is-done' : ''}`}
-          style={{ borderColor: `${muscle}52` }}
-          id={`exercise-${group.id}`}
-          key={group.id}
-          aria-expanded={false}
+          aria-expanded={isExpanded}
           onClick={() => expandExercise(session.id, group.id)}
         >
           <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
           <span className="ws-num">{numLabel}</span>
           <span className="ws-name">{variant.name}</span>
-          {entry.result ? (
+          {isExpanded ? (
+            <span className="ws-cat" style={{ color: muscle }}>
+              {categoryLabel(variant.category)}
+            </span>
+          ) : entry.result ? (
             <span className={`ws-chip ${entry.result === 'success' ? 'done' : 'failed'}`}>{resultLabel(entry.result)}</span>
           ) : (
             <span className="ws-meta">{formatTarget(displaySets, displayReps)}</span>
           )}
         </button>
-      )
-    }
 
-    return (
-      <article className="ws-card" style={{ borderColor: `${muscle}b0` }} id={`exercise-${group.id}`} key={group.id}>
-        <div className="ws-card-head">
-          <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
-          <span className="ws-num">{numLabel}</span>
-          <strong className="ws-card-name">{variant.name}</strong>
-          <span className="ws-cat" style={{ color: muscle }}>
-            {categoryLabel(variant.category)}
-          </span>
-        </div>
+        <div className="ws-item-body">
+          <div className="ws-item-body-inner">
+            <div className="ws-item-body-content">
+              <button
+                className={`ws-guide ${guidanceClass(previous)}`}
+                type="button"
+                onClick={() =>
+                  setPreviousDialog({ workoutId: workout.id, sessionId: session.id, groupId: group.id, variantId: variant.id })
+                }
+              >
+                <Icon name={previous === 'success' ? 'arrow-up' : previous === 'failure' ? 'repeat' : 'clock'} size={18} />
+                <span>{guidanceSentence(previous)}</span>
+              </button>
 
-        <button
-          className={`ws-guide ${guidanceClass(previous)}`}
-          type="button"
-          onClick={() =>
-            setPreviousDialog({ workoutId: workout.id, sessionId: session.id, groupId: group.id, variantId: variant.id })
-          }
-        >
-          <Icon name={previous === 'success' ? 'arrow-up' : previous === 'failure' ? 'repeat' : 'clock'} size={18} />
-          <span>{guidanceSentence(previous)}</span>
-        </button>
+              <div className="ws-facts">
+                <div className="ws-fact">
+                  <span>Setup</span>
+                  <strong>{formatSetup(displaySetup)}</strong>
+                </div>
+                <div className="ws-fact">
+                  <span>Target</span>
+                  <strong>{formatTarget(displaySets, displayReps)}</strong>
+                </div>
+              </div>
 
-        <div className="ws-facts">
-          <div className="ws-fact">
-            <span>Setup</span>
-            <strong>{formatSetup(displaySetup)}</strong>
+              <div className="ws-step" aria-label={`${variant.name} weight`}>
+                <button
+                  className="ws-stepbtn"
+                  type="button"
+                  aria-label="Decrease weight"
+                  onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, -1.25))}
+                  onPointerUp={stopHold}
+                  onPointerLeave={stopHold}
+                  onPointerCancel={stopHold}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      adjustWeight(session.id, group.id, variant.id, -1.25)
+                    }
+                  }}
+                >
+                  <Icon name="minus" />
+                </button>
+                <button
+                  className="ws-weight"
+                  type="button"
+                  onClick={() =>
+                    setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
+                  }
+                >
+                  <strong>{formatWeight(entry.weight)}</strong>
+                  <span>{variant.perHand ? 'per hand' : 'total'}</span>
+                </button>
+                <button
+                  className="ws-stepbtn"
+                  type="button"
+                  aria-label="Increase weight"
+                  onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
+                  onPointerUp={stopHold}
+                  onPointerLeave={stopHold}
+                  onPointerCancel={stopHold}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      adjustWeight(session.id, group.id, variant.id, 1.25)
+                    }
+                  }}
+                >
+                  <Icon name="plus" />
+                </button>
+              </div>
+
+              <div className="ws-result" aria-label={`${variant.name} result`}>
+                <button
+                  className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
+                  type="button"
+                  aria-pressed={entry.result === 'success'}
+                  onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
+                >
+                  Done
+                </button>
+                <button
+                  className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
+                  type="button"
+                  aria-pressed={entry.result === 'failure'}
+                  onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
+                >
+                  Failed
+                </button>
+              </div>
+
+              {group.variants.length > 1 && (
+                <button className="ws-swap" type="button" onClick={() => swapVariant(session.id, group)}>
+                  Swap to {getNextVariant(group, variant.id).name}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="ws-fact">
-            <span>Target</span>
-            <strong>{formatTarget(displaySets, displayReps)}</strong>
-          </div>
         </div>
-
-        <div className="ws-step" aria-label={`${variant.name} weight`}>
-          <button
-            className="ws-stepbtn"
-            type="button"
-            aria-label="Decrease weight"
-            onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, -1.25))}
-            onPointerUp={stopHold}
-            onPointerLeave={stopHold}
-            onPointerCancel={stopHold}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                adjustWeight(session.id, group.id, variant.id, -1.25)
-              }
-            }}
-          >
-            <Icon name="minus" />
-          </button>
-          <button
-            className="ws-weight"
-            type="button"
-            onClick={() =>
-              setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
-            }
-          >
-            <strong>{formatWeight(entry.weight)}</strong>
-            <span>{variant.perHand ? 'per hand' : 'total'}</span>
-          </button>
-          <button
-            className="ws-stepbtn"
-            type="button"
-            aria-label="Increase weight"
-            onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
-            onPointerUp={stopHold}
-            onPointerLeave={stopHold}
-            onPointerCancel={stopHold}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                adjustWeight(session.id, group.id, variant.id, 1.25)
-              }
-            }}
-          >
-            <Icon name="plus" />
-          </button>
-        </div>
-
-        <div className="ws-result" aria-label={`${variant.name} result`}>
-          <button
-            className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
-            type="button"
-            aria-pressed={entry.result === 'success'}
-            onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
-          >
-            Done
-          </button>
-          <button
-            className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
-            type="button"
-            aria-pressed={entry.result === 'failure'}
-            onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
-          >
-            Failed
-          </button>
-        </div>
-
-        {group.variants.length > 1 && (
-          <button className="ws-swap" type="button" onClick={() => swapVariant(session.id, group)}>
-            Swap to {getNextVariant(group, variant.id).name}
-          </button>
-        )}
       </article>
     )
   }
@@ -1807,6 +1808,7 @@ function App() {
             className="ws-dock-cancel"
             type="button"
             onClick={() => {
+              hapticConfirm()
               setRestRunning(false)
               setRestEndsAt(null)
               setRestSeconds(data.restSeconds)
@@ -1822,6 +1824,7 @@ function App() {
           className="ws-dock-start"
           type="button"
           onClick={() => {
+            hapticConfirm()
             const endsAt = Date.now() + data.restSeconds * 1000
             setRestSeconds(data.restSeconds)
             setRestEndsAt(endsAt)
@@ -2001,6 +2004,7 @@ function App() {
   }
 
   const setRest = (value: number) => {
+    hapticTick()
     setData((current) => ({ ...current, restSeconds: clampRestValue(value) }))
   }
 
@@ -2066,6 +2070,7 @@ function App() {
   }
 
   const setExerciseResult = (sessionId: string, groupId: string, variantId: string, status: ResultStatus) => {
+    hapticConfirm()
     setData((current) => {
       let updatedSession: WorkoutSession | undefined
       const sessions = current.sessions.map((session) => {
@@ -2099,6 +2104,7 @@ function App() {
   }
 
   const swapVariant = (sessionId: string, group: ExerciseGroup) => {
+    hapticTick()
     setData((current) => {
       const sessions = current.sessions.map((session) => {
         if (session.id !== sessionId) {
@@ -2356,7 +2362,10 @@ function App() {
                         type="button"
                         className={`ex-muscle ${selected ? 'sel' : ''}`}
                         style={selected ? { background: muscleColor(category), borderColor: muscleColor(category) } : undefined}
-                        onClick={() => setExerciseDialog({ ...exerciseDialog, category })}
+                        onClick={() => {
+                          hapticTick()
+                          setExerciseDialog({ ...exerciseDialog, category })
+                        }}
                       >
                         {categoryLabel(category)}
                       </button>

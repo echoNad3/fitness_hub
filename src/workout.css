@@ -96,7 +96,31 @@
   gap: 10px;
 }
 
-.ws-row {
+/* Exercise item: one element that morphs between collapsed row and expanded card, so expand /
+   collapse reads as real height growth (grid-template-rows 0fr -> 1fr) rather than a swap. */
+.ws-item {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    border-radius 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.ws-item.open {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.ws-item.is-done:not(.open) {
+  opacity: 0.6;
+}
+
+.ws-item-head {
   width: 100%;
   min-height: 66px;
   padding: 16px;
@@ -106,13 +130,30 @@
   gap: 12px;
   color: var(--text);
   text-align: left;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
-.ws-row.is-done {
-  opacity: 0.6;
+.ws-item-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease;
+}
+
+.ws-item.open .ws-item-body {
+  grid-template-rows: 1fr;
+}
+
+.ws-item-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ws-item-body-content {
+  display: grid;
+  gap: 13px;
+  padding: 0 16px 16px;
 }
 
 .ws-dot {
@@ -139,6 +180,11 @@
   white-space: nowrap;
 }
 
+/* Emphasis on the active exercise's name — weight only, so the layout doesn't shift on expand. */
+.ws-item.open .ws-name {
+  font-weight: var(--fw-bold);
+}
+
 .ws-meta {
   color: var(--quiet);
   font-size: var(--fs-meta);
@@ -162,37 +208,6 @@
 .ws-chip.failed {
   color: #4b1116;
   background: var(--danger);
-}
-
-.ws-card {
-  padding: 16px;
-  display: grid;
-  gap: 13px;
-  color: var(--text);
-  background: var(--surface-2);
-  border: 1.5px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.ws-card-head {
-  display: grid;
-  grid-template-columns: auto auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.ws-card-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  text-align: left;
-  font-size: var(--fs-heading);
-  font-weight: var(--fw-bold);
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .ws-cat {
@@ -460,7 +475,7 @@
   color: #0b2d18;
 }
 
-.ws-row,
+.ws-item-head,
 .ws-guide,
 .ws-stepbtn,
 .ws-weight,
@@ -477,7 +492,7 @@
     color 120ms ease;
 }
 
-.ws-row:active,
+.ws-item:not(.open) .ws-item-head:active,
 .ws-guide:active,
 .ws-stepbtn:active,
 .ws-weight:active,
@@ -490,7 +505,7 @@
 }
 
 .ws-back:focus-visible,
-.ws-row:focus-visible,
+.ws-item-head:focus-visible,
 .ws-guide:focus-visible,
 .ws-stepbtn:focus-visible,
 .ws-weight:focus-visible,
@@ -503,7 +518,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-row,
+  .ws-item-head,
   .ws-guide,
   .ws-stepbtn,
   .ws-weight,
