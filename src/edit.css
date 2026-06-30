@@ -107,11 +107,33 @@
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
+}
+
+/* Drag handle owns the reorder gesture; touch-action:none lets a drag start without scrolling. */
+.ws-edit-handle {
+  width: 40px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  color: var(--quiet);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.ws-edit-handle:active {
+  cursor: grabbing;
+}
+
+.ws-edit-row.dragging {
+  background: var(--surface-2);
 }
 
 .ws-edit-main {
@@ -137,28 +159,19 @@
   font-size: var(--fs-meta);
 }
 
-.ws-edit-actions {
-  display: flex;
-  gap: 5px;
-}
-
-.ws-edit-actions button {
+.ws-edit-del {
   width: 42px;
   height: 42px;
   display: grid;
   place-items: center;
-  color: var(--muted);
+  color: var(--danger);
   background: var(--surface-3);
   border: 1px solid var(--line);
   border-radius: 10px;
 }
 
-.ws-edit-actions button:disabled {
+.ws-edit-del:disabled {
   opacity: 0.35;
-}
-
-.ws-edit-del {
-  color: var(--danger);
 }
 
 .ws-add {
@@ -238,7 +251,7 @@
 }
 
 .ws-edit-main,
-.ws-edit-actions button,
+.ws-edit-del,
 .ws-add {
   cursor: pointer;
   transition:
@@ -249,13 +262,14 @@
 }
 
 .ws-edit-main:active,
-.ws-edit-actions button:not(:disabled):active,
+.ws-edit-del:not(:disabled):active,
 .ws-add:active {
   transform: scale(0.98);
 }
 
 .ws-edit-main:focus-visible,
-.ws-edit-actions button:focus-visible,
+.ws-edit-del:focus-visible,
+.ws-edit-handle:focus-visible,
 .ws-add:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -263,7 +277,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ws-edit-main,
-  .ws-edit-actions button,
+  .ws-edit-del,
   .ws-add {
     transition: none;
   }

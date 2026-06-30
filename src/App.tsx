@@ -1,5 +1,22 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, ReactNode } from 'react'
+import type { ChangeEvent, CSSProperties, ReactNode } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import './App.css'
 import './workout.css'
 import './home.css'
@@ -16,7 +33,6 @@ import {
 import {
   clampRestSeconds,
   clampRestValue,
-  moveItem,
   nextPendingId,
   restSecondsRemaining,
   selectActiveVariantId,
@@ -499,9 +515,62 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M18 6 6 18M6 6l12 12" />
         </svg>
       )
+    case 'grip':
+      return (
+        <svg {...props} fill="currentColor" stroke="none">
+          <circle cx="9" cy="6" r="1.6" />
+          <circle cx="15" cy="6" r="1.6" />
+          <circle cx="9" cy="12" r="1.6" />
+          <circle cx="15" cy="12" r="1.6" />
+          <circle cx="9" cy="18" r="1.6" />
+          <circle cx="15" cy="18" r="1.6" />
+        </svg>
+      )
     default:
       return null
   }
+}
+
+function SortableEditRow({
+  id,
+  muscle,
+  name,
+  meta,
+  canRemove,
+  onEdit,
+  onRemove,
+}: {
+  id: string
+  muscle: string
+  name: string
+  meta: string
+  canRemove: boolean
+  onEdit: () => void
+  onRemove: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    borderColor: `${muscle}52`,
+    opacity: isDragging ? 0.75 : 1,
+    zIndex: isDragging ? 5 : undefined,
+    boxShadow: isDragging ? 'var(--shadow)' : undefined,
+  }
+  return (
+    <div ref={setNodeRef} style={style} className={`ws-edit-row${isDragging ? ' dragging' : ''}`}>
+      <button className="ws-edit-handle" type="button" aria-label="Drag to reorder" {...attributes} {...listeners}>
+        <Icon name="grip" size={18} />
+      </button>
+      <button className="ws-edit-main" type="button" onClick={onEdit}>
+        <strong>{name}</strong>
+        <small>{meta}</small>
+      </button>
+      <button className="ws-edit-del" type="button" aria-label="Remove exercise" disabled={!canRemove} onClick={onRemove}>
+        <Icon name="trash" size={18} />
+      </button>
+    </div>
+  )
 }
 
 function App() {
@@ -969,6 +1038,35 @@ function App() {
     () => [...data.sessions].sort((a, b) => b.createdAt - a.createdAt),
     [data.sessions],
   )
+
+  // Drag-to-reorder in edit mode: a small move threshold so a tap on the handle still edits/deletes,
+  // and keyboard support for accessibility.
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const reorderGroups = (workoutId: WorkoutId, event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) {
+      return
+    }
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const oldIndex = template.groups.findIndex((group) => group.id === active.id)
+        const newIndex = template.groups.findIndex((group) => group.id === over.id)
+        if (oldIndex < 0 || newIndex < 0) {
+          return template
+        }
+        return { ...template, groups: arrayMove(template.groups, oldIndex, newIndex) }
+      }),
+    }))
+  }
 
   const navigate = (nextScreen: Screen) => {
     setScreenStack((currentStack) => [...currentStack, screen])
@@ -1452,9 +1550,34 @@ function App() {
         </header>
 
         <section className="ws-list" aria-label={`${workout.name} exercises`}>
-          {editMode
-            ? workout.groups.map((group, index) => renderEditRow(workout, session, group, index))
-            : workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))}
+          {editMode ? (
+            <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={(event) => reorderGroups(workout.id, event)}>
+              <SortableContext items={workout.groups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
+                {workout.groups.map((group) => {
+                  const activeVariantId = selectActiveVariantId(
+                    session.groupEntries[group.id]?.activeVariantId,
+                    data.variantPrefs[group.id],
+                    group.activeVariantId,
+                  )
+                  const variant = getVariant(group, activeVariantId)
+                  return (
+                    <SortableEditRow
+                      key={group.id}
+                      id={group.id}
+                      muscle={muscleColor(variant.category)}
+                      name={variant.name}
+                      meta={`${categoryLabel(variant.category)} · ${variant.sets}×${variant.reps}`}
+                      canRemove={workout.groups.length > 1}
+                      onEdit={() => openExerciseEditor(workout.id, session.id, group, activeVariantId)}
+                      onRemove={() => removeGroup(workout.id, group.id)}
+                    />
+                  )
+                })}
+              </SortableContext>
+            </DndContext>
+          ) : (
+            workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))
+          )}
           {editMode && (
             <button className="ws-add" type="button" onClick={() => openExerciseEditor(workout.id, session.id)}>
               <Icon name="plus" size={18} />
@@ -1517,47 +1640,6 @@ function App() {
 
         {!editMode && renderRestTimer()}
       </main>
-    )
-  }
-
-  const renderEditRow = (workout: WorkoutTemplate, session: WorkoutSession, group: ExerciseGroup, index: number) => {
-    const activeVariantId = selectActiveVariantId(
-      session.groupEntries[group.id]?.activeVariantId,
-      data.variantPrefs[group.id],
-      group.activeVariantId,
-    )
-    const variant = getVariant(group, activeVariantId)
-    const muscle = muscleColor(variant.category)
-    const isFirst = index === 0
-    const isLast = index === workout.groups.length - 1
-
-    return (
-      <div className="ws-edit-row" style={{ borderColor: `${muscle}52` }} key={group.id}>
-        <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
-        <button className="ws-edit-main" type="button" onClick={() => openExerciseEditor(workout.id, session.id, group, activeVariantId)}>
-          <strong>{variant.name}</strong>
-          <small>
-            {categoryLabel(variant.category)} · {variant.sets}×{variant.reps}
-          </small>
-        </button>
-        <div className="ws-edit-actions">
-          <button type="button" aria-label="Move up" disabled={isFirst} onClick={() => moveGroup(workout.id, group.id, -1)}>
-            <Icon name="up" size={18} />
-          </button>
-          <button type="button" aria-label="Move down" disabled={isLast} onClick={() => moveGroup(workout.id, group.id, 1)}>
-            <Icon name="down" size={18} />
-          </button>
-          <button
-            className="ws-edit-del"
-            type="button"
-            aria-label="Remove exercise"
-            disabled={workout.groups.length === 1}
-            onClick={() => removeGroup(workout.id, group.id)}
-          >
-            <Icon name="trash" size={18} />
-          </button>
-        </div>
-      </div>
     )
   }
 
@@ -1803,23 +1885,6 @@ function App() {
     }))
     setEditMode(false)
     navigate({ name: 'session', workoutId, sessionId })
-  }
-
-  const moveGroup = (workoutId: WorkoutId, groupId: string, direction: -1 | 1) => {
-    setEditDirty(true)
-    setData((current) => ({
-      ...current,
-      templates: current.templates.map((template) => {
-        if (template.id !== workoutId) {
-          return template
-        }
-        const groups = moveItem(template.groups, groupId, direction)
-        if (groups === template.groups) {
-          return template
-        }
-        return { ...template, groups }
-      }),
-    }))
   }
 
   const removeGroup = (workoutId: WorkoutId, groupId: string) => {
