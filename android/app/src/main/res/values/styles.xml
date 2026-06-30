@@ -13,6 +13,10 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Dark window + bars so the WebView load phase never flashes black/grey. -->
+        <item name="android:windowBackground">#FF252730</item>
+        <item name="android:statusBarColor">#FF252730</item>
+        <item name="android:navigationBarColor">#FF252730</item>
     </style>
 
 

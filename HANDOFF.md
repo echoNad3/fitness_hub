@@ -240,9 +240,14 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   local changes debounce for 900ms before upload. Remote data must pass `isValidBackup` before it
   can replace the local cache. Sign-out never deletes local data. Offline edits advance the local
   timestamp and upload on the next change or on reconnect (a `window` `online` listener re-runs the
-  sync), so single-device offline work is **preserved, not overwritten**. The only loss case is
-  editing the *same account on a second device* that synced more recently — that's true
-  last-write-wins by timestamp.
+  sync), so single-device offline work is **preserved, not overwritten**. Continuation edits on the
+  same account stay last-write-wins by timestamp.
+  - **First-sign-in conflict guard:** a device records the account it last synced with
+    (`SYNCED_ACCOUNT_KEY`). If you sign into an account that **already has data** from a device that
+    holds its **own meaningful unsynced data** (different/empty `SYNCED_ACCOUNT_KEY`), the app does
+    **not** auto-resolve — it shows a "Choose which data to keep" dialog (use account / keep this
+    device), so neither side is silently overwritten. `resolveSyncConflict` then pulls or pushes and
+    records the account. Continuations, empty devices, and brand-new accounts skip the prompt.
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
   a suspended/locked app from resuming with a stale countdown. The locked-screen alert is a **native
   heavy vibration**, NOT a notification: `RestAlarmPlugin` (Java) schedules an exact alarm

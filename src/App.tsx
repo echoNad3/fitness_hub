@@ -22,7 +22,7 @@ import './workout.css'
 import './home.css'
 import './chrome.css'
 import './edit.css'
-import { loadCloudState, saveCloudState, supabase } from './cloud'
+import { loadCloudState, saveCloudState, supabase, type CloudState } from './cloud'
 import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
@@ -154,10 +154,14 @@ type CloudUser = {
   email: string
 }
 
-type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error'
+type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'conflict'
 
 const STORAGE_KEY = 'fitness-hub-v1'
 const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
+// The account this device last synced with. Lets us tell a continuation (same account → auto
+// last-write-wins) from a first sign-in to an account that already has data while this device holds
+// its own unsynced changes (→ ask the user which to keep instead of silently overwriting one).
+const SYNCED_ACCOUNT_KEY = 'fitness-hub-v1-synced-account'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
 const REST_PRESETS = [30, 45, 60, 90, 120]
@@ -586,6 +590,7 @@ function App() {
   const [editDirty, setEditDirty] = useState(false)
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [syncConflict, setSyncConflict] = useState<{ remote: CloudState; remoteUpdatedAt: number } | null>(null)
   const [syncError, setSyncError] = useState('')
   const [syncAttempt, setSyncAttempt] = useState(0)
   const [cloudActionBusy, setCloudActionBusy] = useState(false)
@@ -764,12 +769,14 @@ function App() {
     if (!cloudUserId || !supabase) {
       setSyncStatus('idle')
       setSyncError('')
+      setSyncConflict(null)
       return
     }
 
     let cancelled = false
     setSyncStatus('checking')
     setSyncError('')
+    setSyncConflict(null)
 
     const syncOnSignIn = async () => {
       try {
@@ -783,6 +790,21 @@ function App() {
           throw new Error('Cloud data has an invalid timestamp.')
         }
 
+        // First sign-in to an account that already holds data, while this device has its own
+        // unsynced changes (it was never synced with this account): don't silently overwrite either
+        // side — let the user choose. Continuations (this device already synced this account) and
+        // non-meaningful local data fall through to the normal last-write-wins below.
+        const syncedAccount = getStored(SYNCED_ACCOUNT_KEY)
+        const localMeaningful = hasMeaningfulLocalData(dataRef.current, buildInitialData())
+        if (remote && remoteUpdatedAt !== null && localMeaningful && syncedAccount !== cloudUserId) {
+          if (!isValidBackup(remote.data)) {
+            throw new Error('Cloud data is invalid. Your local data was kept safe.')
+          }
+          setSyncConflict({ remote, remoteUpdatedAt })
+          setSyncStatus('conflict')
+          return
+        }
+
         const localUpdatedAt = localUpdatedAtRef.current
         if (remote && remoteUpdatedAt !== null && chooseSyncDirection(remoteUpdatedAt, localUpdatedAt) === 'pull') {
           if (!isValidBackup(remote.data)) {
@@ -792,6 +814,7 @@ function App() {
           applyingRemoteTimestampRef.current = remoteUpdatedAt
           localUpdatedAtRef.current = remoteUpdatedAt
           setStored(LOCAL_UPDATED_KEY, String(remoteUpdatedAt))
+          setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
           syncReadyRef.current = true
           setData(normalizeData(remote.data))
           setSyncStatus('synced')
@@ -806,6 +829,7 @@ function App() {
           return
         }
 
+        setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
         syncReadyRef.current = true
         if (localUpdatedAtRef.current > pushedAt) {
           queueCloudPushRef.current()
@@ -1017,9 +1041,13 @@ function App() {
     const previous = expandedRef.current
     expandedRef.current = expanded
     if (expanded && previous !== null && previous !== expanded) {
-      window.requestAnimationFrame(() => {
-        document.getElementById(`exercise-${expanded}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      })
+      // Wait for the expand/collapse height animation to settle, then scroll only if the item isn't
+      // already on screen (block:'nearest'). 'center' moved the view on every tap — even when the
+      // item was visible — and fought the growing card, which read as jitter on a near-fitting list.
+      const id = window.setTimeout(() => {
+        document.getElementById(`exercise-${expanded}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 210)
+      return () => window.clearTimeout(id)
     }
   }, [data.expandedBySession, screen])
 
@@ -1068,6 +1096,38 @@ function App() {
         return { ...template, groups: arrayMove(template.groups, oldIndex, newIndex) }
       }),
     }))
+  }
+
+  const resolveSyncConflict = async (keep: 'account' | 'device') => {
+    const conflict = syncConflict
+    const userId = cloudUserId
+    if (!conflict || !userId) {
+      return
+    }
+    setSyncConflict(null)
+    setSyncStatus('checking')
+    setSyncError('')
+    try {
+      setStored(SYNCED_ACCOUNT_KEY, userId)
+      if (keep === 'account') {
+        applyingRemoteTimestampRef.current = conflict.remoteUpdatedAt
+        localUpdatedAtRef.current = conflict.remoteUpdatedAt
+        setStored(LOCAL_UPDATED_KEY, String(conflict.remoteUpdatedAt))
+        syncReadyRef.current = true
+        setData(normalizeData(conflict.remote.data))
+        setSyncStatus('synced')
+      } else {
+        const pushedAt = Math.max(localUpdatedAtRef.current, Date.now())
+        localUpdatedAtRef.current = pushedAt
+        setStored(LOCAL_UPDATED_KEY, String(pushedAt))
+        await saveCloudState(userId, dataRef.current, pushedAt)
+        syncReadyRef.current = true
+        setSyncStatus('synced')
+      }
+    } catch (error) {
+      setSyncStatus('error')
+      setSyncError(errorMessage(error))
+    }
   }
 
   const navigate = (nextScreen: Screen) => {
@@ -2279,13 +2339,14 @@ function App() {
     setVibrationMessage(attempted ? 'Vibration attempted' : 'Vibration blocked or unavailable')
   }
 
-  if (screen.name === 'global-history') {
-    return renderHistory(sortedSessions, () => goBack({ name: 'main' }))
-  }
+  const renderScreen = () => {
+    if (screen.name === 'global-history') {
+      return renderHistory(sortedSessions, () => goBack({ name: 'main' }))
+    }
 
-  if (screen.name === 'settings') {
-    return renderSettings()
-  }
+    if (screen.name === 'settings') {
+      return renderSettings()
+    }
 
   if (screen.name === 'session') {
     const currentSession = data.sessions.find((session) => session.id === screen.sessionId)
@@ -2446,7 +2507,32 @@ function App() {
     )
   }
 
-  return renderMain()
+    return renderMain()
+  }
+
+  return (
+    <>
+      {renderScreen()}
+      {syncConflict && (
+        <Dialog title="Choose which data to keep">
+          <p className="dialog-help">
+            This device has workout data that isn&rsquo;t in your account yet, and your account already has
+            saved data. Keep one — the other is replaced.
+          </p>
+          <div className="choice-list">
+            <button className="choice done" type="button" onClick={() => void resolveSyncConflict('account')}>
+              <Icon name="cloud" size={18} />
+              <span>Use my account&rsquo;s data</span>
+            </button>
+            <button className="choice" type="button" onClick={() => void resolveSyncConflict('device')}>
+              <Icon name="download" size={18} />
+              <span>Keep this device&rsquo;s data</span>
+            </button>
+          </div>
+        </Dialog>
+      )}
+    </>
+  )
 }
 
 function Page({ title, onBack, children }: { title: string; onBack: () => void; children: ReactNode }) {
@@ -2856,6 +2942,9 @@ function syncStatusLabel(status: SyncStatus) {
   }
   if (status === 'error') {
     return 'Sync paused'
+  }
+  if (status === 'conflict') {
+    return 'Choose which data to keep'
   }
   return 'Offline'
 }

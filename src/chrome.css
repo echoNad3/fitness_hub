@@ -421,6 +421,10 @@
   color: var(--danger);
 }
 
+.sync-status.conflict {
+  color: var(--warning);
+}
+
 .cloud-error {
   color: var(--danger);
   font-size: var(--fs-caption);
