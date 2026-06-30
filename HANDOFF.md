@@ -105,6 +105,12 @@ The workout screen **scrolls when its content genuinely exceeds the viewport** �
 roomy; don't compress them to fit. A natural overrun of up to 64px is treated as layout slack and
 clipped so a fully visible default Workout A/B does not have a pointless small bounce.
 
+**Motion** — shared keyframes in `App.css` (`fade-in`, `rise-in`, `pop-in`, `press-pop`). Keep it
+subtle and purposeful: screen containers fade/rise in (home and Page lists stagger their children),
+dialogs `pop-in`, the active exercise card and the running rest timer `pop-in`, and result taps /
+the rest-done dock get a short `press-pop`. A global `prefers-reduced-motion` rule neutralizes all of
+it — never rely on animation for meaning, and reuse these keyframes rather than adding one-offs.
+
 **Core UI tokens**
 - Background `--bg #252730`, surfaces `--surface #30323d`, `--surface-2 #363844`,
   `--surface-3 #414351`, `--raised #494b59`.
@@ -295,11 +301,14 @@ Git history (newest first); each commit is a clean restore point:
   progress + relative time), **Start** (auto-suggests the opposite of the last workout, with a
   "Start X instead" alternate), and **History** / **Settings** tiles. No browser confirms.
 - **History** — clean cards, relative time, semantic done/partial chip, trash delete.
-- **Settings** — Export/Import JSON backup, Test vibration, **Rest length stepper**, Reset.
+- **Settings** — Export/Import JSON backup, Test vibration, Reset.
 - **Full editing** — **edit mode** (pencil in the session header) handles reorder (up/down), remove,
   add, and all routine-detail changes through the full **exercise editor** dialog (name, muscle
   group chips, sets, reps, setup, weight, per-hand). The expanded workout card no longer opens
   separate name/setup/target editors; only session actions such as weight and result stay direct.
+  Edit mode also hosts the **universal rest-length control** (`.ws-edit-rest`, −/value/+ with free
+  entry, 15–600s) — it edits the single global `restSeconds`, not a per-workout value; it lives here
+  rather than in Settings so it's adjusted where it's used.
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.

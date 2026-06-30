@@ -99,6 +99,33 @@ h2 {
 
 /* Dialogs — weight / name / setup / target / previous result */
 
+/* Shared motion. The reduced-motion media query below neutralizes all of these. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+
+@keyframes press-pop {
+  40% {
+    transform: scale(1.05);
+  }
+}
+
 .dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -107,6 +134,7 @@ h2 {
   display: grid;
   place-items: center;
   background: rgba(3, 7, 12, 0.76);
+  animation: fade-in 160ms ease;
 }
 
 .dialog {
@@ -119,6 +147,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  animation: pop-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .dialog h2 {

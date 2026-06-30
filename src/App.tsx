@@ -1342,40 +1342,6 @@ function App() {
           <Icon name="bell" />
         </button>
 
-        <div className="set-row set-rest">
-          <span className="set-main">
-            <strong>Rest length</strong>
-            <small>Countdown after each set</small>
-          </span>
-          <div className="set-stepper">
-            <button type="button" aria-label="Less rest" onClick={() => changeRest(-15)}>
-              <Icon name="minus" size={18} />
-            </button>
-            <label className="set-rest-field">
-              <input
-                type="number"
-                inputMode="numeric"
-                min={15}
-                max={600}
-                aria-label="Rest length in seconds"
-                value={restDraft ?? String(data.restSeconds)}
-                onFocus={() => setRestDraft(String(data.restSeconds))}
-                onChange={(event) => setRestDraft(event.target.value)}
-                onBlur={commitRestDraft}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.currentTarget.blur()
-                  }
-                }}
-              />
-              <span>s</span>
-            </label>
-            <button type="button" aria-label="More rest" onClick={() => changeRest(15)}>
-              <Icon name="plus" size={18} />
-            </button>
-          </div>
-        </div>
-
         <button className="set-row danger" type="button" onClick={resetData}>
           <span className="set-main">
             <strong>Reset app data</strong>
@@ -1472,6 +1438,44 @@ function App() {
               <Icon name="plus" size={18} />
               Add exercise
             </button>
+          )}
+          {editMode && (
+            <div className="ws-edit-rest">
+              <span className="ws-edit-rest-label">
+                <Icon name="clock" size={20} />
+                <span>
+                  <strong>Rest between sets</strong>
+                  <small>Applies to every workout</small>
+                </span>
+              </span>
+              <div className="set-stepper">
+                <button type="button" aria-label="Less rest" onClick={() => changeRest(-15)}>
+                  <Icon name="minus" size={18} />
+                </button>
+                <label className="set-rest-field">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={15}
+                    max={600}
+                    aria-label="Rest length in seconds"
+                    value={restDraft ?? String(data.restSeconds)}
+                    onFocus={() => setRestDraft(String(data.restSeconds))}
+                    onChange={(event) => setRestDraft(event.target.value)}
+                    onBlur={commitRestDraft}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.currentTarget.blur()
+                      }
+                    }}
+                  />
+                  <span>s</span>
+                </label>
+                <button type="button" aria-label="More rest" onClick={() => changeRest(15)}>
+                  <Icon name="plus" size={18} />
+                </button>
+              </div>
+            </div>
           )}
         </section>
 

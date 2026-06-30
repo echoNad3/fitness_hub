@@ -4,6 +4,47 @@
   justify-self: end;
 }
 
+/* Universal rest-length control, surfaced inside edit mode. */
+.ws-edit-rest {
+  margin-top: 4px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.ws-edit-rest-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ws-edit-rest-label > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.ws-edit-rest-label > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ws-edit-rest-label strong {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+}
+
+.ws-edit-rest-label small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
 .ws-edit-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
