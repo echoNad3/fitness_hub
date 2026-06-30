@@ -143,6 +143,7 @@ const STORAGE_KEY = 'fitness-hub-v1'
 const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
+const REST_PRESETS = [30, 45, 60, 90, 120]
 const CATEGORIES: Category[] = ['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS']
 
 const defaultWorkouts: WorkoutTemplate[] = [
@@ -492,6 +493,12 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M13.7 21a2 2 0 0 1-3.4 0" />
         </svg>
       )
+    case 'close':
+      return (
+        <svg {...props}>
+          <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
+      )
     default:
       return null
   }
@@ -506,6 +513,7 @@ function App() {
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
   const [exerciseDialog, setExerciseDialog] = useState<ExerciseDialog | null>(null)
   const [editMode, setEditMode] = useState(false)
+  const [editDirty, setEditDirty] = useState(false)
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [syncError, setSyncError] = useState('')
@@ -529,6 +537,7 @@ function App() {
   const syncTimer = useRef<number | null>(null)
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
+  const expandedRef = useRef<string | null>(null)
   // Mirror the current screen into a ref so the (mount-only) popstate handler can read it.
   const screenRef = useRef(screen)
   screenRef.current = screen
@@ -544,6 +553,10 @@ function App() {
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
   const editModeRef = useRef(editMode)
   editModeRef.current = editMode
+  const editDirtyRef = useRef(editDirty)
+  editDirtyRef.current = editDirty
+  // Pre-edit snapshot of the routine + sessions, so discarding edit mode can roll them back.
+  const editSnapshotRef = useRef<{ templates: WorkoutTemplate[]; sessions: WorkoutSession[] } | null>(null)
   const dialogOpenRef = useRef(dialogOpen)
   dialogOpenRef.current = dialogOpen
   const overlayBuffersRef = useRef(0)
@@ -778,6 +791,17 @@ function App() {
         if (dialogOpenRef.current) {
           closeAllDialogs()
         } else if (editModeRef.current) {
+          // Leaving edit mode via the cross / back gesture discards. Confirm first if changes were
+          // made; if the user keeps editing, restore the history entry the back press consumed.
+          if (editDirtyRef.current && !window.confirm('Discard your changes to this workout?')) {
+            closingOverlayViaPopstateRef.current = false
+            window.history.pushState({ fitnessHub: true, overlay: true }, '')
+            return
+          }
+          if (editDirtyRef.current && editSnapshotRef.current) {
+            const snapshot = editSnapshotRef.current
+            setData((current) => ({ ...current, templates: snapshot.templates, sessions: snapshot.sessions }))
+          }
           setEditMode(false)
         }
         return
@@ -910,6 +934,24 @@ function App() {
       }
     }
   }, [screen])
+
+  // Smoothly bring the active exercise into view when it changes — e.g. after Done/Failed
+  // auto-advances to the next pending exercise, or when expanding a different one. Skips the first
+  // run per session so it doesn't fight the saved-scroll restore on entry.
+  useEffect(() => {
+    if (screen.name !== 'session') {
+      expandedRef.current = null
+      return
+    }
+    const expanded = data.expandedBySession[screen.sessionId] ?? null
+    const previous = expandedRef.current
+    expandedRef.current = expanded
+    if (expanded && previous !== null && previous !== expanded) {
+      window.requestAnimationFrame(() => {
+        document.getElementById(`exercise-${expanded}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
+  }, [data.expandedBySession, screen])
 
   useEffect(() => {
     if (screen.name !== 'session' || editMode) {
@@ -1405,18 +1447,32 @@ function App() {
     return (
       <main className={`ws-screen${sessionFitsViewport && !editMode ? ' is-fit' : ''}${editMode ? ' editing' : ''}`}>
         <header className="ws-header">
-          <button className="ws-back" type="button" aria-label="Back" onClick={() => goBack({ name: 'main' })}>
-            <Icon name="back" />
-          </button>
+          {editMode ? (
+            <button className="ws-back" type="button" aria-label="Discard changes" onClick={() => window.history.back()}>
+              <Icon name="close" />
+            </button>
+          ) : (
+            <button className="ws-back" type="button" aria-label="Back" onClick={() => goBack({ name: 'main' })}>
+              <Icon name="back" />
+            </button>
+          )}
           <div className="ws-head-title">
             <strong>{workout.name}</strong>
-            <span>{doneCount}/{workout.groups.length} done</span>
+            <span>{editMode ? 'Editing' : `${doneCount}/${workout.groups.length} done`}</span>
           </div>
           <button
-            className="ws-back ws-edit-toggle"
+            className={`ws-back ws-edit-toggle${editMode ? ' saving' : ''}`}
             type="button"
-            aria-label={editMode ? 'Done editing' : 'Edit workout'}
-            onClick={() => setEditMode((value) => !value)}
+            aria-label={editMode ? 'Save changes' : 'Edit workout'}
+            onClick={() => {
+              if (editMode) {
+                setEditMode(false)
+              } else {
+                editSnapshotRef.current = { templates: data.templates, sessions: data.sessions }
+                setEditDirty(false)
+                setEditMode(true)
+              }
+            }}
           >
             <Icon name={editMode ? 'check' : 'edit'} />
           </button>
@@ -1441,39 +1497,53 @@ function App() {
           )}
           {editMode && (
             <div className="ws-edit-rest">
-              <span className="ws-edit-rest-label">
-                <Icon name="clock" size={20} />
-                <span>
-                  <strong>Rest between sets</strong>
-                  <small>Applies to every workout</small>
+              <div className="ws-edit-rest-top">
+                <span className="ws-edit-rest-label">
+                  <Icon name="clock" size={20} />
+                  <span>
+                    <strong>Rest between sets</strong>
+                    <small>Applies to every workout</small>
+                  </span>
                 </span>
-              </span>
-              <div className="set-stepper">
-                <button type="button" aria-label="Less rest" onClick={() => changeRest(-15)}>
-                  <Icon name="minus" size={18} />
-                </button>
-                <label className="set-rest-field">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={15}
-                    max={600}
-                    aria-label="Rest length in seconds"
-                    value={restDraft ?? String(data.restSeconds)}
-                    onFocus={() => setRestDraft(String(data.restSeconds))}
-                    onChange={(event) => setRestDraft(event.target.value)}
-                    onBlur={commitRestDraft}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.currentTarget.blur()
-                      }
-                    }}
-                  />
-                  <span>s</span>
-                </label>
-                <button type="button" aria-label="More rest" onClick={() => changeRest(15)}>
-                  <Icon name="plus" size={18} />
-                </button>
+                <div className="set-stepper">
+                  <button type="button" aria-label="Less rest" onClick={() => changeRest(-15)}>
+                    <Icon name="minus" size={18} />
+                  </button>
+                  <label className="set-rest-field">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={5}
+                      max={600}
+                      aria-label="Rest length in seconds"
+                      value={restDraft ?? String(data.restSeconds)}
+                      onFocus={() => setRestDraft(String(data.restSeconds))}
+                      onChange={(event) => setRestDraft(event.target.value)}
+                      onBlur={commitRestDraft}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.currentTarget.blur()
+                        }
+                      }}
+                    />
+                    <span>s</span>
+                  </label>
+                  <button type="button" aria-label="More rest" onClick={() => changeRest(15)}>
+                    <Icon name="plus" size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="ws-rest-presets" role="group" aria-label="Rest presets">
+                {REST_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className={`ws-rest-preset${data.restSeconds === preset ? ' sel' : ''}`}
+                    onClick={() => setRest(preset)}
+                  >
+                    {formatRestPreset(preset)}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -1751,6 +1821,7 @@ function App() {
   }
 
   const moveGroup = (workoutId: WorkoutId, groupId: string, direction: -1 | 1) => {
+    setEditDirty(true)
     setData((current) => ({
       ...current,
       templates: current.templates.map((template) => {
@@ -1776,6 +1847,7 @@ function App() {
       return
     }
 
+    setEditDirty(true)
     setData((current) => ({
       ...current,
       templates: current.templates.map((template) =>
@@ -1833,6 +1905,7 @@ function App() {
       return
     }
 
+    setEditDirty(true)
     const setup = exerciseDialog.setup.trim()
     if (exerciseDialog.groupId && exerciseDialog.variantId) {
       updateTemplateVariant(exerciseDialog.variantId, {
@@ -1875,6 +1948,10 @@ function App() {
       ...current,
       restSeconds: clampRestSeconds(current.restSeconds, delta),
     }))
+  }
+
+  const setRest = (value: number) => {
+    setData((current) => ({ ...current, restSeconds: clampRestValue(value) }))
   }
 
   const commitRestDraft = () => {
@@ -2167,16 +2244,20 @@ function App() {
           </Dialog>
         )}
         {previousDialog && (
-          <Dialog title="Previous session result">
-            <div className="status-row dialog-status">
-              <button className="success-button" type="button" onClick={() => setPreviousResult('success')}>
-                Done
+          <Dialog title="Last session result">
+            <p className="dialog-help">How did this exercise go last time? It sets today&rsquo;s guidance.</p>
+            <div className="choice-list">
+              <button className="choice done" type="button" onClick={() => setPreviousResult('success')}>
+                <Icon name="arrow-up" size={18} />
+                <span>Done — increase next time</span>
               </button>
-              <button className="repeat-button" type="button" onClick={() => setPreviousResult('failure')}>
-                Failed
+              <button className="choice failed" type="button" onClick={() => setPreviousResult('failure')}>
+                <Icon name="repeat" size={18} />
+                <span>Failed — repeat next time</span>
               </button>
-              <button className="clear-button" type="button" onClick={() => setPreviousResult('missing')}>
-                Clear
+              <button className="choice" type="button" onClick={() => setPreviousResult('missing')}>
+                <Icon name="clock" size={18} />
+                <span>No record yet</span>
               </button>
             </div>
           </Dialog>
@@ -2734,6 +2815,15 @@ function formatTimer(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remainder = String(seconds % 60).padStart(2, '0')
   return `${minutes}:${remainder}`
+}
+
+function formatRestPreset(seconds: number) {
+  if (seconds < 60) {
+    return `${seconds}s`
+  }
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return remainder === 0 ? `${minutes}m` : `${minutes}m${remainder}`
 }
 
 function formatRelative(timestamp: number) {

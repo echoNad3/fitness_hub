@@ -30,12 +30,15 @@ export function clampRestSeconds(current: number, delta: number) {
   return clampRestValue(current + delta)
 }
 
-// Clamp a directly-entered rest length to the supported 15s–600s range.
+export const MIN_REST_SECONDS = 5
+export const MAX_REST_SECONDS = 600
+
+// Clamp a directly-entered rest length to the supported range.
 export function clampRestValue(value: number) {
   if (!Number.isFinite(value)) {
-    return 15
+    return MIN_REST_SECONDS
   }
-  return Math.min(600, Math.max(15, Math.round(value)))
+  return Math.min(MAX_REST_SECONDS, Math.max(MIN_REST_SECONDS, Math.round(value)))
 }
 
 export function restSecondsRemaining(endsAt: number, now: number) {

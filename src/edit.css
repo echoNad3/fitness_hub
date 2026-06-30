@@ -4,17 +4,75 @@
   justify-self: end;
 }
 
+/* In edit mode the checkmark is the primary "save" action — accent-filled to stand out from the
+   neutral discard (✕) on the left. */
+.ws-edit-toggle.saving {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Universal rest-length control, surfaced inside edit mode. */
 .ws-edit-rest {
   margin-top: 4px;
   padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
+}
+
+.ws-edit-rest-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ws-rest-presets {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.ws-rest-preset {
+  min-height: 40px;
+  color: var(--muted);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.ws-rest-preset:active {
+  transform: scale(0.95);
+}
+
+.ws-rest-preset.sel {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ws-rest-preset:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Edit-mode controls ease in when the pencil is tapped. */
+.ws-edit-row,
+.ws-add,
+.ws-edit-rest {
+  animation: rise-in 260ms ease both;
 }
 
 .ws-edit-rest-label {
@@ -159,6 +217,7 @@
 
 .ex-muscle.sel {
   color: #15171d;
+  animation: press-pop 240ms ease;
 }
 
 .ex-toggle {

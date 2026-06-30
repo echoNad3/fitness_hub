@@ -108,8 +108,12 @@ clipped so a fully visible default Workout A/B does not have a pointless small b
 **Motion** — shared keyframes in `App.css` (`fade-in`, `rise-in`, `pop-in`, `press-pop`). Keep it
 subtle and purposeful: screen containers fade/rise in (home and Page lists stagger their children),
 dialogs `pop-in`, the active exercise card and the running rest timer `pop-in`, and result taps /
-the rest-done dock get a short `press-pop`. A global `prefers-reduced-motion` rule neutralizes all of
-it — never rely on animation for meaning, and reuse these keyframes rather than adding one-offs.
+the rest-done dock get a short `press-pop`; progress-rail dots and result chips also animate, and
+Done/Failed smooth-scrolls the next exercise into view. A global `prefers-reduced-motion` rule
+neutralizes all of it — never rely on animation for meaning, and reuse these keyframes rather than
+adding one-offs. **Cold-start:** `index.html` paints `#252730` and a spinner (`#app-boot`, removed
+when React mounts), and the Android launch theme (`styles.xml`) forces a dark window + system bars,
+so a fresh APK launch fades from the app's background instead of flashing black with grey bars.
 
 **Core UI tokens**
 - Background `--bg #252730`, surfaces `--surface #30323d`, `--surface-2 #363844`,
@@ -306,9 +310,14 @@ Git history (newest first); each commit is a clean restore point:
   add, and all routine-detail changes through the full **exercise editor** dialog (name, muscle
   group chips, sets, reps, setup, weight, per-hand). The expanded workout card no longer opens
   separate name/setup/target editors; only session actions such as weight and result stay direct.
-  Edit mode also hosts the **universal rest-length control** (`.ws-edit-rest`, −/value/+ with free
-  entry, 15–600s) — it edits the single global `restSeconds`, not a per-workout value; it lives here
-  rather than in Settings so it's adjusted where it's used.
+  **Save/discard model:** the header shows ✕ (discard) on the left and an accent ✓ (save) on the
+  right. Entering edit snapshots `templates`+`sessions` and clears a dirty flag; structure edits set
+  it. ✓ keeps changes; ✕ / back gesture discards — and if dirty, a confirm fires first (decline =
+  keep editing, which re-pushes the consumed history entry). Discard restores the snapshot. The
+  **universal rest-length control** (`.ws-edit-rest`) also lives here — a −/value/+ field with
+  free entry plus preset chips (30s/45s/1m/1m30/2m), editing the single global `restSeconds`
+  (`MIN_REST_SECONDS` 5 – `MAX_REST_SECONDS` 600). Rest changes are immediate and **not** part of
+  the discard snapshot, so they don't mark the routine dirty.
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.

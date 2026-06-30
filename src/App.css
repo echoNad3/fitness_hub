@@ -167,45 +167,76 @@ h2 {
   outline-offset: 2px;
 }
 
-.status-row,
 .dialog-actions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 7px;
 }
 
-.dialog-status {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.status-row button,
 .dialog-actions button {
-  min-height: 44px;
+  min-height: var(--tap);
   color: var(--text);
   background: rgba(73, 75, 89, 0.72);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
   font-size: var(--fs-label);
   font-weight: var(--fw-bold);
 }
 
-.success-button {
-  color: #dff9e8;
-  background: rgba(73, 75, 89, 0.58);
-  border-color: rgba(81, 207, 123, 0.4);
-  box-shadow: none;
+/* Stacked option buttons inside dialogs (e.g. the last-result picker). */
+.choice-list {
+  display: grid;
+  gap: 9px;
 }
 
-.repeat-button {
-  color: #ffe6e8;
-  background: rgba(73, 75, 89, 0.58);
-  border-color: rgba(242, 118, 125, 0.4);
-  box-shadow: none;
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 16px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
 }
 
-.dialog-status .clear-button {
-  background: var(--surface-3);
+.choice > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.choice.done {
+  border-color: rgba(81, 207, 123, 0.42);
+}
+
+.choice.done > svg {
+  color: var(--success);
+}
+
+.choice.failed {
+  border-color: rgba(242, 118, 125, 0.42);
+}
+
+.choice.failed > svg {
+  color: var(--danger);
+}
+
+.choice:active {
+  transform: scale(0.99);
+}
+
+.choice:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .number-input {

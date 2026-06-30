@@ -30,8 +30,8 @@ test('auto-advance chooses the next unfinished exercise only', () => {
   assert.equal(nextPendingId(['a', 'b', 'c'], 'c', () => false), undefined)
 })
 
-test('rest length stays between 15 seconds and 10 minutes', () => {
-  assert.equal(clampRestSeconds(15, -15), 15)
+test('rest length stays between 5 seconds and 10 minutes', () => {
+  assert.equal(clampRestSeconds(15, -15), 5)
   assert.equal(clampRestSeconds(90, 15), 105)
   assert.equal(clampRestSeconds(600, 15), 600)
 })

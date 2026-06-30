@@ -18,5 +18,10 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <!-- Keep the cold-start splash dark so the system bars don't flash grey around the app's
+             background before the WebView loads. -->
+        <item name="android:windowBackground">#FF252730</item>
+        <item name="android:statusBarColor">#FF252730</item>
+        <item name="android:navigationBarColor">#FF252730</item>
     </style>
 </resources>
