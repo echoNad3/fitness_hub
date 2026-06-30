@@ -23,14 +23,6 @@
   letter-spacing: -0.01em;
 }
 
-.home-eyebrow {
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
 .home-resume {
   display: grid;
   gap: 11px;

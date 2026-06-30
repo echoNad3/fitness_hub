@@ -169,6 +169,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
+| `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
+| `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
+| `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
 | `.github/workflows/deploy.yml` | GitHub Pages pipeline: install, test, lint, build, upload artifact, deploy. |
 | `.github/workflows/android.yml` | Android CI: test, Capacitor sync, compile a debug APK, upload it as an artifact. |

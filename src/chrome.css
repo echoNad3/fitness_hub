@@ -78,22 +78,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hist-chip.complete {
-  color: #0b2d18;
-  background: var(--success);
-  border-color: transparent;
-}
-
-.hist-chip.partial {
-  color: #3a2c06;
-  background: var(--warning);
-  border-color: transparent;
-}
-
-.hist-chip.empty {
-  color: var(--quiet);
-}
-
 .hist-chip.done,
 .hist-chip.unfinished {
   display: grid;

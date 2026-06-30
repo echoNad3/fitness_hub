@@ -27,6 +27,7 @@ import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApkVersion } from './apkVersion'
+import { getStored, setStored } from './storage'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -559,7 +560,7 @@ function App() {
   const [initialSyncTimestamp] = useState(() => {
     const initialData = buildInitialData()
     return initialLocalTimestamp(
-      localStorage.getItem(LOCAL_UPDATED_KEY),
+      getStored(LOCAL_UPDATED_KEY),
       hasMeaningfulLocalData(data, initialData),
       Date.now(),
     )
@@ -619,7 +620,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    setStored(STORAGE_KEY, JSON.stringify(data))
 
     if (lastPersistedDataRef.current === data) {
       return
@@ -630,19 +631,19 @@ function App() {
     if (remoteTimestamp !== null) {
       applyingRemoteTimestampRef.current = null
       localUpdatedAtRef.current = remoteTimestamp
-      localStorage.setItem(LOCAL_UPDATED_KEY, String(remoteTimestamp))
+      setStored(LOCAL_UPDATED_KEY, String(remoteTimestamp))
       return
     }
 
     const updatedAt = nextLocalTimestamp(localUpdatedAtRef.current, Date.now())
     localUpdatedAtRef.current = updatedAt
-    localStorage.setItem(LOCAL_UPDATED_KEY, String(updatedAt))
+    setStored(LOCAL_UPDATED_KEY, String(updatedAt))
     queueCloudPushRef.current()
   }, [data])
 
   useEffect(() => {
-    if (localUpdatedAtRef.current > 0 && !localStorage.getItem(LOCAL_UPDATED_KEY)) {
-      localStorage.setItem(LOCAL_UPDATED_KEY, String(localUpdatedAtRef.current))
+    if (localUpdatedAtRef.current > 0 && !getStored(LOCAL_UPDATED_KEY)) {
+      setStored(LOCAL_UPDATED_KEY, String(localUpdatedAtRef.current))
     }
   }, [])
 
@@ -707,7 +708,7 @@ function App() {
 
           applyingRemoteTimestampRef.current = remoteUpdatedAt
           localUpdatedAtRef.current = remoteUpdatedAt
-          localStorage.setItem(LOCAL_UPDATED_KEY, String(remoteUpdatedAt))
+          setStored(LOCAL_UPDATED_KEY, String(remoteUpdatedAt))
           syncReadyRef.current = true
           setData(normalizeData(remote.data))
           setSyncStatus('synced')
@@ -716,7 +717,7 @@ function App() {
 
         const pushedAt = Math.max(localUpdatedAt, Date.now())
         localUpdatedAtRef.current = pushedAt
-        localStorage.setItem(LOCAL_UPDATED_KEY, String(pushedAt))
+        setStored(LOCAL_UPDATED_KEY, String(pushedAt))
         await saveCloudState(cloudUserId, dataRef.current, pushedAt)
         if (cancelled) {
           return
@@ -762,14 +763,6 @@ function App() {
 
   useEffect(() => {
     window.history.replaceState({ fitnessHub: true }, '')
-
-    // The app reloads the page on each launch (the Android wrapper loads the live site), so it can
-    // start on a restored sub-screen with an empty stack. Seed a back step to the menu so the
-    // first back gesture returns there instead of immediately exiting the app.
-    if (screenRef.current.name !== 'main') {
-      setScreenStack([{ name: 'main' }])
-      window.history.pushState({ fitnessHub: true }, '')
-    }
 
     const handlePopState = () => {
       // History entries consumed by the overlay sync effect (closing a dialog/edit mode via a
@@ -1881,13 +1874,11 @@ function App() {
   }
 
   const commitRestDraft = () => {
-    setRestDraft((draft) => {
-      if (draft !== null && draft.trim() !== '') {
-        const next = clampRestValue(Number(draft))
-        setData((current) => ({ ...current, restSeconds: next }))
-      }
-      return null
-    })
+    if (restDraft !== null && restDraft.trim() !== '') {
+      const next = clampRestValue(Number(restDraft))
+      setData((current) => ({ ...current, restSeconds: next }))
+    }
+    setRestDraft(null)
   }
 
   const deleteSession = (sessionId: string) => {
@@ -2351,7 +2342,7 @@ function buildInitialData(): AppData {
 }
 
 function loadData(): AppData {
-  const saved = localStorage.getItem(STORAGE_KEY)
+  const saved = getStored(STORAGE_KEY)
   if (!saved) {
     return buildInitialData()
   }
