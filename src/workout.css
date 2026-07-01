@@ -299,8 +299,13 @@
   place-items: center;
   color: var(--accent);
   background: var(--raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--accent-line);
   border-radius: 12px;
+}
+
+/* Bolder blue glyph so the −/+ read clearly on the grey button. */
+.ws-stepbtn svg {
+  stroke-width: 2.4;
 }
 
 .ws-weight {

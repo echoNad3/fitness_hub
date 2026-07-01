@@ -183,7 +183,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
-| `src/haptics.ts` | Purposeful haptics — `hapticTick()` (selection: swap / preset / muscle / reorder) and `hapticConfirm()` (Done/Failed, rest start/cancel). `@capacitor/haptics` on native, `navigator.vibrate` fallback on web. Never on routine taps (e.g. not on weight hold-repeat). |
+| `src/haptics.ts` | **One universal two-tier haptic ruleset** so feedback feels identical everywhere. `haptic('select')` = light tap (every button/press); `haptic('confirm')` = firmer tap (meaningful state changes only). `installGlobalHaptics()` adds ONE delegated `pointerdown` listener so *every* `<button>` buzzes light on press automatically — no per-onClick wiring. A button escalates to the firm tier with `data-haptic="confirm"` (Done/Failed, rest start/cancel, save edits, destructive confirms) or opts out with `data-haptic="none"` (the drag handle, which fires its own tick on drag-start). `hapticTick()`/`hapticConfirm()` remain as aliases for the two non-button gesture call sites (drag start/drop). `@capacitor/haptics` on native, `navigator.vibrate` (10ms/22ms) fallback on web. A stepper press ticks once, not per hold-repeat. |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
@@ -261,7 +261,30 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Current change: suppress incidental workout scrolling, seal the rest dock's lower edge, and make
+- Current change (uncommitted): editor + haptics + swap overhaul from live APK feedback, refined over
+  two further rounds of feedback —
+  (1) **universal haptics**: one delegated listener gives every button the same light tap, with a
+  firm tier for meaningful actions (`data-haptic="confirm"`); replaces the scattered inconsistent
+  calls. (2) **Stepper −/+ contrast**: −/+ buttons (editor Sets/Reps/Rest + the session weight
+  stepper) stay **grey (`--raised`) with a blue accent glyph**, at the original compact size — the
+  glyph is enlarged to 20px and bolded (`stroke-width` 2.4) via CSS with an accent-tinted border so
+  it reads clearly. (An earlier attempt made them bigger/spread out, then fully blue-filled; both were
+  walked back — blue-fill everywhere looked garish. Only the save ✓ and the selected Load segment are
+  filled blue.) (3) **Load** is a two-option **segmented control** (Total / Per hand, both visible).
+  Fixed a horizontal-overflow bug in the editor grids (`minmax(0,1fr)` + `min-width:0`). (4) **Swap
+  alternatives editable in place**: each exercise's editor has a "Swap alternatives" section to
+  add/remove alternates; a swap inherits the main's muscle group (no muscle picker; changing the
+  main's muscle updates them all). (5) **Per-variant last result**: guidance reaches back to the last
+  session where *that specific variant* was actually performed. (6) **Remove exercise** sits in a
+  divider-separated "danger" footer as a quiet red text button, well away from Add-swap, and — like
+  all edits — it **stays in edit mode and is only persisted on save (✓)**; ✕/back reverts it via the
+  edit snapshot. (7) Collapsed edit-mode rows are **the same height (68px) as collapsed session rows**
+  so toggling edit mode doesn't resize the list. (8) The cloud **"choose which data to keep"** prompt
+  now has a **Cancel** that signs back out and returns to the pre-login state (local data untouched);
+  the "Last session result" prompt's dismiss is a matching quiet **Cancel** (`.choice-cancel`).
+  (9) Fixed a real setState-in-render bug (commit-on-blur handlers were calling a parent `setState`
+  inside a `setState` updater). Rest labels read `1m30s` (was `1m30`).
+- Previous change: suppress incidental workout scrolling, seal the rest dock's lower edge, and make
   expanded exercise name/setup/target read-only (all routine edits remain under the header pencil).
 - `8c90072` Establish a type/spacing scale and apply it app-wide
 - `b1f53f5` Bigger UI, menu/settings icons, roomier tracker, cold-start to menu
@@ -317,8 +340,11 @@ Git history (newest first); each commit is a clean restore point:
 - **Settings** — Export/Import JSON backup, Test vibration, Reset.
 - **In-place editing** — the pencil turns the workout screen into edit mode *on the same screen* (no
   separate menu, no dialog). Each exercise becomes a drag-sortable accordion (`EditableExerciseItem`,
-  grip handle, press-and-hold to drag) whose expanded body is the **inline editor**: name, muscle
-  chips, sets/reps steppers, setup, weight, per-hand, per-exercise rest, and Remove. The "doing"
+  grip handle, press-and-hold to drag) whose expanded body is the **inline editor**. The editor is
+  built from a reusable `VariantFields` component (name, muscle chips, Sets/Reps/Weight, setup, and a
+  **Load segmented control** — Total / Per hand, both visible) plus a per-exercise Rest stepper and a
+  **Swap alternatives** section. Stepper −/+ are compact grey (`--raised`) buttons with a bold blue
+  accent glyph and an accent-tinted border for contrast (not blue-filled). The "doing"
   controls (Done/Failed, guidance, rest dock, rail) hide in edit mode. **Add exercise** inserts a
   blank exercise expanded in place. Field edits update the template variant and mirror the shared
   fields (setup/sets/reps/weight) into the open session. **Save/discard:** header shows ✕ (discard,
@@ -326,6 +352,13 @@ Git history (newest first); each commit is a clean restore point:
   flag, any edit sets it. ✓ keeps; ✕ / back gesture, if dirty, shows the styled **confirm dialog**
   (Keep editing / Discard) — decline re-pushes the consumed history entry, Discard restores the
   snapshot.
+- **Editable swap alternatives** — the first variant in a group is the "main" exercise; the editor's
+  Swap-alternatives section adds (`addVariant`) or removes (`removeVariant`, confirm-guarded) extra
+  variants. A swap always shares the main's muscle group, so it has no muscle picker and changing the
+  main's muscle applies to every variant (`editGroupCategory`). During a session the "Swap to …"
+  button rotates through them, and each variant keeps its **own weight and own last result**:
+  `findPreviousTarget` looks for the most recent session where *that variant had a logged result*
+  (not merely a carried-forward entry), so a swap surfaces its real history however long ago it was.
 - **Per-exercise rest** — each `ExerciseGroup` has its own `restSeconds` (migrated in for older
   saves via `normalizeTemplates`, validated as optional). The rest dock starts and labels from the
   **active exercise's** rest, so tapping a different exercise changes the timer; edit it inline

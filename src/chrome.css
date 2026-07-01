@@ -277,7 +277,9 @@
 .set-stepper {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .set-stepper > strong {
@@ -326,16 +328,27 @@
   font-weight: var(--fw-semibold);
 }
 
+/* Grey buttons with a bright-blue symbol. The −/+ stay the app's accent (not a full blue fill, which
+   was too much colour), but read clearly thanks to a lighter raised surface, an accent-tinted border,
+   and a slightly bolder/larger glyph. */
 .set-stepper button {
+  flex: none;
   width: 42px;
   height: 42px;
   display: grid;
   place-items: center;
   color: var(--accent);
-  background: var(--surface-3);
-  border: 1px solid var(--line);
+  background: var(--raised);
+  border: 1px solid var(--accent-line);
   border-radius: 10px;
   cursor: pointer;
+}
+
+/* Slightly larger, bolder glyph so the blue −/+ read clearly on the grey button. */
+.set-stepper button svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.4;
 }
 
 .set-stepper button:active {

@@ -28,7 +28,9 @@
 /* Drag handle owns the reorder gesture; touch-action:none lets a drag start without scrolling. */
 .ws-edit-handle {
   width: 40px;
-  height: 62px;
+  /* Match the collapsed session row height (.ws-item-head min-height) so toggling edit mode doesn't
+     resize the boxes — the collapsed rows stay put and the transition feels natural. */
+  height: 66px;
   display: grid;
   place-items: center;
   color: var(--quiet);
@@ -48,7 +50,7 @@
 
 .ws-edit-open {
   min-width: 0;
-  min-height: 62px;
+  min-height: 66px;
   padding: 10px 14px 10px 0;
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -91,13 +93,16 @@
 /* The inline editor body (shown when an exercise is expanded in edit mode). */
 .ws-editor {
   display: grid;
+  /* minmax(0,1fr) so the single column can shrink to the card width — otherwise a wide fixed-size
+     child (e.g. a stepper row) sets an intrinsic min-content and the whole editor overflows. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 0 16px 16px;
 }
 
 .ws-editor-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
   align-items: end;
 }
@@ -119,33 +124,138 @@
   outline-offset: 1px;
 }
 
-.ws-editor-toggle {
-  min-height: 46px;
-  color: var(--muted);
+/* Load selector: both options are always visible as a segmented control, so it's obvious what the
+   choice is and which side is active (no hidden toggle state). */
+.ex-segment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 5px;
+  padding: 5px;
   background: var(--surface-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  font-size: var(--fs-label);
+}
+
+.ex-segment button {
+  min-height: 42px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 
-.ws-editor-toggle.on {
+.ex-segment button.sel {
   color: #ffffff;
   background: var(--accent);
-  border-color: var(--accent);
 }
 
+/* Swap alternatives: manage the exercises you can swap to during a workout, inline under the main
+   exercise. Separated by a hairline so it reads as its own section. */
+.ex-swaps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.ex-swaps-title {
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ex-swaps-hint {
+  margin: -4px 0 0;
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+/* One swap alternative: an inset card holding the same fields as the main (minus the muscle picker). */
+.ex-alt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.ex-alt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ex-alt-head > span {
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ex-alt-remove {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid rgba(242, 118, 125, 0.4);
+  border-radius: 9px;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease;
+}
+
+.ex-alt-remove:active {
+  transform: scale(0.95);
+}
+
+.ex-alt-remove:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The add-swap button reuses the dashed .ws-add look but sits tighter inside the swaps section. */
+.ex-add-swap {
+  min-height: 46px;
+}
+
+/* Danger footer: divides the destructive delete off from everything above it (especially the
+   Add-swap button) so it's clearly a separate area, not the next button in the stack. */
+.ex-danger {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+/* Quiet, text-style delete so it never mirrors the constructive Add-swap block and can't be
+   fat-fingered by mistake — it reads as a deliberate last-resort action. */
 .ws-editor-remove {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 46px;
-  margin-top: 2px;
+  width: 100%;
+  min-height: 44px;
   color: var(--danger);
   background: transparent;
-  border: 1px solid rgba(242, 118, 125, 0.4);
+  border: 0;
   border-radius: var(--radius-control);
   font-size: var(--fs-label);
   font-weight: var(--fw-bold);
@@ -170,10 +280,12 @@
   font-weight: var(--fw-semibold);
 }
 
-/* Field label + muscle-group chips, shared by the inline editor. */
+/* Field label + muscle-group chips, shared by the inline editor. min-width:0 lets a field shrink
+   inside the editor/row grids instead of forcing them wider than the card. */
 .ex-field {
   display: grid;
   gap: 5px;
+  min-width: 0;
 }
 
 .ex-field > span {
@@ -205,7 +317,6 @@
 }
 
 .ws-edit-open,
-.ws-editor-toggle,
 .ws-editor-remove,
 .ex-muscle,
 .ws-add {
@@ -218,18 +329,18 @@
 }
 
 .ws-item:not(.open) .ws-edit-open:active,
-.ws-editor-toggle:active,
 .ws-editor-remove:not(:disabled):active,
 .ex-muscle:active,
+.ex-segment button:active,
 .ws-add:active {
   transform: scale(0.98);
 }
 
 .ws-edit-open:focus-visible,
 .ws-edit-handle:focus-visible,
-.ws-editor-toggle:focus-visible,
 .ws-editor-remove:focus-visible,
 .ex-muscle:focus-visible,
+.ex-segment button:focus-visible,
 .ws-add:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -237,9 +348,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ws-edit-open,
-  .ws-editor-toggle,
   .ws-editor-remove,
   .ex-muscle,
+  .ex-segment button,
   .ws-add {
     transition: none;
   }

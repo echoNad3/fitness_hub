@@ -30,20 +30,14 @@ import {
   nextLocalTimestamp,
   parseCloudTimestamp,
 } from './cloudSync'
-import {
-  clampRestValue,
-  nextPendingId,
-  restSecondsRemaining,
-  selectActiveVariantId,
-  toggleResult,
-} from './domain'
+import { clampRestValue, nextPendingId, restSecondsRemaining, toggleResult } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApkVersion } from './apkVersion'
 import { getStored, setStored } from './storage'
-import { hapticConfirm, hapticTick } from './haptics'
+import { hapticTick, installGlobalHaptics } from './haptics'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -526,34 +520,199 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   }
 }
 
+const blurOnEnter = (event: { key: string; currentTarget: HTMLInputElement }) => {
+  if (event.key === 'Enter') {
+    event.currentTarget.blur()
+  }
+}
+
+// The editable fields for a single exercise variant — used both for the main exercise (with the muscle
+// picker) and for each swap alternative (without it, since a swap always shares the main's muscle).
+// Drafts are held locally and committed on blur so typing never fights the persisted value.
+function VariantFields({
+  variant,
+  showMuscle,
+  onPatch,
+  onCategory,
+}: {
+  variant: ExerciseVariant
+  showMuscle: boolean
+  onPatch: (patch: Partial<ExerciseVariant>) => void
+  onCategory: (category: Category) => void
+}) {
+  const { name, category, setup, sets, reps, weight, perHand } = variant
+  const [nameDraft, setNameDraft] = useState<string | null>(null)
+  const [setupDraft, setSetupDraft] = useState<string | null>(null)
+  const [weightDraft, setWeightDraft] = useState<string | null>(null)
+
+  // Commit on blur. Read the draft from state and call the parent update OUTSIDE any setState updater
+  // (calling a parent setState inside an updater runs it during render → React warns/misbehaves).
+  const commitName = () => {
+    if (nameDraft !== null) {
+      onPatch({ name: nameDraft.trim() || 'Exercise' })
+      setNameDraft(null)
+    }
+  }
+  const commitSetup = () => {
+    if (setupDraft !== null) {
+      onPatch({ setup: setupDraft.trim() })
+      setSetupDraft(null)
+    }
+  }
+  const commitWeight = () => {
+    if (weightDraft !== null) {
+      const parsed = Number(weightDraft)
+      if (weightDraft.trim() !== '' && Number.isFinite(parsed) && parsed >= 0) {
+        onPatch({ weight: roundWeight(parsed) })
+      }
+      setWeightDraft(null)
+    }
+  }
+
+  return (
+    <>
+      <label className="ex-field">
+        <span>Name</span>
+        <input
+          className="ws-editor-input"
+          type="text"
+          value={nameDraft ?? name}
+          onFocus={() => setNameDraft(name)}
+          onChange={(event) => setNameDraft(event.target.value)}
+          onBlur={commitName}
+          onKeyDown={blurOnEnter}
+        />
+      </label>
+
+      {showMuscle && (
+        <div className="ex-field">
+          <span>Muscle group</span>
+          <div className="ex-muscles">
+            {CATEGORIES.map((cat) => {
+              const selected = category === cat
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  className={`ex-muscle ${selected ? 'sel' : ''}`}
+                  style={selected ? { background: muscleColor(cat), borderColor: muscleColor(cat) } : undefined}
+                  onClick={() => onCategory(cat)}
+                >
+                  {categoryLabel(cat)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="ws-editor-row">
+        <div className="ex-field">
+          <span>Sets</span>
+          <div className="set-stepper">
+            <button type="button" aria-label="Fewer sets" onClick={() => onPatch({ sets: Math.max(1, sets - 1) })}>
+              <Icon name="minus" size={18} />
+            </button>
+            <strong>{sets}</strong>
+            <button type="button" aria-label="More sets" onClick={() => onPatch({ sets: sets + 1 })}>
+              <Icon name="plus" size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="ex-field">
+          <span>Reps</span>
+          <div className="set-stepper">
+            <button type="button" aria-label="Fewer reps" onClick={() => onPatch({ reps: Math.max(1, reps - 1) })}>
+              <Icon name="minus" size={18} />
+            </button>
+            <strong>{reps}</strong>
+            <button type="button" aria-label="More reps" onClick={() => onPatch({ reps: reps + 1 })}>
+              <Icon name="plus" size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <label className="ex-field">
+        <span>Setup</span>
+        <input
+          className="ws-editor-input"
+          type="text"
+          placeholder="e.g. seat 4, 20°"
+          value={setupDraft ?? setup}
+          onFocus={() => setSetupDraft(setup)}
+          onChange={(event) => setSetupDraft(event.target.value)}
+          onBlur={commitSetup}
+          onKeyDown={blurOnEnter}
+        />
+      </label>
+
+      <label className="ex-field">
+        <span>Weight (kg)</span>
+        <input
+          className="ws-editor-input"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          value={weightDraft ?? String(weight)}
+          onFocus={() => setWeightDraft(String(weight))}
+          onChange={(event) => setWeightDraft(event.target.value)}
+          onBlur={commitWeight}
+          onKeyDown={blurOnEnter}
+        />
+      </label>
+
+      <div className="ex-field">
+        <span>Load counts as</span>
+        <div className="ex-segment" role="group" aria-label="Load">
+          <button
+            type="button"
+            className={perHand ? '' : 'sel'}
+            aria-pressed={!perHand}
+            onClick={() => onPatch({ perHand: false })}
+          >
+            Total
+          </button>
+          <button
+            type="button"
+            className={perHand ? 'sel' : ''}
+            aria-pressed={perHand}
+            onClick={() => onPatch({ perHand: true })}
+          >
+            Per hand
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 type EditableExerciseItemProps = {
   id: string
-  muscle: string
-  name: string
-  category: Category
-  setup: string
-  sets: number
-  reps: number
-  weight: number
-  perHand: boolean
+  variants: ExerciseVariant[]
   restSeconds: number
   isExpanded: boolean
   canRemove: boolean
   onToggle: () => void
-  onVariant: (patch: Partial<ExerciseVariant>) => void
+  onVariant: (variantId: string, patch: Partial<ExerciseVariant>) => void
+  onCategory: (category: Category) => void
   onRest: (value: number) => void
   onRemove: () => void
+  onAddVariant: () => void
+  onRemoveVariant: (variantId: string) => void
 }
 
 // One exercise, in edit mode: a drag-sortable accordion whose expanded body is the inline editor —
-// so the whole routine is edited in place on the workout screen, no separate menu or dialog.
+// so the whole routine is edited in place on the workout screen, no separate menu or dialog. The
+// first variant is the "main" exercise; any others are swap alternatives that share its muscle group.
 function EditableExerciseItem(props: EditableExerciseItemProps) {
-  const { id, muscle, name, category, setup, sets, reps, weight, perHand, restSeconds, isExpanded, canRemove } = props
+  const { id, variants, restSeconds, isExpanded, canRemove } = props
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const [nameDraft, setNameDraft] = useState<string | null>(null)
-  const [setupDraft, setSetupDraft] = useState<string | null>(null)
-  const [weightDraft, setWeightDraft] = useState<string | null>(null)
   const [restDraft, setRestDraft] = useState<string | null>(null)
+
+  const main = variants[0]
+  const alternatives = variants.slice(1)
+  const muscle = muscleColor(main.category)
 
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -564,45 +723,13 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
     boxShadow: isDragging ? 'var(--shadow)' : undefined,
   }
 
-  const blurOnEnter = (event: { key: string; currentTarget: HTMLInputElement }) => {
-    if (event.key === 'Enter') {
-      event.currentTarget.blur()
-    }
-  }
-  const commitName = () => {
-    setNameDraft((draft) => {
-      if (draft !== null) {
-        props.onVariant({ name: draft.trim() || 'Exercise' })
-      }
-      return null
-    })
-  }
-  const commitSetup = () => {
-    setSetupDraft((draft) => {
-      if (draft !== null) {
-        props.onVariant({ setup: draft.trim() })
-      }
-      return null
-    })
-  }
-  const commitWeight = () => {
-    setWeightDraft((draft) => {
-      if (draft !== null && draft.trim() !== '') {
-        const parsed = Number(draft)
-        if (Number.isFinite(parsed) && parsed >= 0) {
-          props.onVariant({ weight: roundWeight(parsed) })
-        }
-      }
-      return null
-    })
-  }
   const commitRest = () => {
-    setRestDraft((draft) => {
-      if (draft !== null && draft.trim() !== '') {
-        props.onRest(Number(draft))
+    if (restDraft !== null) {
+      if (restDraft.trim() !== '') {
+        props.onRest(Number(restDraft))
       }
-      return null
-    })
+      setRestDraft(null)
+    }
   }
 
   return (
@@ -613,15 +740,16 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
       className={`ws-item editing${isExpanded ? ' open' : ''}${isDragging ? ' dragging' : ''}`}
     >
       <div className="ws-edit-head">
-        <button className="ws-edit-handle" type="button" aria-label="Drag to reorder" {...attributes} {...listeners}>
+        <button className="ws-edit-handle" type="button" aria-label="Drag to reorder" data-haptic="none" {...attributes} {...listeners}>
           <Icon name="grip" size={18} />
         </button>
         <button className="ws-edit-open" type="button" aria-expanded={isExpanded} onClick={props.onToggle}>
           <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
           <span className="ws-edit-open-main">
-            <strong>{name}</strong>
+            <strong>{main.name}</strong>
             <small>
-              {categoryLabel(category)} · {sets}×{reps} · rest {formatRestPreset(restSeconds)}
+              {categoryLabel(main.category)} · {main.sets}×{main.reps} · rest {formatRestPreset(restSeconds)}
+              {alternatives.length > 0 && ` · ${alternatives.length} swap${alternatives.length === 1 ? '' : 's'}`}
             </small>
           </span>
           <Icon name={isExpanded ? 'up' : 'down'} size={18} />
@@ -631,110 +759,12 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
       <div className="ws-item-body">
         <div className="ws-item-body-inner">
           <div className="ws-editor">
-            <label className="ex-field">
-              <span>Name</span>
-              <input
-                className="ws-editor-input"
-                type="text"
-                value={nameDraft ?? name}
-                onFocus={() => setNameDraft(name)}
-                onChange={(event) => setNameDraft(event.target.value)}
-                onBlur={commitName}
-                onKeyDown={blurOnEnter}
-              />
-            </label>
-
-            <div className="ex-field">
-              <span>Muscle group</span>
-              <div className="ex-muscles">
-                {CATEGORIES.map((cat) => {
-                  const selected = category === cat
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      className={`ex-muscle ${selected ? 'sel' : ''}`}
-                      style={selected ? { background: muscleColor(cat), borderColor: muscleColor(cat) } : undefined}
-                      onClick={() => {
-                        hapticTick()
-                        props.onVariant({ category: cat })
-                      }}
-                    >
-                      {categoryLabel(cat)}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="ws-editor-row">
-              <div className="ex-field">
-                <span>Sets</span>
-                <div className="set-stepper">
-                  <button type="button" aria-label="Fewer sets" onClick={() => props.onVariant({ sets: Math.max(1, sets - 1) })}>
-                    <Icon name="minus" size={18} />
-                  </button>
-                  <strong>{sets}</strong>
-                  <button type="button" aria-label="More sets" onClick={() => props.onVariant({ sets: sets + 1 })}>
-                    <Icon name="plus" size={18} />
-                  </button>
-                </div>
-              </div>
-              <div className="ex-field">
-                <span>Reps</span>
-                <div className="set-stepper">
-                  <button type="button" aria-label="Fewer reps" onClick={() => props.onVariant({ reps: Math.max(1, reps - 1) })}>
-                    <Icon name="minus" size={18} />
-                  </button>
-                  <strong>{reps}</strong>
-                  <button type="button" aria-label="More reps" onClick={() => props.onVariant({ reps: reps + 1 })}>
-                    <Icon name="plus" size={18} />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <label className="ex-field">
-              <span>Setup</span>
-              <input
-                className="ws-editor-input"
-                type="text"
-                placeholder="e.g. seat 4, 20°"
-                value={setupDraft ?? setup}
-                onFocus={() => setSetupDraft(setup)}
-                onChange={(event) => setSetupDraft(event.target.value)}
-                onBlur={commitSetup}
-                onKeyDown={blurOnEnter}
-              />
-            </label>
-
-            <div className="ws-editor-row">
-              <label className="ex-field">
-                <span>Weight (kg)</span>
-                <input
-                  className="ws-editor-input"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  value={weightDraft ?? String(weight)}
-                  onFocus={() => setWeightDraft(String(weight))}
-                  onChange={(event) => setWeightDraft(event.target.value)}
-                  onBlur={commitWeight}
-                  onKeyDown={blurOnEnter}
-                />
-              </label>
-              <div className="ex-field">
-                <span>Load</span>
-                <button
-                  type="button"
-                  className={`ws-editor-toggle ${perHand ? 'on' : ''}`}
-                  aria-pressed={perHand}
-                  onClick={() => props.onVariant({ perHand: !perHand })}
-                >
-                  {perHand ? 'Per hand' : 'Total'}
-                </button>
-              </div>
-            </div>
+            <VariantFields
+              variant={main}
+              showMuscle
+              onPatch={(patch) => props.onVariant(main.id, patch)}
+              onCategory={props.onCategory}
+            />
 
             <div className="ex-field">
               <span>Rest for this exercise</span>
@@ -763,10 +793,48 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
               </div>
             </div>
 
-            <button className="ws-editor-remove" type="button" disabled={!canRemove} onClick={props.onRemove}>
-              <Icon name="trash" size={18} />
-              Remove exercise
-            </button>
+            <div className="ex-swaps">
+              <span className="ex-swaps-title">Swap alternatives</span>
+              <p className="ex-swaps-hint">
+                Other exercises you can swap to during this workout. Each keeps its own weight and last
+                result, and shares the muscle group above.
+              </p>
+              {alternatives.map((alt) => (
+                <div className="ex-alt" key={alt.id}>
+                  <div className="ex-alt-head">
+                    <span>Swap option</span>
+                    <button
+                      className="ex-alt-remove"
+                      type="button"
+                      aria-label="Remove this swap"
+                      onClick={() => props.onRemoveVariant(alt.id)}
+                    >
+                      <Icon name="trash" size={16} />
+                    </button>
+                  </div>
+                  <VariantFields
+                    variant={alt}
+                    showMuscle={false}
+                    onPatch={(patch) => props.onVariant(alt.id, patch)}
+                    onCategory={props.onCategory}
+                  />
+                </div>
+              ))}
+              <button className="ws-add ex-add-swap" type="button" onClick={props.onAddVariant}>
+                <Icon name="plus" size={18} />
+                Add swap alternative
+              </button>
+            </div>
+
+            {/* Destructive whole-exercise delete lives in its own separated "danger" footer with a
+                divider and a quieter text treatment, so it can't be mistaken for — or fat-fingered
+                instead of — the constructive Add-swap button above it. */}
+            <div className="ex-danger">
+              <button className="ws-editor-remove" type="button" disabled={!canRemove} onClick={props.onRemove}>
+                <Icon name="trash" size={18} />
+                Remove exercise
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -907,6 +975,9 @@ function App() {
       active = false
     }
   }, [])
+
+  // Universal button haptics: one delegated listener so every button feels the same on press.
+  useEffect(() => installGlobalHaptics(), [])
 
   useEffect(() => {
     setStored(STORAGE_KEY, JSON.stringify(data))
@@ -1308,6 +1379,19 @@ function App() {
         return { ...template, groups: arrayMove(template.groups, oldIndex, newIndex) }
       }),
     }))
+  }
+
+  // Cancel the "choose which data to keep" prompt: undo the sign-in attempt entirely by signing out,
+  // so the app returns to exactly the state it was in before this account was tried. Local data is
+  // never touched by the conflict flow, so nothing is lost.
+  const cancelSyncConflict = async () => {
+    setSyncConflict(null)
+    setSyncStatus('idle')
+    setSyncError('')
+    if (supabase) {
+      await supabase.auth.signOut().catch(() => undefined)
+    }
+    setCloudUser(null)
   }
 
   const resolveSyncConflict = async (keep: 'account' | 'device') => {
@@ -1806,6 +1890,7 @@ function App() {
           <button
             className={`ws-back ws-edit-toggle${editMode ? ' saving' : ''}`}
             type="button"
+            data-haptic={editMode ? 'confirm' : undefined}
             aria-label={editMode ? 'Save changes' : 'Edit workout'}
             onClick={() => {
               if (editMode) {
@@ -1837,35 +1922,23 @@ function App() {
               onDragEnd={(event) => reorderGroups(workout.id, event)}
             >
               <SortableContext items={workout.groups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
-                {workout.groups.map((group) => {
-                  const activeVariantId = selectActiveVariantId(
-                    session.groupEntries[group.id]?.activeVariantId,
-                    data.variantPrefs[group.id],
-                    group.activeVariantId,
-                  )
-                  const variant = getVariant(group, activeVariantId)
-                  return (
-                    <EditableExerciseItem
-                      key={group.id}
-                      id={group.id}
-                      muscle={muscleColor(variant.category)}
-                      name={variant.name}
-                      category={variant.category}
-                      setup={variant.setup}
-                      sets={variant.sets}
-                      reps={variant.reps}
-                      weight={variant.weight}
-                      perHand={variant.perHand}
-                      restSeconds={group.restSeconds}
-                      isExpanded={expandedGroupId === group.id}
-                      canRemove={workout.groups.length > 1}
-                      onToggle={() => toggleExpand(session.id, group.id)}
-                      onVariant={(patch) => editVariant(session.id, group.id, activeVariantId, patch)}
-                      onRest={(value) => editGroupRest(group.id, value)}
-                      onRemove={() => removeGroup(workout.id, group.id)}
-                    />
-                  )
-                })}
+                {workout.groups.map((group) => (
+                  <EditableExerciseItem
+                    key={group.id}
+                    id={group.id}
+                    variants={group.variants}
+                    restSeconds={group.restSeconds}
+                    isExpanded={expandedGroupId === group.id}
+                    canRemove={workout.groups.length > 1}
+                    onToggle={() => toggleExpand(session.id, group.id)}
+                    onVariant={(variantId, patch) => editVariant(session.id, group.id, variantId, patch)}
+                    onCategory={(category) => editGroupCategory(group.id, category)}
+                    onRest={(value) => editGroupRest(group.id, value)}
+                    onRemove={() => removeGroup(workout.id, group.id)}
+                    onAddVariant={() => addVariant(workout.id, group.id)}
+                    onRemoveVariant={(variantId) => removeVariant(workout.id, group.id, variantId)}
+                  />
+                ))}
               </SortableContext>
             </DndContext>
           ) : (
@@ -1970,7 +2043,7 @@ function App() {
                     }
                   }}
                 >
-                  <Icon name="minus" />
+                  <Icon name="minus" size={20} />
                 </button>
                 <button
                   className="ws-weight"
@@ -1997,7 +2070,7 @@ function App() {
                     }
                   }}
                 >
-                  <Icon name="plus" />
+                  <Icon name="plus" size={20} />
                 </button>
               </div>
 
@@ -2005,6 +2078,7 @@ function App() {
                 <button
                   className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
                   type="button"
+                  data-haptic="confirm"
                   aria-pressed={entry.result === 'success'}
                   onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
                 >
@@ -2013,6 +2087,7 @@ function App() {
                 <button
                   className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
                   type="button"
+                  data-haptic="confirm"
                   aria-pressed={entry.result === 'failure'}
                   onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
                 >
@@ -2046,8 +2121,8 @@ function App() {
           <button
             className="ws-dock-cancel"
             type="button"
+            data-haptic="confirm"
             onClick={() => {
-              hapticConfirm()
               setRestRunning(false)
               setRestEndsAt(null)
               setRestSeconds(activeRest)
@@ -2062,8 +2137,8 @@ function App() {
         <button
           className="ws-dock-start"
           type="button"
+          data-haptic="confirm"
           onClick={() => {
-            hapticConfirm()
             const endsAt = Date.now() + activeRest * 1000
             setRestSeconds(activeRest)
             setRestEndsAt(endsAt)
@@ -2256,6 +2331,108 @@ function App() {
     }))
   }
 
+  // A swap always shares the main exercise's muscle group, so changing the muscle applies to every
+  // variant in the group at once (the picker is only shown for the main exercise).
+  const editGroupCategory = (groupId: string, category: Category) => {
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => ({
+        ...template,
+        groups: template.groups.map((group) =>
+          group.id === groupId
+            ? { ...group, variants: group.variants.map((variant) => ({ ...variant, category })) }
+            : group,
+        ),
+      })),
+    }))
+  }
+
+  // Add a swap alternative to an existing exercise: a new variant sharing the main's muscle group.
+  const addVariant = (workoutId: WorkoutId, groupId: string) => {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    const group = workout?.groups.find((candidate) => candidate.id === groupId)
+    const main = group?.variants[0]
+    if (!main) {
+      return
+    }
+
+    const variantId = createId()
+    const newVariant: ExerciseVariant = {
+      id: variantId,
+      name: 'Swap option',
+      category: main.category,
+      setup: '',
+      sets: main.sets,
+      reps: main.reps,
+      weight: main.weight,
+      perHand: main.perHand,
+      lastResult: 'missing',
+    }
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) =>
+        template.id === workoutId
+          ? {
+              ...template,
+              groups: template.groups.map((candidate) =>
+                candidate.id === groupId ? { ...candidate, variants: [...candidate.variants, newVariant] } : candidate,
+              ),
+            }
+          : template,
+      ),
+      baselineResults: { ...current.baselineResults, [variantId]: 'missing' },
+    }))
+  }
+
+  // Remove a swap alternative. The main variant (index 0) is never removable here; if the removed
+  // swap happens to be the one currently selected, fall back to the main so nothing dangles.
+  const removeVariant = (workoutId: WorkoutId, groupId: string, variantId: string) => {
+    setConfirmDialog({
+      title: 'Remove this swap?',
+      message: 'This alternative and its saved weight will be taken out of the exercise.',
+      confirmLabel: 'Remove',
+      danger: true,
+      onConfirm: () => {
+        setEditDirty(true)
+        setData((current) => {
+          let mainId = variantId
+          const templates = current.templates.map((template) =>
+            template.id === workoutId
+              ? {
+                  ...template,
+                  groups: template.groups.map((group) => {
+                    if (group.id !== groupId || group.variants.length <= 1) {
+                      return group
+                    }
+                    mainId = group.variants[0].id
+                    const variants = group.variants.filter((variant) => variant.id !== variantId)
+                    return {
+                      ...group,
+                      variants,
+                      activeVariantId: group.activeVariantId === variantId ? mainId : group.activeVariantId,
+                    }
+                  }),
+                }
+              : template,
+          )
+          const variantPrefs =
+            current.variantPrefs[groupId] === variantId
+              ? { ...current.variantPrefs, [groupId]: mainId }
+              : current.variantPrefs
+          return {
+            ...current,
+            templates,
+            variantPrefs,
+            baselineResults: removeKey(current.baselineResults, variantId),
+          }
+        })
+        setConfirmDialog(null)
+      },
+    })
+  }
+
   const adjustWeight = (sessionId: string, groupId: string, variantId: string, delta: number) => {
     updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({
       ...entry,
@@ -2284,7 +2461,6 @@ function App() {
   }
 
   const setExerciseResult = (sessionId: string, groupId: string, variantId: string, status: ResultStatus) => {
-    hapticConfirm()
     setData((current) => {
       let updatedSession: WorkoutSession | undefined
       const sessions = current.sessions.map((session) => {
@@ -2318,7 +2494,6 @@ function App() {
   }
 
   const swapVariant = (sessionId: string, group: ExerciseGroup) => {
-    hapticTick()
     setData((current) => {
       const sessions = current.sessions.map((session) => {
         if (session.id !== sessionId) {
@@ -2556,6 +2731,9 @@ function App() {
                 <span>No record yet</span>
               </button>
             </div>
+            <button className="choice-cancel" type="button" onClick={() => setPreviousDialog(null)}>
+              Cancel
+            </button>
           </Dialog>
         )}
       </>
@@ -2584,6 +2762,9 @@ function App() {
               <span>Keep this device&rsquo;s data</span>
             </button>
           </div>
+          <button className="choice-cancel" type="button" onClick={() => void cancelSyncConflict()}>
+            Cancel
+          </button>
         </Dialog>
       )}
       {confirmDialog && (
@@ -2596,6 +2777,7 @@ function App() {
             <button
               className={confirmDialog.danger ? 'danger-action' : 'primary-action'}
               type="button"
+              data-haptic="confirm"
               onClick={confirmDialog.onConfirm}
             >
               {confirmDialog.confirmLabel}
@@ -2892,10 +3074,14 @@ function findPreviousTarget(
   groupId: string,
   variantId: string,
 ) {
+  // Reach back to the last session where THIS variant was actually performed (has a logged result),
+  // not merely one where an entry exists — every variant gets a carried-forward entry each session, so
+  // matching on the entry alone would always return the immediately-previous session. This is what
+  // makes a swap show its own real last result, even if that was many sessions ago.
   const previous = data.sessions
     .filter((candidate) => candidate.workoutId === workoutId && candidate.createdAt < session.createdAt)
     .sort((a, b) => b.createdAt - a.createdAt)
-    .find((candidate) => candidate.groupEntries[groupId]?.entries[variantId])
+    .find((candidate) => candidate.groupEntries[groupId]?.entries[variantId]?.result)
 
   return previous ? { sessionId: previous.id } : { sessionId: null }
 }
@@ -3074,7 +3260,7 @@ function formatRestPreset(seconds: number) {
   }
   const minutes = Math.floor(seconds / 60)
   const remainder = seconds % 60
-  return remainder === 0 ? `${minutes}m` : `${minutes}m${remainder}`
+  return remainder === 0 ? `${minutes}m` : `${minutes}m${remainder}s`
 }
 
 function formatRelative(timestamp: number) {
