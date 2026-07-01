@@ -263,7 +263,10 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Latest implementation: replace universal button feedback with semantic, state-change-only
+- Latest implementation: refresh the first-use/reset Workout A and Workout B seeds with the user's
+  revised exercise names, setup notes, rest times, targets, weights, and baseline results. Existing
+  saved routines are intentionally untouched; `y` maps to Done/success and `n` to Failed/failure.
+- Previous implementation: replace universal button feedback with semantic, state-change-only
   haptics; add an Android `performHapticFeedback` bridge that respects system settings; change the
   locked-screen timer alert from ~6s pulses to one maximum-amplitude 3s vibration.
 - `abe5872` Prevent haptics when scrolling from buttons
@@ -333,6 +336,10 @@ Git history (newest first); each commit is a clean restore point:
 - `5adba7c` Snapshot: original app before redesign (full restore point)
 
 **Feature status:**
+- **Default/reset routine seed** — `defaultWorkouts` contains the current user-specified Workout A/B
+  lineup, including per-exercise rest times and the two Workout B fly swap groups. It is used only
+  for a brand-new local data store or confirmed app-data reset; normalization preserves existing
+  saved templates rather than silently replacing them.
 - **Workout/session screen** — fixed-order list, active exercise expands in place, muscle colors
   (outline + dot + category word), guidance sentence (green increase / coral repeat), read-only
   exercise name and Setup/Target tiles, big weight stepper (−1.25/+1.25, tap value to edit), big
