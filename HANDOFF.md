@@ -261,7 +261,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Current change (uncommitted): editor + haptics + swap overhaul from live APK feedback, refined over
+- `f79b1c2` Editor, haptics, and swap overhaul from live APK feedback, refined over
   two further rounds of feedback —
   (1) **universal haptics**: one delegated listener gives every button the same light tap, with a
   firm tier for meaningful actions (`data-haptic="confirm"`); replaces the scattered inconsistent
