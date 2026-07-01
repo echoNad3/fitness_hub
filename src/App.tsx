@@ -786,6 +786,13 @@ function App() {
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [syncConflict, setSyncConflict] = useState<{ remote: CloudState; remoteUpdatedAt: number } | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string
+    message: string
+    confirmLabel: string
+    danger?: boolean
+    onConfirm: () => void
+  } | null>(null)
   const [syncError, setSyncError] = useState('')
   const [syncAttempt, setSyncAttempt] = useState(0)
   const [cloudActionBusy, setCloudActionBusy] = useState(false)
@@ -817,6 +824,7 @@ function App() {
     weightDialog !== null ||
     previousDialog !== null ||
     authDialog !== null ||
+    confirmDialog !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
   const editModeRef = useRef(editMode)
@@ -1078,16 +1086,26 @@ function App() {
         if (dialogOpenRef.current) {
           closeAllDialogs()
         } else if (editModeRef.current) {
-          // Leaving edit mode via the cross / back gesture discards. Confirm first if changes were
-          // made; if the user keeps editing, restore the history entry the back press consumed.
-          if (editDirtyRef.current && !window.confirm('Discard your changes to this workout?')) {
+          // Leaving edit mode via the cross / back gesture. If changes were made, keep edit mode open
+          // (restore the consumed history entry) and show a styled confirm on top; otherwise exit.
+          if (editDirtyRef.current) {
             closingOverlayViaPopstateRef.current = false
             window.history.pushState({ fitnessHub: true, overlay: true }, '')
+            setConfirmDialog({
+              title: 'Discard changes?',
+              message: 'Your edits to this workout will be lost.',
+              confirmLabel: 'Discard',
+              danger: true,
+              onConfirm: () => {
+                if (editSnapshotRef.current) {
+                  const snapshot = editSnapshotRef.current
+                  setData((current) => ({ ...current, templates: snapshot.templates, sessions: snapshot.sessions }))
+                }
+                setEditMode(false)
+                setConfirmDialog(null)
+              },
+            })
             return
-          }
-          if (editDirtyRef.current && editSnapshotRef.current) {
-            const snapshot = editSnapshotRef.current
-            setData((current) => ({ ...current, templates: snapshot.templates, sessions: snapshot.sessions }))
           }
           setEditMode(false)
         }
@@ -1347,6 +1365,7 @@ function App() {
     setPreviousDialog(null)
     setAuthDialog(null)
     setStartDialogOpen(false)
+    setConfirmDialog(null)
   }
 
   const scrollToSession = (sessionId: string) => {
@@ -2116,17 +2135,22 @@ function App() {
       return
     }
 
-    if (!window.confirm('Remove this exercise from the workout?')) {
-      return
-    }
-
-    setEditDirty(true)
-    setData((current) => ({
-      ...current,
-      templates: current.templates.map((template) =>
-        template.id === workoutId ? { ...template, groups: template.groups.filter((group) => group.id !== groupId) } : template,
-      ),
-    }))
+    setConfirmDialog({
+      title: 'Remove exercise?',
+      message: 'It will be taken out of this workout.',
+      confirmLabel: 'Remove',
+      danger: true,
+      onConfirm: () => {
+        setEditDirty(true)
+        setData((current) => ({
+          ...current,
+          templates: current.templates.map((template) =>
+            template.id === workoutId ? { ...template, groups: template.groups.filter((group) => group.id !== groupId) } : template,
+          ),
+        }))
+        setConfirmDialog(null)
+      },
+    })
   }
 
   // Add a blank exercise to the routine and expand it inline so it can be filled in on the spot.
@@ -2163,19 +2187,24 @@ function App() {
   }
 
   const deleteSession = (sessionId: string) => {
-    if (!window.confirm('Delete this session?')) {
-      return
-    }
-
-    setData((current) => ({
-      ...current,
-      sessions: current.sessions.filter((session) => session.id !== sessionId),
-      expandedBySession: removeKey(current.expandedBySession, sessionId),
-      scrollBySession: removeKey(current.scrollBySession, sessionId),
-      currentSessionByWorkout: Object.fromEntries(
-        Object.entries(current.currentSessionByWorkout).filter(([, value]) => value !== sessionId),
-      ) as Partial<Record<WorkoutId, string>>,
-    }))
+    setConfirmDialog({
+      title: 'Delete session?',
+      message: 'This saved workout will be removed from your history.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: () => {
+        setData((current) => ({
+          ...current,
+          sessions: current.sessions.filter((session) => session.id !== sessionId),
+          expandedBySession: removeKey(current.expandedBySession, sessionId),
+          scrollBySession: removeKey(current.scrollBySession, sessionId),
+          currentSessionByWorkout: Object.fromEntries(
+            Object.entries(current.currentSessionByWorkout).filter(([, value]) => value !== sessionId),
+          ) as Partial<Record<WorkoutId, string>>,
+        }))
+        setConfirmDialog(null)
+      },
+    })
   }
 
   const expandExercise = (sessionId: string, groupId: string) => {
@@ -2447,11 +2476,16 @@ function App() {
   }
 
   const resetData = () => {
-    if (!window.confirm('Reset all local Fitness Hub data?')) {
-      return
-    }
-
-    setData(buildInitialData())
+    setConfirmDialog({
+      title: 'Reset all data?',
+      message: 'Every session and workout change on this device will be cleared.',
+      confirmLabel: 'Reset',
+      danger: true,
+      onConfirm: () => {
+        setData(buildInitialData())
+        setConfirmDialog(null)
+      },
+    })
   }
 
   const testVibration = () => {
@@ -2548,6 +2582,23 @@ function App() {
             <button className="choice" type="button" onClick={() => void resolveSyncConflict('device')}>
               <Icon name="download" size={18} />
               <span>Keep this device&rsquo;s data</span>
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {confirmDialog && (
+        <Dialog title={confirmDialog.title}>
+          <p className="dialog-help">{confirmDialog.message}</p>
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setConfirmDialog(null)}>
+              Cancel
+            </button>
+            <button
+              className={confirmDialog.danger ? 'danger-action' : 'primary-action'}
+              type="button"
+              onClick={confirmDialog.onConfirm}
+            >
+              {confirmDialog.confirmLabel}
             </button>
           </div>
         </Dialog>

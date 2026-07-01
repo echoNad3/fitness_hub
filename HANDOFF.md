@@ -315,18 +315,24 @@ Git history (newest first); each commit is a clean restore point:
   "Start X instead" alternate), and **History** / **Settings** tiles. No browser confirms.
 - **History** — clean cards, relative time, semantic done/partial chip, trash delete.
 - **Settings** — Export/Import JSON backup, Test vibration, Reset.
-- **Full editing** — **edit mode** (pencil in the session header) handles reorder (up/down), remove,
-  add, and all routine-detail changes through the full **exercise editor** dialog (name, muscle
-  group chips, sets, reps, setup, weight, per-hand). The expanded workout card no longer opens
-  separate name/setup/target editors; only session actions such as weight and result stay direct.
-  **Save/discard model:** the header shows ✕ (discard) on the left and an accent ✓ (save) on the
-  right. Entering edit snapshots `templates`+`sessions` and clears a dirty flag; structure edits set
-  it. ✓ keeps changes; ✕ / back gesture discards — and if dirty, a confirm fires first (decline =
-  keep editing, which re-pushes the consumed history entry). Discard restores the snapshot. The
-  **universal rest-length control** (`.ws-edit-rest`) also lives here — a −/value/+ field with
-  free entry plus preset chips (30s/45s/1m/1m30/2m), editing the single global `restSeconds`
-  (`MIN_REST_SECONDS` 5 – `MAX_REST_SECONDS` 600). Rest changes are immediate and **not** part of
-  the discard snapshot, so they don't mark the routine dirty.
+- **In-place editing** — the pencil turns the workout screen into edit mode *on the same screen* (no
+  separate menu, no dialog). Each exercise becomes a drag-sortable accordion (`EditableExerciseItem`,
+  grip handle, press-and-hold to drag) whose expanded body is the **inline editor**: name, muscle
+  chips, sets/reps steppers, setup, weight, per-hand, per-exercise rest, and Remove. The "doing"
+  controls (Done/Failed, guidance, rest dock, rail) hide in edit mode. **Add exercise** inserts a
+  blank exercise expanded in place. Field edits update the template variant and mirror the shared
+  fields (setup/sets/reps/weight) into the open session. **Save/discard:** header shows ✕ (discard,
+  left) and accent ✓ (save, right); entering snapshots `templates`+`sessions` and clears a dirty
+  flag, any edit sets it. ✓ keeps; ✕ / back gesture, if dirty, shows the styled **confirm dialog**
+  (Keep editing / Discard) — decline re-pushes the consumed history entry, Discard restores the
+  snapshot.
+- **Per-exercise rest** — each `ExerciseGroup` has its own `restSeconds` (migrated in for older
+  saves via `normalizeTemplates`, validated as optional). The rest dock starts and labels from the
+  **active exercise's** rest, so tapping a different exercise changes the timer; edit it inline
+  (stepper + free entry, 5–600s). No global rest control anymore.
+- **Confirm dialogs** — all destructive confirms (discard edits, remove exercise, delete session,
+  reset) use one styled root-level `confirmDialog` ({title, message, confirmLabel, danger,
+  onConfirm}), never `window.confirm`. It participates in the overlay/back system like other dialogs.
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.

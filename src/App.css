@@ -261,6 +261,12 @@ h2 {
   border-color: var(--accent);
 }
 
+.dialog-actions .danger-action {
+  color: #ffffff;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
