@@ -1068,10 +1068,11 @@ function App() {
     [data.sessions],
   )
 
-  // Drag-to-reorder in edit mode: a small move threshold so a tap on the handle still edits/deletes,
-  // and keyboard support for accessibility.
+  // Drag-to-reorder in edit mode: press-and-hold to start (the standard mobile reorder gesture), so
+  // the interaction is consistent — every drag begins the same way and fires one haptic at drag
+  // start (see onDragStart). A quick flick no longer slips straight into a drag. Keyboard supported.
   const dragSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -1613,7 +1614,12 @@ function App() {
 
         <section className="ws-list" aria-label={`${workout.name} exercises`}>
           {editMode ? (
-            <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={(event) => reorderGroups(workout.id, event)}>
+            <DndContext
+              sensors={dragSensors}
+              collisionDetection={closestCenter}
+              onDragStart={() => hapticTick()}
+              onDragEnd={(event) => reorderGroups(workout.id, event)}
+            >
               <SortableContext items={workout.groups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
                 {workout.groups.map((group) => {
                   const activeVariantId = selectActiveVariantId(
