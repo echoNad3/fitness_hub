@@ -1,4 +1,4 @@
-/* Edit mode (reorder / remove / add) and the exercise editor */
+/* Edit mode: in-place inline editing of the routine on the workout screen (no separate menu). */
 
 .ws-edit-toggle {
   justify-self: end;
@@ -12,118 +12,28 @@
   border-color: var(--accent);
 }
 
-/* Universal rest-length control, surfaced inside edit mode. */
-.ws-edit-rest {
-  margin-top: 4px;
-  padding: 14px 16px;
-  display: grid;
-  gap: 12px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-}
-
-.ws-edit-rest-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ws-rest-presets {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-}
-
-.ws-rest-preset {
-  min-height: 40px;
-  color: var(--muted);
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  font-size: var(--fs-meta);
-  font-weight: var(--fw-bold);
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    transform 120ms ease,
-    color 120ms ease,
-    background-color 120ms ease,
-    border-color 120ms ease;
-}
-
-.ws-rest-preset:active {
-  transform: scale(0.95);
-}
-
-.ws-rest-preset.sel {
-  color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.ws-rest-preset:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-/* Edit-mode controls ease in when the pencil is tapped. */
-.ws-edit-row,
-.ws-add,
-.ws-edit-rest {
+/* Edit-mode items and the add button ease in when the pencil is tapped. */
+.ws-item.editing,
+.ws-add {
   animation: rise-in 200ms ease both;
 }
 
-.ws-edit-rest-label {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ws-edit-rest-label > svg {
-  flex: 0 0 auto;
-  color: var(--accent);
-}
-
-.ws-edit-rest-label > span {
-  min-width: 0;
+/* Collapsed/expanded head of an editable exercise: drag handle + tap-to-open row. */
+.ws-edit-head {
   display: grid;
-  gap: 2px;
-}
-
-.ws-edit-rest-label strong {
-  font-size: var(--fs-body);
-  font-weight: var(--fw-bold);
-}
-
-.ws-edit-rest-label small {
-  color: var(--muted);
-  font-size: var(--fs-meta);
-}
-
-.ws-edit-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
 }
 
 /* Drag handle owns the reorder gesture; touch-action:none lets a drag start without scrolling. */
 .ws-edit-handle {
   width: 40px;
-  height: 46px;
+  height: 62px;
   display: grid;
   place-items: center;
   color: var(--quiet);
   background: transparent;
   border: 0;
-  border-radius: 10px;
   cursor: grab;
   touch-action: none;
 }
@@ -132,21 +42,36 @@
   cursor: grabbing;
 }
 
-.ws-edit-row.dragging {
+.ws-item.editing.dragging {
   background: var(--surface-2);
 }
 
-.ws-edit-main {
+.ws-edit-open {
   min-width: 0;
+  min-height: 62px;
+  padding: 10px 14px 10px 0;
   display: grid;
-  gap: 2px;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
   color: var(--text);
   text-align: left;
   background: transparent;
   border: 0;
+  cursor: pointer;
 }
 
-.ws-edit-main strong {
+.ws-edit-open > svg {
+  color: var(--quiet);
+}
+
+.ws-edit-open-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ws-edit-open-main strong {
   overflow: hidden;
   font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
@@ -154,23 +79,80 @@
   white-space: nowrap;
 }
 
-.ws-edit-main small {
+.ws-item.editing.open .ws-edit-open-main strong {
+  font-weight: var(--fw-bold);
+}
+
+.ws-edit-open-main small {
   color: var(--muted);
   font-size: var(--fs-meta);
 }
 
-.ws-edit-del {
-  width: 42px;
-  height: 42px;
+/* The inline editor body (shown when an exercise is expanded in edit mode). */
+.ws-editor {
   display: grid;
-  place-items: center;
-  color: var(--danger);
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  gap: 12px;
+  padding: 0 16px 16px;
 }
 
-.ws-edit-del:disabled {
+.ws-editor-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: end;
+}
+
+.ws-editor-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.ws-editor-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.ws-editor-toggle {
+  min-height: 46px;
+  color: var(--muted);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.ws-editor-toggle.on {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ws-editor-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  margin-top: 2px;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid rgba(242, 118, 125, 0.4);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+.ws-editor-remove:disabled {
   opacity: 0.35;
 }
 
@@ -188,11 +170,7 @@
   font-weight: var(--fw-semibold);
 }
 
-.ex-form {
-  display: grid;
-  gap: 11px;
-}
-
+/* Field label + muscle-group chips, shared by the inline editor. */
 .ex-field {
   display: grid;
   gap: 5px;
@@ -204,12 +182,6 @@
   font-weight: var(--fw-bold);
   letter-spacing: 0.05em;
   text-transform: uppercase;
-}
-
-.ex-row2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
 }
 
 .ex-muscles {
@@ -232,26 +204,10 @@
   color: #15171d;
 }
 
-.ex-toggle {
-  align-self: end;
-  min-height: 50px;
-  padding: 0 14px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  font-size: var(--fs-label);
-  font-weight: var(--fw-semibold);
-}
-
-.ex-toggle.on {
-  color: #ffffff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.ws-edit-main,
-.ws-edit-del,
+.ws-edit-open,
+.ws-editor-toggle,
+.ws-editor-remove,
+.ex-muscle,
 .ws-add {
   cursor: pointer;
   transition:
@@ -261,23 +217,29 @@
     color 120ms ease;
 }
 
-.ws-edit-main:active,
-.ws-edit-del:not(:disabled):active,
+.ws-item:not(.open) .ws-edit-open:active,
+.ws-editor-toggle:active,
+.ws-editor-remove:not(:disabled):active,
+.ex-muscle:active,
 .ws-add:active {
   transform: scale(0.98);
 }
 
-.ws-edit-main:focus-visible,
-.ws-edit-del:focus-visible,
+.ws-edit-open:focus-visible,
 .ws-edit-handle:focus-visible,
+.ws-editor-toggle:focus-visible,
+.ws-editor-remove:focus-visible,
+.ex-muscle:focus-visible,
 .ws-add:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-edit-main,
-  .ws-edit-del,
+  .ws-edit-open,
+  .ws-editor-toggle,
+  .ws-editor-remove,
+  .ex-muscle,
   .ws-add {
     transition: none;
   }

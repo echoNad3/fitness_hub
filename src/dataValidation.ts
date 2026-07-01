@@ -51,6 +51,12 @@ function isExerciseGroup(value: unknown) {
     return false
   }
 
+  // restSeconds is optional here for backward compatibility — pre-per-exercise-rest saves lack it and
+  // are migrated in on load. If present it must be a positive number.
+  if (value.restSeconds !== undefined && !isPositiveInteger(value.restSeconds)) {
+    return false
+  }
+
   if (!Array.isArray(value.variants) || value.variants.length === 0 || !value.variants.every(isVariant)) {
     return false
   }

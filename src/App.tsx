@@ -31,7 +31,6 @@ import {
   parseCloudTimestamp,
 } from './cloudSync'
 import {
-  clampRestSeconds,
   clampRestValue,
   nextPendingId,
   restSecondsRemaining,
@@ -67,6 +66,8 @@ type ExerciseGroup = {
   id: string
   activeVariantId: string
   variants: ExerciseVariant[]
+  // Rest countdown length for this exercise (seconds). Per-exercise, edited in the workout editor.
+  restSeconds: number
 }
 
 type WorkoutTemplate = {
@@ -126,19 +127,6 @@ type PreviousDialog = {
   variantId: string
 }
 
-type ExerciseDialog = {
-  workoutId: WorkoutId
-  sessionId?: string
-  groupId?: string
-  variantId?: string
-  name: string
-  category: Category
-  sets: string
-  reps: string
-  setup: string
-  weight: string
-  perHand: boolean
-}
 
 type AuthDialog = {
   mode: 'in' | 'up'
@@ -164,7 +152,6 @@ const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
 const SYNCED_ACCOUNT_KEY = 'fitness-hub-v1-synced-account'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
-const REST_PRESETS = [30, 45, 60, 90, 120]
 const CATEGORIES: Category[] = ['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS']
 
 const defaultWorkouts: WorkoutTemplate[] = [
@@ -280,6 +267,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
       {
         id: 'chest-fly-group',
         activeVariantId: 'seated-cable-chest-fly',
+        restSeconds: DEFAULT_REST_SECONDS,
         variants: [
           {
             id: 'seated-cable-chest-fly',
@@ -308,6 +296,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
       {
         id: 'reverse-fly-group',
         activeVariantId: 'reverse-cable-flyes',
+        restSeconds: DEFAULT_REST_SECONDS,
         variants: [
           {
             id: 'reverse-cable-flyes',
@@ -353,6 +342,7 @@ function singleExercise(variant: ExerciseVariant): ExerciseGroup {
     id: variant.id,
     activeVariantId: variant.id,
     variants: [variant],
+    restSeconds: DEFAULT_REST_SECONDS,
   }
 }
 
@@ -536,45 +526,251 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   }
 }
 
-function SortableEditRow({
-  id,
-  muscle,
-  name,
-  meta,
-  canRemove,
-  onEdit,
-  onRemove,
-}: {
+type EditableExerciseItemProps = {
   id: string
   muscle: string
   name: string
-  meta: string
+  category: Category
+  setup: string
+  sets: number
+  reps: number
+  weight: number
+  perHand: boolean
+  restSeconds: number
+  isExpanded: boolean
   canRemove: boolean
-  onEdit: () => void
+  onToggle: () => void
+  onVariant: (patch: Partial<ExerciseVariant>) => void
+  onRest: (value: number) => void
   onRemove: () => void
-}) {
+}
+
+// One exercise, in edit mode: a drag-sortable accordion whose expanded body is the inline editor —
+// so the whole routine is edited in place on the workout screen, no separate menu or dialog.
+function EditableExerciseItem(props: EditableExerciseItemProps) {
+  const { id, muscle, name, category, setup, sets, reps, weight, perHand, restSeconds, isExpanded, canRemove } = props
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const [nameDraft, setNameDraft] = useState<string | null>(null)
+  const [setupDraft, setSetupDraft] = useState<string | null>(null)
+  const [weightDraft, setWeightDraft] = useState<string | null>(null)
+  const [restDraft, setRestDraft] = useState<string | null>(null)
+
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    borderColor: `${muscle}52`,
+    borderColor: isExpanded ? `${muscle}b0` : `${muscle}52`,
     opacity: isDragging ? 0.75 : 1,
     zIndex: isDragging ? 5 : undefined,
     boxShadow: isDragging ? 'var(--shadow)' : undefined,
   }
+
+  const blurOnEnter = (event: { key: string; currentTarget: HTMLInputElement }) => {
+    if (event.key === 'Enter') {
+      event.currentTarget.blur()
+    }
+  }
+  const commitName = () => {
+    setNameDraft((draft) => {
+      if (draft !== null) {
+        props.onVariant({ name: draft.trim() || 'Exercise' })
+      }
+      return null
+    })
+  }
+  const commitSetup = () => {
+    setSetupDraft((draft) => {
+      if (draft !== null) {
+        props.onVariant({ setup: draft.trim() })
+      }
+      return null
+    })
+  }
+  const commitWeight = () => {
+    setWeightDraft((draft) => {
+      if (draft !== null && draft.trim() !== '') {
+        const parsed = Number(draft)
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          props.onVariant({ weight: roundWeight(parsed) })
+        }
+      }
+      return null
+    })
+  }
+  const commitRest = () => {
+    setRestDraft((draft) => {
+      if (draft !== null && draft.trim() !== '') {
+        props.onRest(Number(draft))
+      }
+      return null
+    })
+  }
+
   return (
-    <div ref={setNodeRef} style={style} className={`ws-edit-row${isDragging ? ' dragging' : ''}`}>
-      <button className="ws-edit-handle" type="button" aria-label="Drag to reorder" {...attributes} {...listeners}>
-        <Icon name="grip" size={18} />
-      </button>
-      <button className="ws-edit-main" type="button" onClick={onEdit}>
-        <strong>{name}</strong>
-        <small>{meta}</small>
-      </button>
-      <button className="ws-edit-del" type="button" aria-label="Remove exercise" disabled={!canRemove} onClick={onRemove}>
-        <Icon name="trash" size={18} />
-      </button>
-    </div>
+    <article
+      ref={setNodeRef}
+      style={style}
+      id={`exercise-${id}`}
+      className={`ws-item editing${isExpanded ? ' open' : ''}${isDragging ? ' dragging' : ''}`}
+    >
+      <div className="ws-edit-head">
+        <button className="ws-edit-handle" type="button" aria-label="Drag to reorder" {...attributes} {...listeners}>
+          <Icon name="grip" size={18} />
+        </button>
+        <button className="ws-edit-open" type="button" aria-expanded={isExpanded} onClick={props.onToggle}>
+          <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
+          <span className="ws-edit-open-main">
+            <strong>{name}</strong>
+            <small>
+              {categoryLabel(category)} · {sets}×{reps} · rest {formatRestPreset(restSeconds)}
+            </small>
+          </span>
+          <Icon name={isExpanded ? 'up' : 'down'} size={18} />
+        </button>
+      </div>
+
+      <div className="ws-item-body">
+        <div className="ws-item-body-inner">
+          <div className="ws-editor">
+            <label className="ex-field">
+              <span>Name</span>
+              <input
+                className="ws-editor-input"
+                type="text"
+                value={nameDraft ?? name}
+                onFocus={() => setNameDraft(name)}
+                onChange={(event) => setNameDraft(event.target.value)}
+                onBlur={commitName}
+                onKeyDown={blurOnEnter}
+              />
+            </label>
+
+            <div className="ex-field">
+              <span>Muscle group</span>
+              <div className="ex-muscles">
+                {CATEGORIES.map((cat) => {
+                  const selected = category === cat
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`ex-muscle ${selected ? 'sel' : ''}`}
+                      style={selected ? { background: muscleColor(cat), borderColor: muscleColor(cat) } : undefined}
+                      onClick={() => {
+                        hapticTick()
+                        props.onVariant({ category: cat })
+                      }}
+                    >
+                      {categoryLabel(cat)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="ws-editor-row">
+              <div className="ex-field">
+                <span>Sets</span>
+                <div className="set-stepper">
+                  <button type="button" aria-label="Fewer sets" onClick={() => props.onVariant({ sets: Math.max(1, sets - 1) })}>
+                    <Icon name="minus" size={18} />
+                  </button>
+                  <strong>{sets}</strong>
+                  <button type="button" aria-label="More sets" onClick={() => props.onVariant({ sets: sets + 1 })}>
+                    <Icon name="plus" size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="ex-field">
+                <span>Reps</span>
+                <div className="set-stepper">
+                  <button type="button" aria-label="Fewer reps" onClick={() => props.onVariant({ reps: Math.max(1, reps - 1) })}>
+                    <Icon name="minus" size={18} />
+                  </button>
+                  <strong>{reps}</strong>
+                  <button type="button" aria-label="More reps" onClick={() => props.onVariant({ reps: reps + 1 })}>
+                    <Icon name="plus" size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <label className="ex-field">
+              <span>Setup</span>
+              <input
+                className="ws-editor-input"
+                type="text"
+                placeholder="e.g. seat 4, 20°"
+                value={setupDraft ?? setup}
+                onFocus={() => setSetupDraft(setup)}
+                onChange={(event) => setSetupDraft(event.target.value)}
+                onBlur={commitSetup}
+                onKeyDown={blurOnEnter}
+              />
+            </label>
+
+            <div className="ws-editor-row">
+              <label className="ex-field">
+                <span>Weight (kg)</span>
+                <input
+                  className="ws-editor-input"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  value={weightDraft ?? String(weight)}
+                  onFocus={() => setWeightDraft(String(weight))}
+                  onChange={(event) => setWeightDraft(event.target.value)}
+                  onBlur={commitWeight}
+                  onKeyDown={blurOnEnter}
+                />
+              </label>
+              <div className="ex-field">
+                <span>Load</span>
+                <button
+                  type="button"
+                  className={`ws-editor-toggle ${perHand ? 'on' : ''}`}
+                  aria-pressed={perHand}
+                  onClick={() => props.onVariant({ perHand: !perHand })}
+                >
+                  {perHand ? 'Per hand' : 'Total'}
+                </button>
+              </div>
+            </div>
+
+            <div className="ex-field">
+              <span>Rest for this exercise</span>
+              <div className="set-stepper">
+                <button type="button" aria-label="Less rest" onClick={() => props.onRest(restSeconds - 15)}>
+                  <Icon name="minus" size={18} />
+                </button>
+                <label className="set-rest-field">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={5}
+                    max={600}
+                    aria-label="Rest length in seconds"
+                    value={restDraft ?? String(restSeconds)}
+                    onFocus={() => setRestDraft(String(restSeconds))}
+                    onChange={(event) => setRestDraft(event.target.value)}
+                    onBlur={commitRest}
+                    onKeyDown={blurOnEnter}
+                  />
+                  <span>s</span>
+                </label>
+                <button type="button" aria-label="More rest" onClick={() => props.onRest(restSeconds + 15)}>
+                  <Icon name="plus" size={18} />
+                </button>
+              </div>
+            </div>
+
+            <button className="ws-editor-remove" type="button" disabled={!canRemove} onClick={props.onRemove}>
+              <Icon name="trash" size={18} />
+              Remove exercise
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
   )
 }
 
@@ -585,7 +781,6 @@ function App() {
   const [screenStack, setScreenStack] = useState<Screen[]>([])
   const [weightDialog, setWeightDialog] = useState<WeightDialog | null>(null)
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
-  const [exerciseDialog, setExerciseDialog] = useState<ExerciseDialog | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editDirty, setEditDirty] = useState(false)
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
@@ -603,7 +798,6 @@ function App() {
   const [restNotificationMessage, setRestNotificationMessage] = useState('')
   const [vibrationMessage, setVibrationMessage] = useState('')
   const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
-  const [restDraft, setRestDraft] = useState<string | null>(null)
   const [startDialogOpen, setStartDialogOpen] = useState(false)
   const [highlightSession, setHighlightSession] = useState<string | null>(null)
   const scrollTimer = useRef<number | null>(null)
@@ -622,7 +816,6 @@ function App() {
   const dialogOpen =
     weightDialog !== null ||
     previousDialog !== null ||
-    exerciseDialog !== null ||
     authDialog !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
@@ -1152,7 +1345,6 @@ function App() {
   const closeAllDialogs = () => {
     setWeightDialog(null)
     setPreviousDialog(null)
-    setExerciseDialog(null)
     setAuthDialog(null)
     setStartDialogOpen(false)
   }
@@ -1568,7 +1760,12 @@ function App() {
 
   const renderSession = (session: WorkoutSession) => {
     const workout = getWorkout(session.workoutId)
-    const expandedGroupId = data.expandedBySession[session.id] ?? workout.groups[0]?.id ?? ''
+    // Edit mode may collapse to none; normal mode always keeps one exercise open.
+    const expandedGroupId = editMode
+      ? data.expandedBySession[session.id] ?? ''
+      : data.expandedBySession[session.id] || workout.groups[0]?.id || ''
+    const activeGroup = workout.groups.find((group) => group.id === expandedGroupId)
+    const activeRest = clampRestValue(activeGroup?.restSeconds ?? DEFAULT_REST_SECONDS)
     const doneCount = countDone(session)
 
     return (
@@ -1629,14 +1826,23 @@ function App() {
                   )
                   const variant = getVariant(group, activeVariantId)
                   return (
-                    <SortableEditRow
+                    <EditableExerciseItem
                       key={group.id}
                       id={group.id}
                       muscle={muscleColor(variant.category)}
                       name={variant.name}
-                      meta={`${categoryLabel(variant.category)} · ${variant.sets}×${variant.reps}`}
+                      category={variant.category}
+                      setup={variant.setup}
+                      sets={variant.sets}
+                      reps={variant.reps}
+                      weight={variant.weight}
+                      perHand={variant.perHand}
+                      restSeconds={group.restSeconds}
+                      isExpanded={expandedGroupId === group.id}
                       canRemove={workout.groups.length > 1}
-                      onEdit={() => openExerciseEditor(workout.id, session.id, group, activeVariantId)}
+                      onToggle={() => toggleExpand(session.id, group.id)}
+                      onVariant={(patch) => editVariant(session.id, group.id, activeVariantId, patch)}
+                      onRest={(value) => editGroupRest(group.id, value)}
                       onRemove={() => removeGroup(workout.id, group.id)}
                     />
                   )
@@ -1647,66 +1853,14 @@ function App() {
             workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))
           )}
           {editMode && (
-            <button className="ws-add" type="button" onClick={() => openExerciseEditor(workout.id, session.id)}>
+            <button className="ws-add" type="button" onClick={() => addExercise(workout.id, session.id)}>
               <Icon name="plus" size={18} />
               Add exercise
             </button>
           )}
-          {editMode && (
-            <div className="ws-edit-rest">
-              <div className="ws-edit-rest-top">
-                <span className="ws-edit-rest-label">
-                  <Icon name="clock" size={20} />
-                  <span>
-                    <strong>Rest between sets</strong>
-                    <small>Applies to every workout</small>
-                  </span>
-                </span>
-                <div className="set-stepper">
-                  <button type="button" aria-label="Less rest" onClick={() => changeRest(-15)}>
-                    <Icon name="minus" size={18} />
-                  </button>
-                  <label className="set-rest-field">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={5}
-                      max={600}
-                      aria-label="Rest length in seconds"
-                      value={restDraft ?? String(data.restSeconds)}
-                      onFocus={() => setRestDraft(String(data.restSeconds))}
-                      onChange={(event) => setRestDraft(event.target.value)}
-                      onBlur={commitRestDraft}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.currentTarget.blur()
-                        }
-                      }}
-                    />
-                    <span>s</span>
-                  </label>
-                  <button type="button" aria-label="More rest" onClick={() => changeRest(15)}>
-                    <Icon name="plus" size={18} />
-                  </button>
-                </div>
-              </div>
-              <div className="ws-rest-presets" role="group" aria-label="Rest presets">
-                {REST_PRESETS.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    className={`ws-rest-preset${data.restSeconds === preset ? ' sel' : ''}`}
-                    onClick={() => setRest(preset)}
-                  >
-                    {formatRestPreset(preset)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
 
-        {!editMode && renderRestTimer()}
+        {!editMode && renderRestTimer(activeRest)}
       </main>
     )
   }
@@ -1859,7 +2013,7 @@ function App() {
     )
   }
 
-  const renderRestTimer = () => (
+  const renderRestTimer = (activeRest: number) => (
     <section className={`ws-dock${restRunning ? ' running' : ''}${restPulse ? ' pulse' : ''}`} aria-label="Rest timer">
       {restRunning ? (
         <>
@@ -1877,7 +2031,7 @@ function App() {
               hapticConfirm()
               setRestRunning(false)
               setRestEndsAt(null)
-              setRestSeconds(data.restSeconds)
+              setRestSeconds(activeRest)
               setRestNotificationMessage('')
               void cancelRestNotification()
             }}
@@ -1891,8 +2045,8 @@ function App() {
           type="button"
           onClick={() => {
             hapticConfirm()
-            const endsAt = Date.now() + data.restSeconds * 1000
-            setRestSeconds(data.restSeconds)
+            const endsAt = Date.now() + activeRest * 1000
+            setRestSeconds(activeRest)
             setRestEndsAt(endsAt)
             setRestRunning(true)
             setRestNotificationMessage('')
@@ -1914,7 +2068,7 @@ function App() {
             <Icon name={restPulse ? 'check' : 'clock'} size={18} />
             {restPulse ? 'Rest done' : 'Rest timer'}
           </span>
-          <strong>{restPulse ? '' : `Start · ${data.restSeconds}s`}</strong>
+          <strong>{restPulse ? '' : `Start · ${activeRest}s`}</strong>
         </button>
       )}
       {restNotificationMessage && (
@@ -1975,111 +2129,37 @@ function App() {
     }))
   }
 
-  const addExercise = (workoutId: WorkoutId, variant: ExerciseVariant) => {
+  // Add a blank exercise to the routine and expand it inline so it can be filled in on the spot.
+  const addExercise = (workoutId: WorkoutId, sessionId: string) => {
+    const variantId = createId()
+    const variant: ExerciseVariant = {
+      id: variantId,
+      name: 'New exercise',
+      category: 'CHEST',
+      setup: '',
+      sets: 3,
+      reps: 10,
+      weight: 0,
+      perHand: false,
+      lastResult: 'missing',
+    }
+    setEditDirty(true)
     setData((current) => ({
       ...current,
       templates: current.templates.map((template) =>
         template.id === workoutId
-          ? { ...template, groups: [...template.groups, { id: variant.id, activeVariantId: variant.id, variants: [variant] }] }
+          ? {
+              ...template,
+              groups: [
+                ...template.groups,
+                { id: variantId, activeVariantId: variantId, variants: [variant], restSeconds: current.restSeconds },
+              ],
+            }
           : template,
       ),
-      baselineResults: { ...current.baselineResults, [variant.id]: variant.lastResult },
+      baselineResults: { ...current.baselineResults, [variantId]: 'missing' },
+      expandedBySession: { ...current.expandedBySession, [sessionId]: variantId },
     }))
-  }
-
-  const openExerciseEditor = (workoutId: WorkoutId, sessionId?: string, group?: ExerciseGroup, activeVariantId?: string) => {
-    if (group) {
-      const variant = getVariant(
-        group,
-        selectActiveVariantId(activeVariantId, data.variantPrefs[group.id], group.activeVariantId),
-      )
-      setExerciseDialog({
-        workoutId,
-        sessionId,
-        groupId: group.id,
-        variantId: variant.id,
-        name: variant.name,
-        category: variant.category,
-        sets: String(variant.sets),
-        reps: String(variant.reps),
-        setup: variant.setup,
-        weight: String(variant.weight),
-        perHand: variant.perHand,
-      })
-    } else {
-      setExerciseDialog({ workoutId, sessionId, name: '', category: 'CHEST', sets: '3', reps: '10', setup: '', weight: '0', perHand: false })
-    }
-  }
-
-  const saveExercise = () => {
-    if (!exerciseDialog) {
-      return
-    }
-
-    const name = exerciseDialog.name.trim()
-    const sets = Number(exerciseDialog.sets)
-    const reps = Number(exerciseDialog.reps)
-    const weight = Number(exerciseDialog.weight)
-    if (!name || !Number.isInteger(sets) || sets < 1 || !Number.isInteger(reps) || reps < 1 || !Number.isFinite(weight) || weight < 0) {
-      return
-    }
-
-    setEditDirty(true)
-    const setup = exerciseDialog.setup.trim()
-    if (exerciseDialog.groupId && exerciseDialog.variantId) {
-      updateTemplateVariant(exerciseDialog.variantId, {
-        name,
-        category: exerciseDialog.category,
-        sets,
-        reps,
-        setup,
-        weight: roundWeight(weight),
-        perHand: exerciseDialog.perHand,
-      })
-      if (exerciseDialog.sessionId) {
-        updateExerciseEntry(exerciseDialog.sessionId, exerciseDialog.groupId, exerciseDialog.variantId, (entry) => ({
-          ...entry,
-          setup,
-          sets,
-          reps,
-          weight: roundWeight(weight),
-        }))
-      }
-    } else {
-      addExercise(exerciseDialog.workoutId, {
-        id: createId(),
-        name,
-        category: exerciseDialog.category,
-        setup,
-        sets,
-        reps,
-        weight: roundWeight(weight),
-        perHand: exerciseDialog.perHand,
-        lastResult: 'missing',
-      })
-    }
-
-    setExerciseDialog(null)
-  }
-
-  const changeRest = (delta: number) => {
-    setData((current) => ({
-      ...current,
-      restSeconds: clampRestSeconds(current.restSeconds, delta),
-    }))
-  }
-
-  const setRest = (value: number) => {
-    hapticTick()
-    setData((current) => ({ ...current, restSeconds: clampRestValue(value) }))
-  }
-
-  const commitRestDraft = () => {
-    if (restDraft !== null && restDraft.trim() !== '') {
-      const next = clampRestValue(Number(restDraft))
-      setData((current) => ({ ...current, restSeconds: next }))
-    }
-    setRestDraft(null)
   }
 
   const deleteSession = (sessionId: string) => {
@@ -2105,6 +2185,45 @@ function App() {
         ...current.expandedBySession,
         [sessionId]: groupId,
       },
+    }))
+  }
+
+  // Edit mode allows collapsing to none (so the whole list can be seen while reordering).
+  const toggleExpand = (sessionId: string, groupId: string) => {
+    setData((current) => ({
+      ...current,
+      expandedBySession: {
+        ...current.expandedBySession,
+        [sessionId]: current.expandedBySession[sessionId] === groupId ? '' : groupId,
+      },
+    }))
+  }
+
+  // Inline routine edit: update the template variant, and mirror the shared fields into the open
+  // session so the current workout reflects the change too. Marks the routine dirty for save/discard.
+  const editVariant = (sessionId: string, groupId: string, variantId: string, patch: Partial<ExerciseVariant>) => {
+    setEditDirty(true)
+    updateTemplateVariant(variantId, patch)
+    const entryPatch: Partial<SessionExercise> = {}
+    if (patch.setup !== undefined) entryPatch.setup = patch.setup
+    if (patch.sets !== undefined) entryPatch.sets = patch.sets
+    if (patch.reps !== undefined) entryPatch.reps = patch.reps
+    if (patch.weight !== undefined) entryPatch.weight = patch.weight
+    if (Object.keys(entryPatch).length > 0) {
+      updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({ ...entry, ...entryPatch }))
+    }
+  }
+
+  const editGroupRest = (groupId: string, value: number) => {
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => ({
+        ...template,
+        groups: template.groups.map((group) =>
+          group.id === groupId ? { ...group, restSeconds: clampRestValue(value) } : group,
+        ),
+      })),
     }))
   }
 
@@ -2405,110 +2524,6 @@ function App() {
             </div>
           </Dialog>
         )}
-        {exerciseDialog && (
-          <Dialog title={exerciseDialog.groupId ? 'Edit exercise' : 'Add exercise'}>
-            <div className="ex-form">
-              <label className="ex-field">
-                <span>Name</span>
-                <input
-                  className="number-input text-input"
-                  type="text"
-                  placeholder="Exercise name"
-                  value={exerciseDialog.name}
-                  onChange={(event) => setExerciseDialog({ ...exerciseDialog, name: event.target.value })}
-                />
-              </label>
-              <div className="ex-field">
-                <span>Muscle group</span>
-                <div className="ex-muscles">
-                  {CATEGORIES.map((category) => {
-                    const selected = exerciseDialog.category === category
-                    return (
-                      <button
-                        key={category}
-                        type="button"
-                        className={`ex-muscle ${selected ? 'sel' : ''}`}
-                        style={selected ? { background: muscleColor(category), borderColor: muscleColor(category) } : undefined}
-                        onClick={() => {
-                          hapticTick()
-                          setExerciseDialog({ ...exerciseDialog, category })
-                        }}
-                      >
-                        {categoryLabel(category)}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-              <div className="ex-row2">
-                <label className="ex-field">
-                  <span>Sets</span>
-                  <input
-                    className="number-input"
-                    inputMode="numeric"
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={exerciseDialog.sets}
-                    onChange={(event) => setExerciseDialog({ ...exerciseDialog, sets: event.target.value })}
-                  />
-                </label>
-                <label className="ex-field">
-                  <span>Reps</span>
-                  <input
-                    className="number-input"
-                    inputMode="numeric"
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={exerciseDialog.reps}
-                    onChange={(event) => setExerciseDialog({ ...exerciseDialog, reps: event.target.value })}
-                  />
-                </label>
-              </div>
-              <label className="ex-field">
-                <span>Setup</span>
-                <input
-                  className="number-input text-input"
-                  type="text"
-                  placeholder="20°, 5-top, N/A"
-                  value={exerciseDialog.setup}
-                  onChange={(event) => setExerciseDialog({ ...exerciseDialog, setup: event.target.value })}
-                />
-              </label>
-              <div className="ex-row2">
-                <label className="ex-field">
-                  <span>Weight (kg)</span>
-                  <input
-                    className="number-input"
-                    inputMode="decimal"
-                    type="number"
-                    min="0"
-                    step="1.25"
-                    value={exerciseDialog.weight}
-                    onChange={(event) => setExerciseDialog({ ...exerciseDialog, weight: event.target.value })}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className={`ex-toggle ${exerciseDialog.perHand ? 'on' : ''}`}
-                  aria-pressed={exerciseDialog.perHand}
-                  onClick={() => setExerciseDialog({ ...exerciseDialog, perHand: !exerciseDialog.perHand })}
-                >
-                  Per hand
-                </button>
-              </div>
-              <div className="dialog-actions">
-                <button type="button" onClick={() => setExerciseDialog(null)}>
-                  Cancel
-                </button>
-                <button className="primary-action" type="button" onClick={saveExercise}>
-                  Save
-                </button>
-              </div>
-            </div>
-          </Dialog>
-        )}
       </>
     )
   }
@@ -2624,41 +2639,52 @@ function normalizeData(value: unknown): AppData {
   }
 
   const partial = value as Partial<AppData>
+  const defaultRest =
+    typeof partial.restSeconds === 'number' && partial.restSeconds > 0 ? partial.restSeconds : DEFAULT_REST_SECONDS
 
   return {
     sessions: isValidSessions(partial.sessions) ? (partial.sessions as WorkoutSession[]) : [],
     variantPrefs: { ...base.variantPrefs, ...(partial.variantPrefs ?? {}) },
-    templates: normalizeTemplates(value),
+    templates: normalizeTemplates(value, defaultRest),
     baselineResults: { ...base.baselineResults, ...(partial.baselineResults ?? {}) },
     expandedBySession: partial.expandedBySession ?? {},
     scrollBySession: partial.scrollBySession ?? {},
     currentSessionByWorkout: partial.currentSessionByWorkout ?? {},
-    restSeconds: typeof partial.restSeconds === 'number' && partial.restSeconds > 0 ? partial.restSeconds : DEFAULT_REST_SECONDS,
+    restSeconds: defaultRest,
   }
 }
 
-function normalizeTemplates(value: unknown): WorkoutTemplate[] {
+function normalizeTemplates(value: unknown, defaultRest: number): WorkoutTemplate[] {
   const legacy = value as { templates?: unknown; variantOverrides?: Record<string, Partial<ExerciseVariant>> }
+  let templates: WorkoutTemplate[]
   if (isValidTemplates(legacy.templates)) {
-    return legacy.templates as WorkoutTemplate[]
+    templates = legacy.templates as WorkoutTemplate[]
+  } else {
+    templates = cloneWorkouts()
+    const overrides = legacy.variantOverrides
+    if (overrides && typeof overrides === 'object') {
+      templates.forEach((template) =>
+        template.groups.forEach((group) =>
+          group.variants.forEach((variant) => {
+            const override = overrides[variant.id]
+            if (override) {
+              Object.assign(variant, override)
+            }
+          }),
+        ),
+      )
+    }
   }
 
-  const templates = cloneWorkouts()
-  const overrides = legacy.variantOverrides
-  if (overrides && typeof overrides === 'object') {
-    templates.forEach((template) =>
-      template.groups.forEach((group) =>
-        group.variants.forEach((variant) => {
-          const override = overrides[variant.id]
-          if (override) {
-            Object.assign(variant, override)
-          }
-        }),
-      ),
-    )
-  }
-
-  return templates
+  // Migrate in per-exercise rest for saves that predate it.
+  return templates.map((template) => ({
+    ...template,
+    groups: template.groups.map((group) => ({
+      ...group,
+      restSeconds:
+        typeof group.restSeconds === 'number' && group.restSeconds > 0 ? group.restSeconds : defaultRest,
+    })),
+  }))
 }
 
 function createSession(workoutId: WorkoutId, data: AppData, sessionId: string): WorkoutSession {
