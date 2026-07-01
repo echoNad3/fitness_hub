@@ -34,13 +34,15 @@ export function hapticConfirm() {
   haptic('confirm')
 }
 
-// Universal button feedback: one delegated listener gives every button the same light tap on press,
+// Universal button feedback: one delegated listener gives every button the same light tap on activation,
 // so we don't have to remember to wire haptics into each onClick (that scattering is exactly what felt
 // inconsistent). A button opts up to the firmer tier with data-haptic="confirm", or opts out entirely
 // with data-haptic="none" (e.g. the drag handle, which fires its own tick when a drag actually starts).
-// Fires on pointerdown for immediate, responsive feedback. Returns a cleanup function.
+// Use click rather than pointerdown so touching a button and then scrolling does not buzz. Browsers
+// suppress the click when a touch turns into a scroll, while keyboard activation still gets feedback.
+// Returns a cleanup function.
 export function installGlobalHaptics(): () => void {
-  const onPointerDown = (event: PointerEvent) => {
+  const onClick = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null
     const el = target?.closest?.('button, [role="button"]') as HTMLElement | null
     if (!el) {
@@ -56,6 +58,6 @@ export function installGlobalHaptics(): () => void {
     haptic(mode === 'confirm' ? 'confirm' : 'select')
   }
 
-  document.addEventListener('pointerdown', onPointerDown, { passive: true })
-  return () => document.removeEventListener('pointerdown', onPointerDown)
+  document.addEventListener('click', onClick)
+  return () => document.removeEventListener('click', onClick)
 }

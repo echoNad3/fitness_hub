@@ -183,7 +183,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
-| `src/haptics.ts` | **One universal two-tier haptic ruleset** so feedback feels identical everywhere. `haptic('select')` = light tap (every button/press); `haptic('confirm')` = firmer tap (meaningful state changes only). `installGlobalHaptics()` adds ONE delegated `pointerdown` listener so *every* `<button>` buzzes light on press automatically — no per-onClick wiring. A button escalates to the firm tier with `data-haptic="confirm"` (Done/Failed, rest start/cancel, save edits, destructive confirms) or opts out with `data-haptic="none"` (the drag handle, which fires its own tick on drag-start). `hapticTick()`/`hapticConfirm()` remain as aliases for the two non-button gesture call sites (drag start/drop). `@capacitor/haptics` on native, `navigator.vibrate` (10ms/22ms) fallback on web. A stepper press ticks once, not per hold-repeat. |
+| `src/haptics.ts` | **One universal two-tier haptic ruleset** so feedback feels identical everywhere. `haptic('select')` = light tap (every confirmed button activation); `haptic('confirm')` = firmer tap (meaningful state changes only). `installGlobalHaptics()` adds ONE delegated `click` listener so buttons buzz only after an actual activation — touching a button and scrolling does not buzz because the browser cancels the click. A button escalates to the firm tier with `data-haptic="confirm"` (Done/Failed, rest start/cancel, save edits, destructive confirms) or opts out with `data-haptic="none"` (the drag handle, which fires its own tick on drag-start). `hapticTick()`/`hapticConfirm()` remain as aliases for the two non-button gesture call sites (drag start/drop). `@capacitor/haptics` on native, `navigator.vibrate` (10ms/22ms) fallback on web. A stepper activation ticks once, not per hold-repeat. |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
@@ -261,6 +261,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
+- Current uncommitted fix: global button haptics now fire on completed clicks rather than
+  `pointerdown`, so starting a scroll on a button no longer produces false feedback.
 - `f79b1c2` Editor, haptics, and swap overhaul from live APK feedback, refined over
   two further rounds of feedback —
   (1) **universal haptics**: one delegated listener gives every button the same light tap, with a
