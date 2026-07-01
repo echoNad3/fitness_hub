@@ -1,63 +1,59 @@
-import { Capacitor } from '@capacitor/core'
-import { Haptics, ImpactStyle } from '@capacitor/haptics'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 
-// One universal haptic ruleset so feedback feels the same everywhere in the app. There are exactly
-// two tiers, and nothing picks its own strength/length outside of them:
-//   • 'select'  — light tap. Every button/press: navigation, expand, steppers, chips, swaps, dialogs.
-//   • 'confirm' — firmer tap. Meaningful state changes only: Done/Failed, rest start/cancel, saving or
-//                 discarding edits, and destructive confirms (remove/delete/reset).
-// On native these map to Light/Medium impacts; on the web the Vibration API is a weaker fallback
-// (and absent on iOS), so failures are swallowed silently.
+// The app has one semantic haptic vocabulary. Callers describe what happened; Android chooses the
+// device-tuned effect and respects the system Touch feedback setting through performHapticFeedback.
+// Ordinary navigation, opening/closing UI, typing, scrolling, and generic presses never call here.
+export type HapticEvent =
+  | 'selection'
+  | 'increment'
+  | 'toggle-on'
+  | 'toggle-off'
+  | 'drag-start'
+  | 'drag-end'
+  | 'confirm'
+  | 'error'
+  | 'destructive'
+  | 'timer-finished'
+
+type NativeHapticEvent = Exclude<HapticEvent, 'timer-finished'>
+
+interface AppHapticsPlugin {
+  perform(options: { type: NativeHapticEvent }): Promise<{ performed: boolean }>
+}
+
+const AppHaptics = registerPlugin<AppHapticsPlugin>('AppHaptics')
 const native = Capacitor.isNativePlatform()
 
-export type HapticTier = 'select' | 'confirm'
+const WEB_PATTERNS: Record<HapticEvent, number | number[]> = {
+  selection: 10,
+  increment: 8,
+  'toggle-on': 12,
+  'toggle-off': 10,
+  'drag-start': 18,
+  'drag-end': 12,
+  confirm: 28,
+  error: [25, 45, 45],
+  destructive: 60,
+  'timer-finished': 3000,
+}
 
-// Web fallback durations, deliberately short and distinct so the two tiers feel consistent.
-const WEB_MS: Record<HapticTier, number> = { select: 10, confirm: 22 }
+export async function haptic(type: HapticEvent): Promise<boolean> {
+  // The native exact alarm owns timer completion so it can fire while the phone is locked. Avoid a
+  // second vibration when the foreground countdown notices the same completion.
+  if (native && type === 'timer-finished') {
+    return true
+  }
 
-export function haptic(tier: HapticTier = 'select') {
   if (native) {
-    const style = tier === 'confirm' ? ImpactStyle.Medium : ImpactStyle.Light
-    void Haptics.impact({ style }).catch(() => undefined)
-  } else {
-    navigator.vibrate?.(WEB_MS[tier])
-  }
-}
-
-// Named aliases kept for the few non-button call sites (drag start/drop, which are gesture events,
-// not clicks, so the global button listener never sees them).
-export function hapticTick() {
-  haptic('select')
-}
-
-export function hapticConfirm() {
-  haptic('confirm')
-}
-
-// Universal button feedback: one delegated listener gives every button the same light tap on activation,
-// so we don't have to remember to wire haptics into each onClick (that scattering is exactly what felt
-// inconsistent). A button opts up to the firmer tier with data-haptic="confirm", or opts out entirely
-// with data-haptic="none" (e.g. the drag handle, which fires its own tick when a drag actually starts).
-// Use click rather than pointerdown so touching a button and then scrolling does not buzz. Browsers
-// suppress the click when a touch turns into a scroll, while keyboard activation still gets feedback.
-// Returns a cleanup function.
-export function installGlobalHaptics(): () => void {
-  const onClick = (event: MouseEvent) => {
-    const target = event.target as HTMLElement | null
-    const el = target?.closest?.('button, [role="button"]') as HTMLElement | null
-    if (!el) {
-      return
+    try {
+      const result = await AppHaptics.perform({ type: type as NativeHapticEvent })
+      return result.performed
+    } catch {
+      // A web deploy can briefly reach an older installed APK without this native plugin. Silence is
+      // preferable to bypassing the user's Android haptic setting with a raw vibrator fallback.
+      return false
     }
-    if (el.getAttribute('aria-disabled') === 'true' || (el as HTMLButtonElement).disabled) {
-      return
-    }
-    const mode = el.getAttribute('data-haptic')
-    if (mode === 'none') {
-      return
-    }
-    haptic(mode === 'confirm' ? 'confirm' : 'select')
   }
 
-  document.addEventListener('click', onClick)
-  return () => document.removeEventListener('click', onClick)
+  return navigator.vibrate?.(WEB_PATTERNS[type]) ?? false
 }

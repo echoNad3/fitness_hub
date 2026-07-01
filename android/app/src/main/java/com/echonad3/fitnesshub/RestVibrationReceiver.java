@@ -11,14 +11,14 @@ import android.os.Vibrator;
 import android.os.VibratorManager;
 
 /**
- * Fires when the rest timer ends. Plays a strong, ~6-second vibration pattern so it is felt
+ * Fires when the rest timer ends. Plays a maximum-amplitude 3-second vibration so it is felt
  * clearly even while the phone is locked — independent of any notification.
  */
 public class RestVibrationReceiver extends BroadcastReceiver {
 
-    // Six strong 0.8s buzzes separated by short gaps (~6.3s total). Leading 0 = no initial wait.
-    private static final long[] PATTERN = {0, 800, 250, 800, 250, 800, 250, 800, 250, 800, 250, 800};
-    private static final int[] AMPLITUDES = {0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255};
+    // Leading 0 = no initial wait; amplitude 255 is the strongest supported waveform level.
+    private static final long[] PATTERN = {0, 3000};
+    private static final int[] AMPLITUDES = {0, 255};
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -27,7 +27,7 @@ public class RestVibrationReceiver extends BroadcastReceiver {
         if (powerManager != null) {
             PowerManager.WakeLock wakeLock =
                     powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "fitnesshub:restVibration");
-            wakeLock.acquire(8000L);
+            wakeLock.acquire(5000L);
         }
 
         Vibrator vibrator = getVibrator(context);

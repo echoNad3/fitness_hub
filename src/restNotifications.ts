@@ -10,7 +10,7 @@ export interface RestNotificationResult {
   detail?: string
 }
 
-// On the native Android app this schedules a heavy ~6s vibration (via an exact alarm) that fires
+// On the native Android app this schedules a maximum-amplitude 3s vibration (via an exact alarm) that fires
 // even when the phone is locked. On the web/PWA it is a no-op — browsers can't run code while
 // locked, so the visible in-app timer is the only alert there.
 export async function scheduleRestNotification(endsAt: number): Promise<RestNotificationResult> {

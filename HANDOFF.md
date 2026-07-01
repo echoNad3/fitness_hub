@@ -158,7 +158,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
   `public/app-icon.svg` via `@vite-pwa/assets-generator`.
 - **Capacitor 8 + Android** for the native wrapper. A **custom `RestAlarm` plugin** schedules an
-  exact AlarmManager alarm that fires a strong ~6s vibration (RestVibrationReceiver) when the rest
+  exact AlarmManager alarm that fires a maximum-amplitude 3s vibration (RestVibrationReceiver) when the rest
   timer ends — felt while locked. (Earlier used Local Notifications, but a notification only gives a
   brief light buzz; the user needs a heavy multi-second vibration, hence the native alarm.)
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
@@ -178,12 +178,13 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest **vibration** via the custom `RestAlarm` plugin; no-op on web. |
-| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact-alarm + ~6s heavy vibration waveform for the locked-screen rest alert. |
+| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact-alarm + maximum-amplitude 3s vibration for the locked-screen rest alert. |
+| `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps app events to Android `SEGMENT_*`, `TOGGLE_*`, `DRAG_START`, `GESTURE_END`, `CONFIRM`, `REJECT`, or `LONG_PRESS` with older-Android fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
-| `src/haptics.ts` | **One universal two-tier haptic ruleset** so feedback feels identical everywhere. `haptic('select')` = light tap (every confirmed button activation); `haptic('confirm')` = firmer tap (meaningful state changes only). `installGlobalHaptics()` adds ONE delegated `click` listener so buttons buzz only after an actual activation — touching a button and scrolling does not buzz because the browser cancels the click. A button escalates to the firm tier with `data-haptic="confirm"` (Done/Failed, rest start/cancel, save edits, destructive confirms) or opts out with `data-haptic="none"` (the drag handle, which fires its own tick on drag-start). `hapticTick()`/`hapticConfirm()` remain as aliases for the two non-button gesture call sites (drag start/drop). `@capacitor/haptics` on native, `navigator.vibrate` (10ms/22ms) fallback on web. A stepper activation ticks once, not per hold-repeat. |
+| `src/haptics.ts` | **The one central semantic haptic helper.** Callers report `selection`, `increment`, `toggle-on/off`, `drag-start/end`, `confirm`, `error`, `destructive`, or `timer-finished`; there is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Native calls `AppHapticsPlugin`; web uses short Vibration API fallbacks. If an auto-updated web bundle runs inside an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's haptic setting. |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
@@ -251,8 +252,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
   a suspended/locked app from resuming with a stale countdown. The locked-screen alert is a **native
   heavy vibration**, NOT a notification: `RestAlarmPlugin` (Java) schedules an exact alarm
-  (`USE_EXACT_ALARM`, `setExactAndAllowWhileIdle`) → `RestVibrationReceiver` plays a ~6s strong
-  waveform via Vibrator/VibratorManager (manifest also needs `VIBRATE` + `WAKE_LOCK`).
+  (`USE_EXACT_ALARM`, `setExactAndAllowWhileIdle`) → `RestVibrationReceiver` plays one
+  maximum-amplitude 3s waveform via Vibrator/VibratorManager (manifest also needs `VIBRATE` +
+  `WAKE_LOCK`).
   `src/restNotifications.ts` calls it through the `RestAlarm` plugin (`src/restAlarm.ts`); no-op on
   web. Changing the vibration needs a native APK rebuild, not just a web deploy.
 
@@ -261,8 +263,10 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Current uncommitted fix: global button haptics now fire on completed clicks rather than
-  `pointerdown`, so starting a scroll on a button no longer produces false feedback.
+- Latest implementation: replace universal button feedback with semantic, state-change-only
+  haptics; add an Android `performHapticFeedback` bridge that respects system settings; change the
+  locked-screen timer alert from ~6s pulses to one maximum-amplitude 3s vibration.
+- `abe5872` Prevent haptics when scrolling from buttons
 - `f79b1c2` Editor, haptics, and swap overhaul from live APK feedback, refined over
   two further rounds of feedback —
   (1) **universal haptics**: one delegated listener gives every button the same light tap, with a
@@ -365,8 +369,17 @@ Git history (newest first); each commit is a clean restore point:
   saves via `normalizeTemplates`, validated as optional). The rest dock starts and labels from the
   **active exercise's** rest, so tapping a different exercise changes the timer; edit it inline
   (stepper + free entry, 5–600s). No global rest control anymore.
+- **Semantic haptics** — no feedback for navigation, opening/closing UI, back/cancel, expansion,
+  focus, typing, scrolling, or generic presses. Light semantic feedback is limited to actual
+  selections, discrete value changes, toggles, and drag start/drop; medium feedback covers logged
+  Done/Failed results (the same effect), saved edits, successful backup/auth actions, invalid input,
+  and failures; destructive confirmations use a strong effect. Android uses system-aware semantic
+  constants, while the locked-screen rest alarm remains the separate maximum-amplitude 3s alert.
+  The old raw `@capacitor/haptics` dependency was removed so there is only one interaction path.
+  The session weight hold-stepper applies a quick tap on release and delays repeat until 380ms, so a
+  touch that becomes scrolling is cancelled before either the weight or haptic can change.
 - **Confirm dialogs** — all destructive confirms (discard edits, remove exercise, delete session,
-  reset) use one styled root-level `confirmDialog` ({title, message, confirmLabel, danger,
+  reset) use one styled root-level `confirmDialog` ({title, message, confirmLabel, danger, haptic,
   onConfirm}), never `window.confirm`. It participates in the overlay/back system like other dialogs.
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
@@ -404,6 +417,9 @@ Git history (newest first); each commit is a clean restore point:
   **Bug found + fixed during review: the APK was building with the GitHub Pages subpath base
   (`/fitness_hub/`), which would have launched to a blank screen inside the Capacitor webview. The
   Android build now forces root base (`CAPACITOR_BUILD`). Re-build the APK from the latest `main`.**
+  The current semantic `AppHaptics` bridge and 3s rest-alarm waveform are native changes: they need
+  a newly built/reinstalled APK. Until then, an older APK receiving the auto-updated web bundle keeps
+  interaction haptics silent rather than falling back to raw vibration that ignores system settings.
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
 and phone browser-preview screenshots). The latest workout viewport fix was verified at 412×915:
