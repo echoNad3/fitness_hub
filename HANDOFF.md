@@ -267,7 +267,22 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Latest commit: **account system + main-menu upgrade.**
+- Latest commit: **menu-consistency rework of the account/app entries** (user feedback on the batch
+  below). The two slim `.home-row`s were replaced by two extra **tiles in the same `.home-tiles`
+  2×2 grid** — identical 80px size and spacing as History/Settings. Short texts: "Sign in / Sync
+  your data", signed-in "Account / <status dot+label>", "Android / Build N · 3d ago"
+  (`formatRelativeShort`), update state "Update / Build N · Xd ago" with accent tile
+  (`.home-tile.update`), native up-to-date "Android / Up to date". Tile titles and subtitles are
+  single-line ellipsis (`.home-tile-text > span` — direct child, the Account tile nests spans).
+  The **sign-in dialog was rebuilt on the standard dialog grid** (fields as direct Dialog children
+  → even 12px gaps; the old `.ex-form` wrapper collapsed the spacing) with one `.auth-links` row:
+  mode-switch left, "Forgot password?" right. The "N workouts in the last 7 days" subtitle was
+  removed (clutter) — the home subtitle is the date only. `.home-row*` CSS removed.
+  ⚠️ **Deploy watch:** the Pages deploys for `9fd3d56` and `c174e86` FAILED at the
+  `actions/deploy-pages` step (build job green both times; no public log detail). The live site was
+  still `9bc02a0` at that point. The Android APK builds succeeded. If the next deploy also fails,
+  investigate the Pages environment/deployment settings rather than the app code.
+- Previous commit `c174e86`: **account system + main-menu upgrade.**
   (1) **Home hub redesign:** under the title a subtitle reads "{Weekday d Month} · N workouts in
   the last 7 days". Below the History/Settings tiles sit two slim `.home-row`s: the **account row**
   (signed out: "Sign in to sync" → auth dialog; signed in: email + live sync-status dot + "synced

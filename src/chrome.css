@@ -448,9 +448,17 @@
   line-height: 1.3;
 }
 
+/* The quiet text links under the sign-in fields: mode switch on the left, forgot-password on the
+   right. One row so they read as secondary actions, clearly apart from the Cancel/Sign in pair. */
+.auth-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .auth-switch {
-  justify-self: start;
-  padding: 2px 0;
+  padding: 6px 0;
   color: var(--accent);
   background: transparent;
   border: 0;
@@ -458,4 +466,9 @@
   font-size: var(--fs-meta);
   font-weight: var(--fw-semibold);
   cursor: pointer;
+}
+
+.auth-switch:disabled {
+  opacity: 0.55;
+  cursor: default;
 }

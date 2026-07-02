@@ -1692,36 +1692,35 @@ function App() {
     pulseTimer.current = window.setTimeout(() => setRestPulse(false), 1100)
   }
 
-  // The Android app row on the home screen. On the web it's the download entry point; inside the
-  // native app it becomes a version status — highlighted when the latest release is newer than the
-  // installed build, quiet when up to date, and neutral when the installed build is unknown (APKs
-  // older than build stamping).
-  const renderApkRow = () => {
+  // The Android app tile on the home screen — same size and styling as the other tiles. On the web
+  // it's the download entry point; inside the native app it becomes a version status, highlighted
+  // when the latest release is newer than the installed build, quiet when up to date, and neutral
+  // when the installed build is unknown (APKs older than build stamping).
+  const renderApkTile = () => {
     const native = Capacitor.isNativePlatform()
     const build = latestApk?.build ?? null
-    const released = latestApk?.publishedAt != null ? formatRelative(latestApk.publishedAt) : null
+    const released = latestApk?.publishedAt != null ? formatRelativeShort(latestApk.publishedAt) : null
     const updateAvailable = native && build !== null && installedBuild !== null && build > installedBuild
     const upToDate = native && build !== null && installedBuild !== null && build <= installedBuild
 
-    let title = native ? 'Android app' : 'Get the Android app'
-    let sub = 'Latest APK · reinstall to update'
+    let title = 'Android'
+    let sub = native ? 'Reinstall to update' : 'Get the app'
     if (updateAvailable) {
-      title = 'Update available'
-      sub = `Build ${build}${released ? ` · released ${released}` : ''} — tap to download`
+      title = 'Update'
+      sub = `Build ${build}${released ? ` · ${released}` : ''}`
     } else if (upToDate) {
-      sub = `Up to date · Build ${installedBuild}${released ? ` · updated ${released}` : ''}`
+      sub = 'Up to date'
     } else if (build !== null) {
-      sub = `Build ${build}${released ? ` · updated ${released}` : ''}`
+      sub = `Build ${build}${released ? ` · ${released}` : ''}`
     }
 
     return (
-      <a className={`home-row${updateAvailable ? ' update' : ''}`} href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer noopener">
-        <span className="home-row-icon"><Icon name="download" size={20} /></span>
-        <span className="home-row-text">
-          <strong>{title}</strong>
+      <a className={`home-tile${updateAvailable ? ' update' : ''}`} href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer noopener">
+        <span className="home-tile-icon"><Icon name="download" size={22} /></span>
+        <span className="home-tile-text">
+          <span>{title}</span>
           <small>{sub}</small>
         </span>
-        <Icon name="forward" size={18} />
       </a>
     )
   }
@@ -1733,15 +1732,12 @@ function App() {
     const suggestedId: WorkoutId = lastWorkoutId === 'workout-a' ? 'workout-b' : 'workout-a'
     const otherWorkouts = data.templates.filter((template) => template.id !== suggestedId)
     const sessionCount = data.sessions.length
-    const weekCount = data.sessions.filter((session) => Date.now() - session.createdAt < 7 * 24 * 60 * 60 * 1000).length
 
     return (
       <main className="home" aria-label="Fitness Hub">
         <header className="home-top">
           <h1>Fitness Hub</h1>
-          <p className="home-sub">
-            {formatMenuDate()} · {weekCount === 0 ? 'no workouts in the last 7 days' : `${weekCount} ${weekCount === 1 ? 'workout' : 'workouts'} in the last 7 days`}
-          </p>
+          <p className="home-sub">{formatMenuDate()}</p>
         </header>
 
         {resumable && (
@@ -1788,44 +1784,39 @@ function App() {
             <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
             <span className="home-tile-text">
               <span>Settings</span>
-              <small>Backup, vibration, reset</small>
+              <small>Backup, reset</small>
             </span>
           </button>
-        </div>
 
-        <div className="home-rows">
           {supabase &&
             (cloudUser ? (
-              <button className="home-row" type="button" onClick={() => setAccountDialogOpen(true)}>
-                <span className="home-row-icon"><Icon name="cloud" size={20} /></span>
-                <span className="home-row-text">
-                  <strong>{cloudUser.email}</strong>
-                  <small className="home-row-status">
+              <button className="home-tile" type="button" onClick={() => setAccountDialogOpen(true)}>
+                <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
+                <span className="home-tile-text">
+                  <span>Account</span>
+                  <small className="home-tile-status">
                     <span className={`sync-status ${syncStatus}`}>
                       <i aria-hidden="true" />
                       {syncStatusLabel(syncStatus)}
                     </span>
-                    {lastSyncedAt !== null && <span className="home-row-when">· synced {formatRelative(lastSyncedAt)}</span>}
                   </small>
                 </span>
-                <Icon name="forward" size={18} />
               </button>
             ) : (
               <button
-                className="home-row"
+                className="home-tile"
                 type="button"
                 onClick={() => setAuthDialog({ mode: 'in', email: '', password: '', error: '', note: '', busy: false })}
               >
-                <span className="home-row-icon"><Icon name="cloud" size={20} /></span>
-                <span className="home-row-text">
-                  <strong>Sign in to sync</strong>
-                  <small>Back up and sync across your devices</small>
+                <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
+                <span className="home-tile-text">
+                  <span>Sign in</span>
+                  <small>Sync your data</small>
                 </span>
-                <Icon name="forward" size={18} />
               </button>
             ))}
 
-          {renderApkRow()}
+          {renderApkTile()}
         </div>
 
         {startDialogOpen && (
@@ -3263,30 +3254,28 @@ function App() {
       {renderScreen()}
       {authDialog && (
         <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'}>
-          <div className="ex-form">
-            <label className="ex-field">
-              <span>Email</span>
-              <input
-                className="number-input text-input"
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                value={authDialog.email}
-                onChange={(event) => setAuthDialog({ ...authDialog, email: event.target.value, error: '' })}
-              />
-            </label>
-            <label className="ex-field">
-              <span>Password</span>
-              <input
-                className="number-input text-input"
-                type="password"
-                autoComplete={authDialog.mode === 'in' ? 'current-password' : 'new-password'}
-                value={authDialog.password}
-                onChange={(event) => setAuthDialog({ ...authDialog, password: event.target.value, error: '' })}
-              />
-            </label>
-            {authDialog.error && <p className="auth-error">{authDialog.error}</p>}
-            {authDialog.note && <p className="dialog-help">{authDialog.note}</p>}
+          <label className="ex-field">
+            <span>Email</span>
+            <input
+              className="number-input text-input"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={authDialog.email}
+              onChange={(event) => setAuthDialog({ ...authDialog, email: event.target.value, error: '' })}
+            />
+          </label>
+          <label className="ex-field">
+            <span>Password</span>
+            <input
+              className="number-input text-input"
+              type="password"
+              autoComplete={authDialog.mode === 'in' ? 'current-password' : 'new-password'}
+              value={authDialog.password}
+              onChange={(event) => setAuthDialog({ ...authDialog, password: event.target.value, error: '' })}
+            />
+          </label>
+          <div className="auth-links">
             <button
               className="auth-switch"
               type="button"
@@ -3296,17 +3285,19 @@ function App() {
             </button>
             {authDialog.mode === 'in' && (
               <button className="auth-switch" type="button" disabled={authDialog.busy} onClick={() => void sendPasswordReset()}>
-                Forgot password? Email me a reset link
+                Forgot password?
               </button>
             )}
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setAuthDialog(null)}>
-                Cancel
-              </button>
-              <button className="primary-action" type="button" disabled={authDialog.busy} onClick={submitAuth}>
-                {authDialog.busy ? 'Working…' : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
-              </button>
-            </div>
+          </div>
+          {authDialog.error && <p className="auth-error">{authDialog.error}</p>}
+          {authDialog.note && <p className="dialog-help">{authDialog.note}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setAuthDialog(null)}>
+              Cancel
+            </button>
+            <button className="primary-action" type="button" disabled={authDialog.busy} onClick={submitAuth}>
+              {authDialog.busy ? 'Working…' : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
+            </button>
           </div>
         </Dialog>
       )}
@@ -3934,6 +3925,30 @@ function formatRelative(timestamp: number) {
 
 function plural(count: number, unit: string) {
   return `${count} ${unit}${count === 1 ? '' : 's'} ago`
+}
+
+// Compact relative time for tight spots (the home tiles): "5m ago", "3h ago", "2d ago".
+function formatRelativeShort(timestamp: number) {
+  const mins = Math.floor((Date.now() - timestamp) / 60000)
+  if (mins < 1) {
+    return 'just now'
+  }
+  if (mins < 60) {
+    return `${mins}m ago`
+  }
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) {
+    return `${hours}h ago`
+  }
+  const days = Math.floor(hours / 24)
+  if (days < 30) {
+    return `${days}d ago`
+  }
+  const months = Math.floor(days / 30)
+  if (months < 12) {
+    return `${months}mo ago`
+  }
+  return `${Math.floor(days / 365)}y ago`
 }
 
 // Full weekday + date for the home header — e.g. "Tuesday 2 July".
