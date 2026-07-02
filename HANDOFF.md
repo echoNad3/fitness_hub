@@ -267,7 +267,34 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Latest commit: **increase-stage parity + backend audit.**
+- Latest commit: **account system + main-menu upgrade.**
+  (1) **Home hub redesign:** under the title a subtitle reads "{Weekday d Month} · N workouts in
+  the last 7 days". Below the History/Settings tiles sit two slim `.home-row`s: the **account row**
+  (signed out: "Sign in to sync" → auth dialog; signed in: email + live sync-status dot + "synced
+  X ago" → Account dialog) and the **Android app row** (web: "Get the Android app · Build N ·
+  updated X ago"; native: "Update available — Build N · released X ago" with accent highlight when
+  the release is newer than the installed build, "Up to date · Build N" otherwise, neutral when the
+  installed build is unknown). Cloud sync and the APK link were removed from Settings (now backup /
+  vibration / reset only; dead `.set-cloud/.set-pill/.set-link/.set-rest` CSS removed).
+  (2) **Account dialog** (root-level): sync status block (dot + label + "Last synced X ago" +
+  errors), Sync now, Change password, Sign out (busy state), Close.
+  (3) **Forgot password:** the Sign-in dialog has "Forgot password? Email me a reset link" →
+  `resetPasswordForEmail(email, { redirectTo: PUBLIC_APP_URL })`. Opening the emailed link lands on
+  the live web app; the `PASSWORD_RECOVERY` auth event opens a **"Set a new password"** dialog
+  (`updateUser({ password })`, min 6 chars). The same dialog doubles as **Change password** from the
+  Account dialog. ⚠️ Requires the Supabase project's Auth → URL Configuration to allow
+  `https://echonad3.github.io/fitness_hub/` as a redirect URL.
+  (4) **Last synced** (`fitness-hub-v1-last-synced`): set by `markSynced()` on every successful
+  push/pull/conflict resolution; shown on the home row and Account dialog.
+  (5) **APK build stamping:** `android.yml` passes `-PappBuildNumber=${{ github.run_number }}`;
+  `build.gradle` writes it into `versionCode`/`versionName`. The app reads it back natively via
+  `CapacitorApp.getInfo()` (builds ≤ 1 = pre-stamping, treated as unknown) and compares with the
+  latest GitHub release (`fetchLatestApk` → build + publishedAt). Old APKs can't self-identify
+  until reinstalled once. `apkVersion.ts` was rewritten accordingly.
+  (6) All new dialogs participate in the overlay/back-gesture system (`dialogOpen`,
+  `closeAllDialogs`); haptics follow the groups (reset link sent / password saved = confirm,
+  failures = error).
+- Previous commit `9fd3d56`: **increase-stage parity + backend audit.**
   (1) The increase −/+ buttons behave exactly like the normal weight −/+: press-and-hold repeats
   with a tick per real step, quick tap steps once, scroll-cancel safe, silent at 0
   (`adjustIncrease` returns whether the amount changed, read via `dataRef`).
@@ -436,14 +463,19 @@ Git history (newest first); each commit is a clean restore point:
   dock whose opaque lower mask prevents exercise content leaking below it; while the timer runs a
   thin accent drain bar along the dock's bottom edge shows remaining rest at a glance. Viewport-fit sessions
   suppress up to 64px of incidental overflow; longer routines retain normal scrolling.
-- **Home hub** (`main`) — title, **Resume** card (only for an unfinished latest session, shows
-  progress + relative time), **Start** (auto-suggests the opposite of the last workout, with a
-  "Start X instead" alternate), and **History** / **Settings** tiles. No browser confirms.
+- **Home hub** (`main`) — title + date/week-count subtitle, **Resume** card (only for an unfinished
+  latest session), **Start** (auto-suggests the opposite of the last workout), **History** /
+  **Settings** tiles, then the **account row** (sign-in / account management) and the **Android
+  app row** (version-aware download/update). No browser confirms.
 - **History** — clean cards, relative + absolute time, a green **Finished** / red **Unfinished**
   chip with the displayed-slot count, the 14-day tracker, trash delete.
-- **Settings** — Export/Import JSON backup, Test vibration, Reset. Export/Import and vibration
-  outcomes show as inline notes on their rows (no browser alert popups anywhere in the app) and
-  auto-clear after 5 seconds.
+- **Settings** — Export/Import JSON backup, Test vibration, Reset (cloud sync and the APK download
+  live on the home hub now). Export/Import and vibration outcomes show as inline notes on their
+  rows (no browser alert popups anywhere in the app) and auto-clear after 5 seconds.
+- **Account management** — optional email/password auth with create-account, forgot-password reset
+  emails, a recovery flow that prompts for a new password, an Account dialog (sync status, last
+  synced, Sync now, Change password, Sign out), and a home-row sync status. See the latest-commit
+  entry above for wiring details.
 - **In-place editing** — the pencil turns the workout screen into edit mode *on the same screen* (no
   separate menu, no dialog). Each exercise becomes a drag-sortable accordion (`EditableExerciseItem`,
   grip handle, press-and-hold to drag) whose expanded body is the **inline editor**. The editor is

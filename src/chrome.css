@@ -268,14 +268,6 @@
   display: none;
 }
 
-.set-rest {
-  cursor: default;
-}
-
-.set-rest:active {
-  transform: none;
-}
-
 .set-stepper {
   display: flex;
   align-items: center;
@@ -409,18 +401,6 @@
   }
 }
 
-.set-link {
-  text-decoration: none;
-}
-
-.set-cloud {
-  cursor: default;
-}
-
-.set-cloud:active {
-  transform: none;
-}
-
 .sync-status {
   display: flex;
   align-items: center;
@@ -460,40 +440,6 @@
   color: var(--danger);
   font-size: var(--fs-caption);
   line-height: 1.35;
-}
-
-.set-cloud-actions {
-  display: grid;
-  gap: 7px;
-}
-
-.set-pill {
-  padding: 8px 14px;
-  color: var(--muted);
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  font-size: var(--fs-meta);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-}
-
-.set-pill:active {
-  transform: scale(0.95);
-}
-
-.set-pill.retry {
-  color: var(--accent);
-}
-
-.set-pill:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.set-pill:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
 }
 
 .auth-error {

@@ -36,7 +36,7 @@ import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './da
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
-import { fetchLatestApkVersion } from './apkVersion'
+import { fetchLatestApk, type LatestApk } from './apkVersion'
 import { getStored, setStored } from './storage'
 import { haptic, type HapticEvent } from './haptics'
 
@@ -155,6 +155,14 @@ type AuthDialog = {
   busy: boolean
 }
 
+// Setting a new password: 'change' from the account dialog, 'recovery' after a reset-email link.
+type PasswordDialog = {
+  mode: 'change' | 'recovery'
+  value: string
+  error: string
+  busy: boolean
+}
+
 type CloudUser = {
   id: string
   email: string
@@ -168,6 +176,11 @@ const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
 // last-write-wins) from a first sign-in to an account that already has data while this device holds
 // its own unsynced changes (→ ask the user which to keep instead of silently overwriting one).
 const SYNCED_ACCOUNT_KEY = 'fitness-hub-v1-synced-account'
+// When this device last completed a successful cloud sync (push or pull), for the account UI.
+const LAST_SYNCED_KEY = 'fitness-hub-v1-last-synced'
+// Where password-reset emails send the user to set a new password (the live web app).
+const PUBLIC_APP_URL = 'https://echonad3.github.io/fitness_hub/'
+const APK_DOWNLOAD_URL = 'https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
 const CATEGORIES: Category[] = ['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS']
@@ -996,6 +1009,13 @@ function App() {
   const [cloudActionBusy, setCloudActionBusy] = useState(false)
   const [cloudActionError, setCloudActionError] = useState('')
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false)
+  const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
+  // When this device last completed a successful sync — shown on the home account row.
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
+    const stored = Number(getStored(LAST_SYNCED_KEY))
+    return Number.isFinite(stored) && stored > 0 ? stored : null
+  })
   const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
   // Length the running countdown started from — drives the dock's drain bar. Kept separately from
   // the active exercise's rest so tapping another exercise mid-rest doesn't skew the bar.
@@ -1008,7 +1028,10 @@ function App() {
   // Inline result note for the Export/Import backup rows (shown in place of the row subtitle, like
   // the Test vibration row) — the app never uses browser alert/confirm popups.
   const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
-  const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
+  const [latestApk, setLatestApk] = useState<LatestApk | null>(null)
+  // The build number of the installed APK (native only; CI stamps it into versionCode). Null on the
+  // web and on APKs older than the stamping change — those can't tell which build they are.
+  const [installedBuild, setInstalledBuild] = useState<number | null>(null)
   const [startDialogOpen, setStartDialogOpen] = useState(false)
   const [highlightSession, setHighlightSession] = useState<string | null>(null)
   const scrollTimer = useRef<number | null>(null)
@@ -1029,6 +1052,8 @@ function App() {
     previousDialog !== null ||
     linkDialog !== null ||
     authDialog !== null ||
+    passwordDialog !== null ||
+    accountDialogOpen ||
     confirmDialog !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
@@ -1061,6 +1086,13 @@ function App() {
   })
   const localUpdatedAtRef = useRef(initialSyncTimestamp)
 
+  // Record a completed sync (push or pull) for the "last synced" label on the account row.
+  const markSynced = () => {
+    const now = Date.now()
+    setLastSyncedAt(now)
+    setStored(LAST_SYNCED_KEY, String(now))
+  }
+
   queueCloudPushRef.current = () => {
     const user = cloudUserRef.current
     if (!supabase || !user || !syncReadyRef.current) {
@@ -1087,6 +1119,7 @@ function App() {
           return
         }
 
+        markSynced()
         if (localUpdatedAtRef.current > pushedAt) {
           queueCloudPushRef.current()
         } else {
@@ -1121,11 +1154,23 @@ function App() {
 
   useEffect(() => {
     let active = true
-    void fetchLatestApkVersion().then((version) => {
-      if (active && version) {
-        setLatestApkVersion(version)
+    void fetchLatestApk().then((latest) => {
+      if (active && latest) {
+        setLatestApk(latest)
       }
     })
+    // Inside the native app, read the installed APK's stamped build number so the home row can say
+    // whether the latest release is actually newer. Builds ≤ 1 predate the stamping and are unknown.
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.getInfo()
+        .then((info) => {
+          const build = Number(info.build)
+          if (active && Number.isFinite(build) && build > 1) {
+            setInstalledBuild(build)
+          }
+        })
+        .catch(() => undefined)
+    }
     return () => {
       active = false
     }
@@ -1180,8 +1225,13 @@ function App() {
         updateCloudUser(sessionData.session?.user)
       }
     })
-    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authSub } = supabase.auth.onAuthStateChange((event, session) => {
       updateCloudUser(session?.user)
+      // Arriving via a password-reset email link: Supabase signs the user in with a recovery
+      // session and fires this event — prompt straight away for the new password.
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordDialog({ mode: 'recovery', value: '', error: '', busy: false })
+      }
     })
     return () => {
       active = false
@@ -1249,6 +1299,7 @@ function App() {
           syncReadyRef.current = true
           setData(normalizeData(remote.data))
           setSyncStatus('synced')
+          markSynced()
           return
         }
 
@@ -1262,6 +1313,7 @@ function App() {
 
         setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
         syncReadyRef.current = true
+        markSynced()
         if (localUpdatedAtRef.current > pushedAt) {
           queueCloudPushRef.current()
         } else {
@@ -1572,6 +1624,7 @@ function App() {
         syncReadyRef.current = true
         setData(normalizeData(conflict.remote.data))
         setSyncStatus('synced')
+        markSynced()
         void haptic('destructive')
       } else {
         const pushedAt = Math.max(localUpdatedAtRef.current, Date.now())
@@ -1580,6 +1633,7 @@ function App() {
         await saveCloudState(userId, dataRef.current, pushedAt)
         syncReadyRef.current = true
         setSyncStatus('synced')
+        markSynced()
         void haptic('destructive')
       }
     } catch (error) {
@@ -1612,6 +1666,8 @@ function App() {
     setPreviousDialog(null)
     setLinkDialog(null)
     setAuthDialog(null)
+    setPasswordDialog(null)
+    setAccountDialogOpen(false)
     setStartDialogOpen(false)
     setConfirmDialog(null)
   }
@@ -1636,6 +1692,40 @@ function App() {
     pulseTimer.current = window.setTimeout(() => setRestPulse(false), 1100)
   }
 
+  // The Android app row on the home screen. On the web it's the download entry point; inside the
+  // native app it becomes a version status — highlighted when the latest release is newer than the
+  // installed build, quiet when up to date, and neutral when the installed build is unknown (APKs
+  // older than build stamping).
+  const renderApkRow = () => {
+    const native = Capacitor.isNativePlatform()
+    const build = latestApk?.build ?? null
+    const released = latestApk?.publishedAt != null ? formatRelative(latestApk.publishedAt) : null
+    const updateAvailable = native && build !== null && installedBuild !== null && build > installedBuild
+    const upToDate = native && build !== null && installedBuild !== null && build <= installedBuild
+
+    let title = native ? 'Android app' : 'Get the Android app'
+    let sub = 'Latest APK · reinstall to update'
+    if (updateAvailable) {
+      title = 'Update available'
+      sub = `Build ${build}${released ? ` · released ${released}` : ''} — tap to download`
+    } else if (upToDate) {
+      sub = `Up to date · Build ${installedBuild}${released ? ` · updated ${released}` : ''}`
+    } else if (build !== null) {
+      sub = `Build ${build}${released ? ` · updated ${released}` : ''}`
+    }
+
+    return (
+      <a className={`home-row${updateAvailable ? ' update' : ''}`} href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer noopener">
+        <span className="home-row-icon"><Icon name="download" size={20} /></span>
+        <span className="home-row-text">
+          <strong>{title}</strong>
+          <small>{sub}</small>
+        </span>
+        <Icon name="forward" size={18} />
+      </a>
+    )
+  }
+
   const renderMain = () => {
     const latest = sortedSessions[0]
     const resumable = latest && !isSessionFinished(latest) ? latest : undefined
@@ -1643,11 +1733,15 @@ function App() {
     const suggestedId: WorkoutId = lastWorkoutId === 'workout-a' ? 'workout-b' : 'workout-a'
     const otherWorkouts = data.templates.filter((template) => template.id !== suggestedId)
     const sessionCount = data.sessions.length
+    const weekCount = data.sessions.filter((session) => Date.now() - session.createdAt < 7 * 24 * 60 * 60 * 1000).length
 
     return (
       <main className="home" aria-label="Fitness Hub">
         <header className="home-top">
           <h1>Fitness Hub</h1>
+          <p className="home-sub">
+            {formatMenuDate()} · {weekCount === 0 ? 'no workouts in the last 7 days' : `${weekCount} ${weekCount === 1 ? 'workout' : 'workouts'} in the last 7 days`}
+          </p>
         </header>
 
         {resumable && (
@@ -1694,9 +1788,44 @@ function App() {
             <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
             <span className="home-tile-text">
               <span>Settings</span>
-              <small>Sync, backup, reset</small>
+              <small>Backup, vibration, reset</small>
             </span>
           </button>
+        </div>
+
+        <div className="home-rows">
+          {supabase &&
+            (cloudUser ? (
+              <button className="home-row" type="button" onClick={() => setAccountDialogOpen(true)}>
+                <span className="home-row-icon"><Icon name="cloud" size={20} /></span>
+                <span className="home-row-text">
+                  <strong>{cloudUser.email}</strong>
+                  <small className="home-row-status">
+                    <span className={`sync-status ${syncStatus}`}>
+                      <i aria-hidden="true" />
+                      {syncStatusLabel(syncStatus)}
+                    </span>
+                    {lastSyncedAt !== null && <span className="home-row-when">· synced {formatRelative(lastSyncedAt)}</span>}
+                  </small>
+                </span>
+                <Icon name="forward" size={18} />
+              </button>
+            ) : (
+              <button
+                className="home-row"
+                type="button"
+                onClick={() => setAuthDialog({ mode: 'in', email: '', password: '', error: '', note: '', busy: false })}
+              >
+                <span className="home-row-icon"><Icon name="cloud" size={20} /></span>
+                <span className="home-row-text">
+                  <strong>Sign in to sync</strong>
+                  <small>Back up and sync across your devices</small>
+                </span>
+                <Icon name="forward" size={18} />
+              </button>
+            ))}
+
+          {renderApkRow()}
         </div>
 
         {startDialogOpen && (
@@ -1868,6 +1997,57 @@ function App() {
     }
   }
 
+  // "Forgot password?" — Supabase emails a reset link that opens the live web app, where the
+  // PASSWORD_RECOVERY handler above prompts for a new password.
+  const sendPasswordReset = async () => {
+    if (!authDialog || !supabase || authDialog.busy) {
+      return
+    }
+
+    const email = authDialog.email.trim()
+    if (!email) {
+      setAuthDialog({ ...authDialog, error: 'Enter your email above first.', note: '' })
+      void haptic('error')
+      return
+    }
+
+    setAuthDialog({ ...authDialog, busy: true, error: '', note: '' })
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: PUBLIC_APP_URL })
+    if (error) {
+      setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+      void haptic('error')
+    } else {
+      setAuthDialog((current) =>
+        current
+          ? { ...current, busy: false, error: '', note: `Reset link sent to ${email}. Open it, set a new password, then sign in.` }
+          : current,
+      )
+      void haptic('confirm')
+    }
+  }
+
+  const submitPassword = async () => {
+    if (!passwordDialog || !supabase || passwordDialog.busy) {
+      return
+    }
+
+    if (passwordDialog.value.length < 6) {
+      setPasswordDialog({ ...passwordDialog, error: 'Password must be at least 6 characters.' })
+      void haptic('error')
+      return
+    }
+
+    setPasswordDialog({ ...passwordDialog, busy: true, error: '' })
+    const { error } = await supabase.auth.updateUser({ password: passwordDialog.value })
+    if (error) {
+      setPasswordDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+      void haptic('error')
+    } else {
+      setPasswordDialog(null)
+      void haptic('confirm')
+    }
+  }
+
   const retryCloudSync = () => {
     setCloudActionError('')
     if (syncReadyRef.current) {
@@ -1899,67 +2079,13 @@ function App() {
     setStored(SYNCED_ACCOUNT_KEY, '')
     setCloudActionBusy(false)
     setCloudUser(null)
+    setAccountDialogOpen(false)
     void haptic('confirm')
   }
 
   const renderSettings = () => (
     <Page title="Settings" onBack={() => goBack({ name: 'main' })}>
       <div className="set-list">
-        {supabase &&
-          (cloudUser ? (
-            <div className="set-row set-cloud">
-              <span className="set-main">
-                <strong>Cloud sync</strong>
-                <small>Signed in as {cloudUser.email}</small>
-                <span className={`sync-status ${syncStatus}`} aria-live="polite">
-                  <i aria-hidden="true" />
-                  {syncStatusLabel(syncStatus)}
-                </span>
-                {syncStatus === 'error' && <span className="cloud-error">{syncError}</span>}
-                {cloudActionError && <span className="cloud-error" role="alert">{cloudActionError}</span>}
-              </span>
-              <span className="set-cloud-actions">
-                {syncStatus === 'error' && (
-                  <button className="set-pill retry" type="button" onClick={retryCloudSync}>
-                    Retry
-                  </button>
-                )}
-                <button className="set-pill" type="button" onClick={signOut} disabled={cloudActionBusy}>
-                  {cloudActionBusy ? 'Signing out…' : 'Sign out'}
-                </button>
-              </span>
-            </div>
-          ) : (
-            <button
-              className="set-row"
-              type="button"
-              onClick={() => setAuthDialog({ mode: 'in', email: '', password: '', error: '', note: '', busy: false })}
-            >
-              <span className="set-main">
-                <strong>Sign in to sync</strong>
-                <small>Back up and sync across your devices</small>
-              </span>
-              <Icon name="cloud" />
-            </button>
-          ))}
-
-        <a
-          className="set-row set-link"
-          href="https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk"
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          <span className="set-main">
-            <strong>Download the Android app</strong>
-            <small>
-              {latestApkVersion
-                ? `Latest APK — ${latestApkVersion}. Reinstall to update.`
-                : 'Latest APK. Reinstall to get the newest version.'}
-            </small>
-          </span>
-          <Icon name="download" />
-        </a>
-
         <button className="set-row" type="button" onClick={exportData}>
           <span className="set-main">
             <strong>Export backup</strong>
@@ -1997,50 +2123,6 @@ function App() {
           <Icon name="trash" />
         </button>
       </div>
-      {authDialog && (
-        <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'}>
-          <div className="ex-form">
-            <label className="ex-field">
-              <span>Email</span>
-              <input
-                className="number-input text-input"
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                value={authDialog.email}
-                onChange={(event) => setAuthDialog({ ...authDialog, email: event.target.value, error: '' })}
-              />
-            </label>
-            <label className="ex-field">
-              <span>Password</span>
-              <input
-                className="number-input text-input"
-                type="password"
-                autoComplete={authDialog.mode === 'in' ? 'current-password' : 'new-password'}
-                value={authDialog.password}
-                onChange={(event) => setAuthDialog({ ...authDialog, password: event.target.value, error: '' })}
-              />
-            </label>
-            {authDialog.error && <p className="auth-error">{authDialog.error}</p>}
-            {authDialog.note && <p className="dialog-help">{authDialog.note}</p>}
-            <button
-              className="auth-switch"
-              type="button"
-              onClick={() => setAuthDialog({ ...authDialog, mode: authDialog.mode === 'in' ? 'up' : 'in', error: '', note: '' })}
-            >
-              {authDialog.mode === 'in' ? 'No account? Create one' : 'Have an account? Sign in'}
-            </button>
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setAuthDialog(null)}>
-                Cancel
-              </button>
-              <button className="primary-action" type="button" disabled={authDialog.busy} onClick={submitAuth}>
-                {authDialog.busy ? 'Working…' : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
-              </button>
-            </div>
-          </div>
-        </Dialog>
-      )}
     </Page>
   )
 
@@ -3179,6 +3261,116 @@ function App() {
   return (
     <>
       {renderScreen()}
+      {authDialog && (
+        <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'}>
+          <div className="ex-form">
+            <label className="ex-field">
+              <span>Email</span>
+              <input
+                className="number-input text-input"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={authDialog.email}
+                onChange={(event) => setAuthDialog({ ...authDialog, email: event.target.value, error: '' })}
+              />
+            </label>
+            <label className="ex-field">
+              <span>Password</span>
+              <input
+                className="number-input text-input"
+                type="password"
+                autoComplete={authDialog.mode === 'in' ? 'current-password' : 'new-password'}
+                value={authDialog.password}
+                onChange={(event) => setAuthDialog({ ...authDialog, password: event.target.value, error: '' })}
+              />
+            </label>
+            {authDialog.error && <p className="auth-error">{authDialog.error}</p>}
+            {authDialog.note && <p className="dialog-help">{authDialog.note}</p>}
+            <button
+              className="auth-switch"
+              type="button"
+              onClick={() => setAuthDialog({ ...authDialog, mode: authDialog.mode === 'in' ? 'up' : 'in', error: '', note: '' })}
+            >
+              {authDialog.mode === 'in' ? 'No account? Create one' : 'Have an account? Sign in'}
+            </button>
+            {authDialog.mode === 'in' && (
+              <button className="auth-switch" type="button" disabled={authDialog.busy} onClick={() => void sendPasswordReset()}>
+                Forgot password? Email me a reset link
+              </button>
+            )}
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setAuthDialog(null)}>
+                Cancel
+              </button>
+              <button className="primary-action" type="button" disabled={authDialog.busy} onClick={submitAuth}>
+                {authDialog.busy ? 'Working…' : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+      {accountDialogOpen && cloudUser && (
+        <Dialog title="Account">
+          <p className="dialog-help">Signed in as {cloudUser.email}</p>
+          <div className="account-status">
+            <span className={`sync-status ${syncStatus}`} aria-live="polite">
+              <i aria-hidden="true" />
+              {syncStatusLabel(syncStatus)}
+            </span>
+            <small>{lastSyncedAt !== null ? `Last synced ${formatRelative(lastSyncedAt)}` : 'Not synced on this device yet'}</small>
+            {syncStatus === 'error' && syncError && <span className="cloud-error">{syncError}</span>}
+            {cloudActionError && <span className="cloud-error" role="alert">{cloudActionError}</span>}
+          </div>
+          <div className="choice-list">
+            <button className="choice" type="button" onClick={retryCloudSync}>
+              <Icon name="cloud" size={18} />
+              <span>Sync now</span>
+            </button>
+            <button
+              className="choice"
+              type="button"
+              onClick={() => setPasswordDialog({ mode: 'change', value: '', error: '', busy: false })}
+            >
+              <Icon name="edit" size={18} />
+              <span>Change password</span>
+            </button>
+            <button className="choice" type="button" disabled={cloudActionBusy} onClick={() => void signOut()}>
+              <Icon name="close" size={18} />
+              <span>{cloudActionBusy ? 'Signing out…' : 'Sign out'}</span>
+            </button>
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => setAccountDialogOpen(false)}>
+            Close
+          </button>
+        </Dialog>
+      )}
+      {passwordDialog && (
+        <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
+          {passwordDialog.mode === 'recovery' && (
+            <p className="dialog-help">You followed a password-reset link — choose a new password for your account.</p>
+          )}
+          <label className="ex-field">
+            <span>New password</span>
+            <input
+              className="number-input text-input"
+              type="password"
+              autoComplete="new-password"
+              value={passwordDialog.value}
+              onChange={(event) => setPasswordDialog({ ...passwordDialog, value: event.target.value, error: '' })}
+            />
+          </label>
+          {passwordDialog.error && <p className="auth-error">{passwordDialog.error}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setPasswordDialog(null)}>
+              Cancel
+            </button>
+            <button className="primary-action" type="button" disabled={passwordDialog.busy} onClick={() => void submitPassword()}>
+              {passwordDialog.busy ? 'Working…' : 'Save password'}
+            </button>
+          </div>
+        </Dialog>
+      )}
       {syncConflict && (
         <Dialog title="Choose which data to keep">
           <p className="dialog-help">
@@ -3742,6 +3934,11 @@ function formatRelative(timestamp: number) {
 
 function plural(count: number, unit: string) {
   return `${count} ${unit}${count === 1 ? '' : 's'} ago`
+}
+
+// Full weekday + date for the home header — e.g. "Tuesday 2 July".
+function formatMenuDate() {
+  return new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).format(Date.now())
 }
 
 // Weekday, day, month and time — e.g. "Tue 24 Jun, 19:40". Shown alongside the relative label.

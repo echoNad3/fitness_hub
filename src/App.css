@@ -268,6 +268,21 @@ h2 {
   line-height: 1.35;
 }
 
+/* Sync state block inside the Account dialog: status dot + label, last-synced line, errors. */
+.account-status {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.account-status small {
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+}
+
 .dialog-actions .primary-action {
   color: #ffffff;
   background: var(--accent);

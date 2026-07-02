@@ -23,6 +23,13 @@
   letter-spacing: -0.01em;
 }
 
+.home-sub {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-medium);
+}
+
 .home-resume {
   display: grid;
   gap: 11px;
@@ -232,9 +239,94 @@
   font-size: var(--fs-meta);
 }
 
+/* Slim utility rows below the tiles: account/cloud sync and the Android app version. */
+.home-rows {
+  margin-top: 2px;
+  display: grid;
+  gap: 9px;
+}
+
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 12px 14px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  text-decoration: none;
+}
+
+.home-row-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--surface-3);
+  border-radius: var(--radius-control);
+}
+
+.home-row-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.home-row-text strong {
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-row-text small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.3;
+}
+
+.home-row > svg:last-child {
+  flex: 0 0 auto;
+  color: var(--quiet);
+}
+
+/* Sync status + "synced X ago" on one line inside the account row. */
+.home-row-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.home-row-when {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A newer APK exists: the row asks for attention with the accent treatment. */
+.home-row.update {
+  border-color: var(--accent-line);
+}
+
+.home-row.update .home-row-icon {
+  color: #ffffff;
+  background: var(--accent);
+}
+
 .home-resume,
 .home-start-primary,
-.home-tile {
+.home-tile,
+.home-row {
   cursor: pointer;
   transition:
     transform 120ms ease,
@@ -244,13 +336,15 @@
 
 .home-resume:active,
 .home-start-primary:active,
-.home-tile:active {
+.home-tile:active,
+.home-row:active {
   transform: scale(0.98);
 }
 
 .home-resume:focus-visible,
 .home-start-primary:focus-visible,
-.home-tile:focus-visible {
+.home-tile:focus-visible,
+.home-row:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -258,7 +352,8 @@
 @media (prefers-reduced-motion: reduce) {
   .home-resume,
   .home-start-primary,
-  .home-tile {
+  .home-tile,
+  .home-row {
     transition: none;
   }
 }
