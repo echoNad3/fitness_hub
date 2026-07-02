@@ -175,27 +175,13 @@
   color: var(--quiet);
 }
 
-.start-cancel {
-  margin-top: 4px;
-  min-height: 44px;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  font-size: var(--fs-label);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-}
-
 .start-next:active,
-.start-other:active,
-.start-cancel:active {
+.start-other:active {
   transform: scale(0.98);
 }
 
 .start-next:focus-visible,
-.start-other:focus-visible,
-.start-cancel:focus-visible {
+.start-other:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -228,7 +214,7 @@
   place-items: center;
   color: var(--accent);
   background: var(--surface-3);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
 }
 
 .home-tile-text {

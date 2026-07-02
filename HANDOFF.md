@@ -263,7 +263,74 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Latest implementation: refresh the first-use/reset Workout A and Workout B seeds with the user's
+- Latest commit (with the two batches below in one commit): **QoL polish for public use.**
+  (1) Holding the session weight −/+ ticks once per real 1.25 step (countable by feel);
+  `adjustWeight` returns whether the value changed, so a − at 0 kg is silent like every other
+  stepper at its bound. (2) The running rest dock has a thin accent **drain bar** along its bottom
+  edge (`.ws-dock-bar`, width animates 1s linear between countdown ticks; driven by a new
+  `restDuration` state captured at start so switching exercises mid-rest doesn't skew it).
+  (3) Settings inline notes (backup results, vibration test) **auto-clear after 5s**.
+  (4) **Bug fix:** History and the home Resume card counted "total" from raw `workout.groups`
+  (hidden + both linked members), while progress counts displayed slots — a finished Workout B read
+  "6/8 Unfinished" and Resume never disappeared. Both now use `displayedGroups` /
+  `isSessionFinished`. (5) The history chip reads **Finished** (was "Done"), matching the tracker
+  legend; the home Settings tile subtitle is "Sync, backup, reset"; friendlier empty-history text.
+  (6) Decision: the "Download the Android app" row **stays visible inside the native app** — it's
+  the reinstall path for native updates.
+- Same commit: **frontend consistency audit** (haptics + UI). Haptics: the Load segmented control fires `selection` on both options (was
+  `toggle-on/off` — Android's TOGGLE_OFF is near-imperceptible, so tapping "Total" felt silent, the
+  user-reported bug); Hide/Show on workout fires `selection` (was silent); Link fires `selection`
+  (was `confirm`) so **all lineup edits — hide/show, link/unlink, swap, add, reorder — share the
+  light selection/drag group**; the increase stage's Cancel fires `confirm` matching Accept (same
+  button pair as Done/Failed); steppers are silent when a tap can't change the value (rest at the
+  5s/10m bounds, increase − already at 0), matching Sets/Reps. UI: Settings Export/Import replaced
+  `window.alert` with inline row notes like Test vibration (errors use `.set-note-error` danger
+  color, `role="status"`); the Hide button uses new `eye`/`eye-off` icons (was up/down chevrons,
+  which read as expand/collapse); the Start-workout dialog Cancel is `.choice-cancel` (one-off
+  `.start-cancel` removed); dock start/time/cancel unified at `--radius-card` (were 15/15/14px);
+  hardcoded 12px/10px control radii tokenized to `--radius-control` (`.ws-back`, `.ws-stepbtn`,
+  `.ws-weight`, `.ws-resultbtn`, `.ws-swap`, `.set-stepper button`, `.set-pill`,
+  `.home-tile-icon`); press feedback standardized — small/icon controls scale 0.95 (`.ws-back`,
+  `.ws-stepbtn`, `.hist-del`, `.ex-muscle`), large surfaces stay 0.98; `font-weight: 850` on the
+  dock value → `--fw-bold`; `hist-chip.unfinished` text `#4b1116` matches `ws-chip.failed`; merged
+  the duplicate `.hist-card` rule; `.ex-control-btn` transitions the standard property set. Tests
+  (15), lint, and build pass; verified in the browser preview (home, start dialog, session, edit
+  mode, settings) with no console errors.
+- Same commit: five changes from live-app feedback.
+  (1) **Time is mm:ss everywhere** — the rest dock reads `Start · 3:00`, the collapsed edit row reads
+  `rest 3:00`, the running countdown stays `2:30`. In edit mode rest is a **[−] [m] [s] [+]** control:
+  the `[m]`/`[s]` windows are typeable and centered, and the −/+ step ±10s and **roll over** (2:50 +
+  10s → 3:00). Stored as total seconds, clamped 5s–10m. `formatRestPreset` was removed.
+  (2) **Last-result guidance box** always sits **below** Setup/Target, in every phase.
+  (3) **Log out re-prompts** — sign-out clears `SYNCED_ACCOUNT_KEY`, so signing back in (even to the
+  same account) re-shows "choose which data to keep." Lets the user work locally after logout and
+  consciously pick on re-login. (Local data is never deleted on sign-out.)
+  (4) **Swaps are hide + link (flat model)** — every exercise is its own reorderable row (no nesting).
+  Each group holds a single exercise (`variants` is length-1) plus optional `hidden?` and `linkId?`
+  flags. In the editor each exercise's footer has **Hide from workout** (dims the row; excluded from
+  the workout screen) and **Link with another exercise** (a picker of unlinked exercises → pairs them
+  via a shared `linkId`, hiding all but the topmost). Linked rows show a `⇄ partner` badge and an
+  **Unlink** action. On the workout screen `displayedGroups()` collapses a linked pair to **one slot at
+  the topmost member's position**, showing the visible member with a **"Swap with X"** button
+  (`swapLinked` flips which is hidden and moves the expanded state to the newcomer). Hidden standalone
+  exercises are dropped from the workout. Rail / `countDone` / `isSessionFinished` / auto-advance
+  (`getNextPendingGroupId`) / the home resume rail all count displayed slots. `swapVariant`,
+  `getNextVariant`, `addVariant`, `removeVariant` were removed; `linkExercise` / `unlinkExercise` /
+  `toggleHidden` / `swapLinked` added. **Pairs only** (a linked exercise can't be a link target until
+  unlinked); **each keeps its own rest**. Per the user, no data migration was needed (testing phase) —
+  the default Workout B fly groups were re-authored as flat linked pairs; legacy multi-variant saves
+  simply show their first variant.
+  (5) **"Increase weight?" confirmation stage** — when an exercise's last result was a *success*, the
+  freshly-opened card shows "Increase weight by?" in the weight box with the −/+ (first − seeds 0,
+  first + seeds 1.25, then ±1.25; tap the box to type the amount to add), and Done/Failed become
+  **Accept**/**Cancel**. Accept sets weight = carried weight **+** amount and returns the card to
+  normal; Cancel keeps the carried weight. Both mark the stage resolved (session entry fields
+  `increaseResolved` / `increaseDelta`) so it doesn't reappear. Failed / no-record exercises skip the
+  stage entirely. This forces a conscious "did I increase?" decision when tired. The prompt reads
+  "Increase" / "weight by?" on two lines (no total/per-hand caption). **Re-selecting "done"** in the
+  Last-result prompt reopens the stage (`setPreviousResult` clears the increase flags), so the user
+  can stack another increase on top of a prior one.
+- Previous implementation: refresh the first-use/reset Workout A and Workout B seeds with the user's
   revised exercise names, setup notes, rest times, targets, weights, and baseline results. Existing
   saved routines are intentionally untouched; `y` maps to Done/success and `n` to Failed/failure.
 - Previous implementation: replace universal button feedback with semantic, state-change-only
@@ -344,20 +411,25 @@ Git history (newest first); each commit is a clean restore point:
   (outline + dot + category word), guidance sentence (green increase / coral repeat), read-only
   exercise name and Setup/Target tiles, big weight stepper (−1.25/+1.25, tap value to edit), big
   Done/Failed (tap-again clears, auto-advances to next pending), progress rail, and a full-width rest
-  dock whose opaque lower mask prevents exercise content leaking below it. Viewport-fit sessions
+  dock whose opaque lower mask prevents exercise content leaking below it; while the timer runs a
+  thin accent drain bar along the dock's bottom edge shows remaining rest at a glance. Viewport-fit sessions
   suppress up to 64px of incidental overflow; longer routines retain normal scrolling.
 - **Home hub** (`main`) — title, **Resume** card (only for an unfinished latest session, shows
   progress + relative time), **Start** (auto-suggests the opposite of the last workout, with a
   "Start X instead" alternate), and **History** / **Settings** tiles. No browser confirms.
-- **History** — clean cards, relative time, semantic done/partial chip, trash delete.
-- **Settings** — Export/Import JSON backup, Test vibration, Reset.
+- **History** — clean cards, relative + absolute time, a green **Finished** / red **Unfinished**
+  chip with the displayed-slot count, the 14-day tracker, trash delete.
+- **Settings** — Export/Import JSON backup, Test vibration, Reset. Export/Import and vibration
+  outcomes show as inline notes on their rows (no browser alert popups anywhere in the app) and
+  auto-clear after 5 seconds.
 - **In-place editing** — the pencil turns the workout screen into edit mode *on the same screen* (no
   separate menu, no dialog). Each exercise becomes a drag-sortable accordion (`EditableExerciseItem`,
   grip handle, press-and-hold to drag) whose expanded body is the **inline editor**. The editor is
   built from a reusable `VariantFields` component (name, muscle chips, Sets/Reps/Weight, setup, and a
-  **Load segmented control** — Total / Per hand, both visible) plus a per-exercise Rest stepper and a
-  **Swap alternatives** section. Stepper −/+ are compact grey (`--raised`) buttons with a bold blue
-  accent glyph and an accent-tinted border for contrast (not blue-filled). The "doing"
+  **Load segmented control** — Total / Per hand, both visible), a Rest control (`[−] [m] [s] [+]`),
+  and a footer with **Hide**, **Link/Unlink**, and **Remove exercise**. Stepper −/+ are compact grey
+  (`--raised`) buttons with a bold blue accent glyph and an accent-tinted border for contrast (not
+  blue-filled). The "doing"
   controls (Done/Failed, guidance, rest dock, rail) hide in edit mode. **Add exercise** inserts a
   blank exercise expanded in place. Field edits update the template variant and mirror the shared
   fields (setup/sets/reps/weight) into the open session. **Save/discard:** header shows ✕ (discard,
@@ -365,17 +437,23 @@ Git history (newest first); each commit is a clean restore point:
   flag, any edit sets it. ✓ keeps; ✕ / back gesture, if dirty, shows the styled **confirm dialog**
   (Keep editing / Discard) — decline re-pushes the consumed history entry, Discard restores the
   snapshot.
-- **Editable swap alternatives** — the first variant in a group is the "main" exercise; the editor's
-  Swap-alternatives section adds (`addVariant`) or removes (`removeVariant`, confirm-guarded) extra
-  variants. A swap always shares the main's muscle group, so it has no muscle picker and changing the
-  main's muscle applies to every variant (`editGroupCategory`). During a session the "Swap to …"
-  button rotates through them, and each variant keeps its **own weight and own last result**:
-  `findPreviousTarget` looks for the most recent session where *that variant had a logged result*
-  (not merely a carried-forward entry), so a swap surfaces its real history however long ago it was.
+- **Swaps = hide + link** — every exercise is its own flat, reorderable row; each `ExerciseGroup`
+  holds one exercise plus optional `hidden?` / `linkId?`. In the editor, **Hide** dims a row and drops
+  it from the workout; **Link** pairs it with another (shared `linkId`, topmost stays visible), shown
+  with a `⇄ partner` badge and **Unlink**. `displayedGroups()` collapses a linked pair on the workout
+  screen to one slot at the topmost member's position with a **"Swap with X"** button (`swapLinked`).
+  Pairs only; each exercise keeps its own rest and its **own weight/last result** — `findPreviousTarget`
+  finds the most recent session where that exercise had a logged result, so history is per-exercise.
+- **"Increase weight?" stage** — for an exercise whose last result was a success, the freshly-opened
+  card first asks "Increase weight by?" (−/+ seed 0 / 1.25 then step ±1.25; tap the box to type the
+  add amount) with Accept/Cancel in place of Done/Failed. Accept adds the amount on top of the carried
+  weight; Cancel keeps it; both set `increaseResolved` on the session entry so it doesn't reappear.
+  Failed/no-record exercises skip straight to the normal controls.
 - **Per-exercise rest** — each `ExerciseGroup` has its own `restSeconds` (migrated in for older
   saves via `normalizeTemplates`, validated as optional). The rest dock starts and labels from the
-  **active exercise's** rest, so tapping a different exercise changes the timer; edit it inline
-  (stepper + free entry, 5–600s). No global rest control anymore.
+  **active exercise's** rest, so tapping a different exercise changes the timer; edit it inline via
+  two `[m]`/`[s]` windows (combined and clamped 5s–10m on commit). No global rest control anymore.
+  **All times display as mm:ss** app-wide (`formatTimer`); there is no seconds-only or `1m30s` format.
 - **Semantic haptics** — no feedback for navigation, opening/closing UI, back/cancel, expansion,
   focus, typing, scrolling, or generic presses. Light semantic feedback is limited to actual
   selections, discrete value changes, toggles, and drag start/drop; medium feedback covers logged
@@ -385,6 +463,12 @@ Git history (newest first); each commit is a clean restore point:
   The old raw `@capacitor/haptics` dependency was removed so there is only one interaction path.
   The session weight hold-stepper applies a quick tap on release and delays repeat until 380ms, so a
   touch that becomes scrolling is cancelled before either the weight or haptic can change.
+  **Grouping rules (2026-07-02 audit):** segmented controls (Load Total/Per hand) and muscle chips
+  use `selection` on both/all options — never `toggle-on/off`, whose Android TOGGLE_OFF effect is
+  near-imperceptible; all lineup edits (hide/show, link/unlink, swap, add; reorder via drag) share
+  the light selection/drag group; the increase stage's Accept **and** Cancel both use `confirm`
+  (same pair as Done/Failed); a stepper tap that cannot change the value (at a bound) is silent.
+  `toggle-on/off` remains only on the rest dock start/cancel.
 - **Confirm dialogs** — all destructive confirms (discard edits, remove exercise, delete session,
   reset) use one styled root-level `confirmDialog` ({title, message, confirmLabel, danger, haptic,
   onConfirm}), never `window.confirm`. It participates in the overlay/back system like other dialogs.

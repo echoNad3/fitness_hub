@@ -155,97 +155,110 @@
   background: var(--accent);
 }
 
-/* Swap alternatives: manage the exercises you can swap to during a workout, inline under the main
-   exercise. Separated by a hairline so it reads as its own section. */
-.ex-swaps {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+/* Per-exercise rest, divided off below the exercise fields. */
+.ex-slot-rest {
   margin-top: 4px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
-.ex-swaps-title {
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+/* A hidden exercise: dimmed in the edit list so it clearly reads as inactive (it won't appear on the
+   workout screen), while staying fully editable. */
+.ws-item.editing.is-hidden {
+  opacity: 0.5;
 }
 
-.ex-swaps-hint {
-  margin: -4px 0 0;
-  color: var(--quiet);
-  font-size: var(--fs-meta);
-  line-height: 1.4;
+.ws-item.editing.is-hidden.open {
+  opacity: 1;
 }
 
-/* One swap alternative: an inset card holding the same fields as the main (minus the muscle picker). */
-.ex-alt {
+/* Hide + Link controls, stacked below the fields and above the delete. */
+.ex-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  padding: 12px;
-  min-width: 0;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
-.ex-alt-head {
+.ex-control-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.ex-alt-head > span {
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.ex-alt-remove {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  color: var(--danger);
-  background: transparent;
-  border: 1px solid rgba(242, 118, 125, 0.4);
-  border-radius: 9px;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   transition:
     transform 120ms ease,
-    background-color 120ms ease;
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
-.ex-alt-remove:active {
-  transform: scale(0.95);
+.ex-control-btn > svg {
+  color: var(--accent);
 }
 
-.ex-alt-remove:focus-visible {
+.ex-control-btn:active {
+  transform: scale(0.98);
+}
+
+.ex-control-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ex-control-btn:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-/* The add-swap button reuses the dashed .ws-add look but sits tighter inside the swaps section. */
-.ex-add-swap {
-  min-height: 46px;
+/* When linked, show who it's paired with plus an Unlink action. */
+.ex-linked {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-control);
 }
 
-/* Danger footer: divides the destructive delete off from everything above it (especially the
-   Add-swap button) so it's clearly a separate area, not the next button in the stack. */
+.ex-linked-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.ex-linked-label > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.ex-linked .ex-control-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  background: transparent;
+}
+
+/* Danger footer: the destructive delete, separated so it can't be fat-fingered. */
 .ex-danger {
   margin-top: 6px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
 
-/* Quiet, text-style delete so it never mirrors the constructive Add-swap block and can't be
-   fat-fingered by mistake — it reads as a deliberate last-resort action. */
 .ws-editor-remove {
   display: flex;
   align-items: center;
@@ -330,10 +343,14 @@
 
 .ws-item:not(.open) .ws-edit-open:active,
 .ws-editor-remove:not(:disabled):active,
-.ex-muscle:active,
 .ex-segment button:active,
 .ws-add:active {
   transform: scale(0.98);
+}
+
+/* Small chip — deeper press, one standard with the steppers and pills. */
+.ex-muscle:active {
+  transform: scale(0.95);
 }
 
 .ws-edit-open:focus-visible,

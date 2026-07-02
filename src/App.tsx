@@ -30,7 +30,7 @@ import {
   nextLocalTimestamp,
   parseCloudTimestamp,
 } from './cloudSync'
-import { clampRestValue, nextPendingId, restSecondsRemaining, toggleResult } from './domain'
+import { MAX_REST_SECONDS, MIN_REST_SECONDS, clampRestValue, nextPendingId, restSecondsRemaining, toggleResult } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
@@ -56,12 +56,21 @@ type ExerciseVariant = {
   lastResult: PreviousResult
 }
 
+// A group is a single exercise slot. `variants` always holds exactly one exercise now (swaps are no
+// longer nested); the swap feature is expressed with `linkId` instead. Kept as an array so the session
+// storage (entries keyed by variant id) and the many variant helpers stay unchanged.
 type ExerciseGroup = {
   id: string
   activeVariantId: string
   variants: ExerciseVariant[]
   // Rest countdown length for this exercise (seconds). Per-exercise, edited in the workout editor.
   restSeconds: number
+  // Hidden exercises are dimmed in edit mode and skipped on the workout screen.
+  hidden?: boolean
+  // Two exercises sharing a `linkId` are a swap pair: only the visible (non-hidden) one shows on the
+  // workout screen, at the position of whichever pair member sits higher in the list, with a
+  // "Swap with …" button to flip which is visible.
+  linkId?: string
 }
 
 type WorkoutTemplate = {
@@ -76,6 +85,12 @@ type SessionExercise = {
   sets?: number
   reps?: number
   result?: ResultStatus
+  // "Increase weight?" confirmation stage (only for exercises whose last result was a success).
+  // increaseResolved: the user has confirmed/declined the increase for this session, so the card
+  // shows normally. increaseDelta: the pending amount to add while that stage is open (undefined =
+  // the "Increase weight by?" prompt before any amount is chosen).
+  increaseResolved?: boolean
+  increaseDelta?: number
 }
 
 type SessionGroup = {
@@ -112,6 +127,8 @@ type WeightDialog = {
   groupId: string
   variantId: string
   value: string
+  // When set, the dialog edits the pending "increase weight by" amount instead of the absolute weight.
+  increase?: boolean
 }
 
 type PreviousDialog = {
@@ -119,6 +136,12 @@ type PreviousDialog = {
   sessionId: string
   groupId: string
   variantId: string
+}
+
+// Picking which other exercise to link the given one to (for a swap pair).
+type LinkDialog = {
+  workoutId: WorkoutId
+  groupId: string
 }
 
 
@@ -258,64 +281,66 @@ const defaultWorkouts: WorkoutTemplate[] = [
         perHand: true,
         lastResult: 'failure',
       }, 150),
-      {
-        id: 'chest-fly-group',
-        activeVariantId: 'seated-cable-chest-fly',
-        restSeconds: 105,
-        variants: [
-          {
-            id: 'seated-cable-chest-fly',
-            name: 'Seated Cable Chest Fly',
-            category: 'CHEST',
-            setup: '16',
-            sets: 3,
-            reps: 11,
-            weight: 7.5,
-            perHand: false,
-            lastResult: 'failure',
-          },
-          {
-            id: 'pec-deck-machine-chest-fly',
-            name: 'Machine Chest Fly',
-            category: 'CHEST',
-            setup: '9',
-            sets: 3,
-            reps: 11,
-            weight: 10,
-            perHand: false,
-            lastResult: 'success',
-          },
-        ],
-      },
-      {
-        id: 'reverse-fly-group',
-        activeVariantId: 'reverse-cable-flyes',
-        restSeconds: 105,
-        variants: [
-          {
-            id: 'reverse-cable-flyes',
-            name: 'Cable Rear Delt Fly',
-            category: 'SHOULDERS',
-            setup: '22',
-            sets: 3,
-            reps: 11,
-            weight: 2.5,
-            perHand: false,
-            lastResult: 'failure',
-          },
-          {
-            id: 'reverse-pec-deck-machine',
-            name: 'Machine Rear Delt Fly',
-            category: 'SHOULDERS',
-            setup: '3',
-            sets: 3,
-            reps: 11,
-            weight: 10,
-            perHand: false,
-            lastResult: 'success',
-          },
-        ],
-      },
+      singleExercise(
+        {
+          id: 'seated-cable-chest-fly',
+          name: 'Seated Cable Chest Fly',
+          category: 'CHEST',
+          setup: '16',
+          sets: 3,
+          reps: 11,
+          weight: 7.5,
+          perHand: false,
+          lastResult: 'failure',
+        },
+        105,
+        { linkId: 'link-chest-fly' },
+      ),
+      singleExercise(
+        {
+          id: 'pec-deck-machine-chest-fly',
+          name: 'Machine Chest Fly',
+          category: 'CHEST',
+          setup: '9',
+          sets: 3,
+          reps: 11,
+          weight: 10,
+          perHand: false,
+          lastResult: 'success',
+        },
+        105,
+        { linkId: 'link-chest-fly', hidden: true },
+      ),
+      singleExercise(
+        {
+          id: 'reverse-cable-flyes',
+          name: 'Cable Rear Delt Fly',
+          category: 'SHOULDERS',
+          setup: '22',
+          sets: 3,
+          reps: 11,
+          weight: 2.5,
+          perHand: false,
+          lastResult: 'failure',
+        },
+        105,
+        { linkId: 'link-reverse-fly' },
+      ),
+      singleExercise(
+        {
+          id: 'reverse-pec-deck-machine',
+          name: 'Machine Rear Delt Fly',
+          category: 'SHOULDERS',
+          setup: '3',
+          sets: 3,
+          reps: 11,
+          weight: 10,
+          perHand: false,
+          lastResult: 'success',
+        },
+        105,
+        { linkId: 'link-reverse-fly', hidden: true },
+      ),
       singleExercise({
         id: 'bulgarian-split-squat',
         name: 'Bulgarian Split Squat',
@@ -331,12 +356,17 @@ const defaultWorkouts: WorkoutTemplate[] = [
   },
 ]
 
-function singleExercise(variant: ExerciseVariant, restSeconds = DEFAULT_REST_SECONDS): ExerciseGroup {
+function singleExercise(
+  variant: ExerciseVariant,
+  restSeconds = DEFAULT_REST_SECONDS,
+  extra?: { hidden?: boolean; linkId?: string },
+): ExerciseGroup {
   return {
     id: variant.id,
     activeVariantId: variant.id,
     variants: [variant],
     restSeconds,
+    ...extra,
   }
 }
 
@@ -504,6 +534,22 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M18 6 6 18M6 6l12 12" />
         </svg>
       )
+    case 'eye':
+      return (
+        <svg {...props}>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      )
+    case 'eye-off':
+      return (
+        <svg {...props}>
+          <path d="M17.94 17.94A10.9 10.9 0 0 1 12 19c-6.5 0-10-7-10-7a20 20 0 0 1 5.06-5.94" />
+          <path d="M9.9 5.24A10.5 10.5 0 0 1 12 5c6.5 0 10 7 10 7a20 20 0 0 1-3.22 4.31" />
+          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+          <path d="M3 3l18 18" />
+        </svg>
+      )
     case 'grip':
       return (
         <svg {...props} fill="currentColor" stroke="none">
@@ -526,19 +572,15 @@ const blurOnEnter = (event: { key: string; currentTarget: HTMLInputElement }) =>
   }
 }
 
-// The editable fields for a single exercise variant — used both for the main exercise (with the muscle
-// picker) and for each swap alternative (without it, since a swap always shares the main's muscle).
-// Drafts are held locally and committed on blur so typing never fights the persisted value.
+// The editable fields for a single exercise. Swap alternatives are equal siblings, so every one shows
+// the full set of fields including its own muscle picker. Drafts are held locally and committed on
+// blur so typing never fights the persisted value.
 function VariantFields({
   variant,
-  showMuscle,
   onPatch,
-  onCategory,
 }: {
   variant: ExerciseVariant
-  showMuscle: boolean
   onPatch: (patch: Partial<ExerciseVariant>) => void
-  onCategory: (category: Category) => void
 }) {
   const { name, category, setup, sets, reps, weight, perHand } = variant
   const [nameDraft, setNameDraft] = useState<string | null>(null)
@@ -592,32 +634,30 @@ function VariantFields({
         />
       </label>
 
-      {showMuscle && (
-        <div className="ex-field">
-          <span>Muscle group</span>
-          <div className="ex-muscles">
-            {CATEGORIES.map((cat) => {
-              const selected = category === cat
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  className={`ex-muscle ${selected ? 'sel' : ''}`}
-                  style={selected ? { background: muscleColor(cat), borderColor: muscleColor(cat) } : undefined}
-                  onClick={() => {
-                    if (!selected) {
-                      onCategory(cat)
-                      void haptic('selection')
-                    }
-                  }}
-                >
-                  {categoryLabel(cat)}
-                </button>
-              )
-            })}
-          </div>
+      <div className="ex-field">
+        <span>Muscle group</span>
+        <div className="ex-muscles">
+          {CATEGORIES.map((cat) => {
+            const selected = category === cat
+            return (
+              <button
+                key={cat}
+                type="button"
+                className={`ex-muscle ${selected ? 'sel' : ''}`}
+                style={selected ? { background: muscleColor(cat), borderColor: muscleColor(cat) } : undefined}
+                onClick={() => {
+                  if (!selected) {
+                    onPatch({ category: cat })
+                    void haptic('selection')
+                  }
+                }}
+              >
+                {categoryLabel(cat)}
+              </button>
+            )
+          })}
         </div>
-      )}
+      </div>
 
       <div className="ws-editor-row">
         <div className="ex-field">
@@ -717,7 +757,7 @@ function VariantFields({
             onClick={() => {
               if (perHand) {
                 onPatch({ perHand: false })
-                void haptic('toggle-off')
+                void haptic('selection')
               }
             }}
           >
@@ -730,7 +770,7 @@ function VariantFields({
             onClick={() => {
               if (!perHand) {
                 onPatch({ perHand: true })
-                void haptic('toggle-on')
+                void haptic('selection')
               }
             }}
           >
@@ -744,30 +784,34 @@ function VariantFields({
 
 type EditableExerciseItemProps = {
   id: string
-  variants: ExerciseVariant[]
+  variant: ExerciseVariant
   restSeconds: number
+  hidden: boolean
+  linkedPartnerName?: string
   isExpanded: boolean
   canRemove: boolean
+  canLink: boolean
   onToggle: () => void
-  onVariant: (variantId: string, patch: Partial<ExerciseVariant>) => void
-  onCategory: (category: Category) => void
+  onVariant: (patch: Partial<ExerciseVariant>) => void
   onRest: (value: number) => void
   onRemove: () => void
-  onAddVariant: () => void
-  onRemoveVariant: (variantId: string) => void
+  onToggleHidden: () => void
+  onLink: () => void
+  onUnlink: () => void
 }
 
-// One exercise, in edit mode: a drag-sortable accordion whose expanded body is the inline editor —
-// so the whole routine is edited in place on the workout screen, no separate menu or dialog. The
-// first variant is the "main" exercise; any others are swap alternatives that share its muscle group.
+// One exercise, in edit mode: a drag-sortable accordion whose expanded body is the inline editor.
+// Exercises are independent rows (reorderable on their own). Each can be hidden from the workout, and
+// linked to one other as a swap pair via the controls in its footer.
 function EditableExerciseItem(props: EditableExerciseItemProps) {
-  const { id, variants, restSeconds, isExpanded, canRemove } = props
+  const { id, variant, restSeconds, hidden, linkedPartnerName, isExpanded, canRemove, canLink } = props
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const [restDraft, setRestDraft] = useState<string | null>(null)
+  const restMinutes = Math.floor(restSeconds / 60)
+  const restSecondsPart = restSeconds % 60
+  const [minDraft, setMinDraft] = useState<string | null>(null)
+  const [secDraft, setSecDraft] = useState<string | null>(null)
 
-  const main = variants[0]
-  const alternatives = variants.slice(1)
-  const muscle = muscleColor(main.category)
+  const muscle = muscleColor(variant.category)
 
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -778,16 +822,23 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
     boxShadow: isDragging ? 'var(--shadow)' : undefined,
   }
 
+  // Rest is edited as separate minutes and seconds windows but stored as one total in seconds.
+  // Commit combines both (whichever isn't being edited falls back to the current value), then clamps
+  // to 5s–10m so a stray entry can't produce an unusable timer.
   const commitRest = () => {
-    if (restDraft !== null) {
-      const parsed = Number(restDraft)
-      if (restDraft.trim() !== '' && Number.isFinite(parsed) && parsed >= 5 && parsed <= 600) {
-        props.onRest(parsed)
-      } else {
-        void haptic('error')
-      }
-      setRestDraft(null)
+    if (minDraft === null && secDraft === null) {
+      return
     }
+    const mins = Number(minDraft ?? String(restMinutes))
+    const secs = Number(secDraft ?? String(restSecondsPart))
+    if (Number.isFinite(mins) && Number.isFinite(secs)) {
+      const total = Math.max(0, Math.round(mins)) * 60 + Math.max(0, Math.round(secs))
+      props.onRest(Math.min(600, Math.max(5, total)))
+    } else {
+      void haptic('error')
+    }
+    setMinDraft(null)
+    setSecDraft(null)
   }
 
   return (
@@ -795,7 +846,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
       ref={setNodeRef}
       style={style}
       id={`exercise-${id}`}
-      className={`ws-item editing${isExpanded ? ' open' : ''}${isDragging ? ' dragging' : ''}`}
+      className={`ws-item editing${isExpanded ? ' open' : ''}${isDragging ? ' dragging' : ''}${hidden ? ' is-hidden' : ''}`}
     >
       <div className="ws-edit-head">
         <button className="ws-edit-handle" type="button" aria-label="Drag to reorder" {...attributes} {...listeners}>
@@ -804,10 +855,11 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
         <button className="ws-edit-open" type="button" aria-expanded={isExpanded} onClick={props.onToggle}>
           <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
           <span className="ws-edit-open-main">
-            <strong>{main.name}</strong>
+            <strong>{variant.name}</strong>
             <small>
-              {categoryLabel(main.category)} · {main.sets}×{main.reps} · rest {formatRestPreset(restSeconds)}
-              {alternatives.length > 0 && ` · ${alternatives.length} swap${alternatives.length === 1 ? '' : 's'}`}
+              {categoryLabel(variant.category)} · {variant.sets}×{variant.reps} · rest {formatTimer(restSeconds)}
+              {linkedPartnerName && ` · ⇄ ${linkedPartnerName}`}
+              {hidden && ' · hidden'}
             </small>
           </span>
           <Icon name={isExpanded ? 'up' : 'down'} size={18} />
@@ -817,49 +869,61 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
       <div className="ws-item-body">
         <div className="ws-item-body-inner">
           <div className="ws-editor">
-            <VariantFields
-              variant={main}
-              showMuscle
-              onPatch={(patch) => props.onVariant(main.id, patch)}
-              onCategory={props.onCategory}
-            />
+            <VariantFields variant={variant} onPatch={props.onVariant} />
 
-            <div className="ex-field">
+            <div className="ex-field ex-slot-rest">
               <span>Rest for this exercise</span>
-              <div className="set-stepper">
+              <div className="set-stepper rest-stepper">
                 <button
                   type="button"
                   aria-label="Less rest"
                   onClick={() => {
-                    if (restSeconds > 5) {
-                      props.onRest(restSeconds - 15)
+                    if (restSeconds > MIN_REST_SECONDS) {
+                      props.onRest(restSeconds - 10)
                       void haptic('increment')
                     }
                   }}
                 >
                   <Icon name="minus" size={18} />
                 </button>
-                <label className="set-rest-field">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={5}
-                    max={600}
-                    aria-label="Rest length in seconds"
-                    value={restDraft ?? String(restSeconds)}
-                    onFocus={() => setRestDraft(String(restSeconds))}
-                    onChange={(event) => setRestDraft(event.target.value)}
-                    onBlur={commitRest}
-                    onKeyDown={blurOnEnter}
-                  />
-                  <span>s</span>
-                </label>
+                <div className="rest-mmss">
+                  <label className="set-rest-field">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={10}
+                      aria-label="Rest minutes"
+                      value={minDraft ?? String(restMinutes)}
+                      onFocus={() => setMinDraft(String(restMinutes))}
+                      onChange={(event) => setMinDraft(event.target.value)}
+                      onBlur={commitRest}
+                      onKeyDown={blurOnEnter}
+                    />
+                    <span>m</span>
+                  </label>
+                  <label className="set-rest-field">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={59}
+                      aria-label="Rest seconds"
+                      value={secDraft ?? String(restSecondsPart)}
+                      onFocus={() => setSecDraft(String(restSecondsPart))}
+                      onChange={(event) => setSecDraft(event.target.value)}
+                      onBlur={commitRest}
+                      onKeyDown={blurOnEnter}
+                    />
+                    <span>s</span>
+                  </label>
+                </div>
                 <button
                   type="button"
                   aria-label="More rest"
                   onClick={() => {
-                    if (restSeconds < 600) {
-                      props.onRest(restSeconds + 15)
+                    if (restSeconds < MAX_REST_SECONDS) {
+                      props.onRest(restSeconds + 10)
                       void haptic('increment')
                     }
                   }}
@@ -869,49 +933,29 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
               </div>
             </div>
 
-            <div className="ex-swaps">
-              <span className="ex-swaps-title">Swap alternatives</span>
-              <p className="ex-swaps-hint">
-                Other exercises you can swap to during this workout. Each keeps its own weight and last
-                result, and shares the muscle group above.
-              </p>
-              {alternatives.map((alt) => (
-                <div className="ex-alt" key={alt.id}>
-                  <div className="ex-alt-head">
-                    <span>Swap option</span>
-                    <button
-                      className="ex-alt-remove"
-                      type="button"
-                      aria-label="Remove this swap"
-                      onClick={() => props.onRemoveVariant(alt.id)}
-                    >
-                      <Icon name="trash" size={16} />
-                    </button>
-                  </div>
-                  <VariantFields
-                    variant={alt}
-                    showMuscle={false}
-                    onPatch={(patch) => props.onVariant(alt.id, patch)}
-                    onCategory={props.onCategory}
-                  />
-                </div>
-              ))}
-              <button
-                className="ws-add ex-add-swap"
-                type="button"
-                onClick={() => {
-                  props.onAddVariant()
-                  void haptic('selection')
-                }}
-              >
-                <Icon name="plus" size={18} />
-                Add swap alternative
+            <div className="ex-controls">
+              <button className="ex-control-btn" type="button" onClick={props.onToggleHidden}>
+                <Icon name={hidden ? 'eye' : 'eye-off'} size={16} />
+                {hidden ? 'Show on workout' : 'Hide from workout'}
               </button>
+              {linkedPartnerName ? (
+                <div className="ex-linked">
+                  <span className="ex-linked-label">
+                    <Icon name="repeat" size={15} />
+                    Linked with {linkedPartnerName}
+                  </span>
+                  <button className="ex-control-btn" type="button" onClick={props.onUnlink}>
+                    Unlink
+                  </button>
+                </div>
+              ) : (
+                <button className="ex-control-btn" type="button" disabled={!canLink} onClick={props.onLink}>
+                  <Icon name="repeat" size={15} />
+                  Link with another exercise
+                </button>
+              )}
             </div>
 
-            {/* Destructive whole-exercise delete lives in its own separated "danger" footer with a
-                divider and a quieter text treatment, so it can't be mistaken for — or fat-fingered
-                instead of — the constructive Add-swap button above it. */}
             <div className="ex-danger">
               <button className="ws-editor-remove" type="button" disabled={!canRemove} onClick={props.onRemove}>
                 <Icon name="trash" size={18} />
@@ -932,6 +976,7 @@ function App() {
   const [screenStack, setScreenStack] = useState<Screen[]>([])
   const [weightDialog, setWeightDialog] = useState<WeightDialog | null>(null)
   const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
+  const [linkDialog, setLinkDialog] = useState<LinkDialog | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editDirty, setEditDirty] = useState(false)
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
@@ -951,11 +996,17 @@ function App() {
   const [cloudActionError, setCloudActionError] = useState('')
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
+  // Length the running countdown started from — drives the dock's drain bar. Kept separately from
+  // the active exercise's rest so tapping another exercise mid-rest doesn't skew the bar.
+  const [restDuration, setRestDuration] = useState(DEFAULT_REST_SECONDS)
   const [restRunning, setRestRunning] = useState(false)
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
   const [restPulse, setRestPulse] = useState(false)
   const [restNotificationMessage, setRestNotificationMessage] = useState('')
   const [vibrationMessage, setVibrationMessage] = useState('')
+  // Inline result note for the Export/Import backup rows (shown in place of the row subtitle, like
+  // the Test vibration row) — the app never uses browser alert/confirm popups.
+  const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
   const [latestApkVersion, setLatestApkVersion] = useState<string | null>(null)
   const [startDialogOpen, setStartDialogOpen] = useState(false)
   const [highlightSession, setHighlightSession] = useState<string | null>(null)
@@ -965,7 +1016,7 @@ function App() {
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
   const expandedRef = useRef<string | null>(null)
-  const holdRef = useRef<{ timeout?: number; interval?: number; action?: () => void; started?: boolean }>({})
+  const holdRef = useRef<{ timeout?: number; interval?: number; action?: () => boolean; started?: boolean }>({})
   // Mirror the current screen into a ref so the (mount-only) popstate handler can read it.
   const screenRef = useRef(screen)
   screenRef.current = screen
@@ -975,6 +1026,7 @@ function App() {
   const dialogOpen =
     weightDialog !== null ||
     previousDialog !== null ||
+    linkDialog !== null ||
     authDialog !== null ||
     confirmDialog !== null ||
     startDialogOpen
@@ -1047,6 +1099,24 @@ function App() {
       }
     }, SYNC_DEBOUNCE_MS)
   }
+
+  // Inline Settings notes (vibration test, backup results) clear themselves after a few seconds, so
+  // the rows return to their normal descriptions without needing a dismiss control.
+  useEffect(() => {
+    if (!vibrationMessage) {
+      return
+    }
+    const id = window.setTimeout(() => setVibrationMessage(''), 5000)
+    return () => window.clearTimeout(id)
+  }, [vibrationMessage])
+
+  useEffect(() => {
+    if (!backupMessage) {
+      return
+    }
+    const id = window.setTimeout(() => setBackupMessage(null), 5000)
+    return () => window.clearTimeout(id)
+  }, [backupMessage])
 
   useEffect(() => {
     let active = true
@@ -1532,6 +1602,7 @@ function App() {
   const closeAllDialogs = () => {
     setWeightDialog(null)
     setPreviousDialog(null)
+    setLinkDialog(null)
     setAuthDialog(null)
     setStartDialogOpen(false)
     setConfirmDialog(null)
@@ -1559,8 +1630,7 @@ function App() {
 
   const renderMain = () => {
     const latest = sortedSessions[0]
-    const resumable =
-      latest && countDone(latest) < getWorkout(latest.workoutId).groups.length ? latest : undefined
+    const resumable = latest && !isSessionFinished(latest) ? latest : undefined
     const lastWorkoutId = latest?.workoutId
     const suggestedId: WorkoutId = lastWorkoutId === 'workout-a' ? 'workout-b' : 'workout-a'
     const otherWorkouts = data.templates.filter((template) => template.id !== suggestedId)
@@ -1583,12 +1653,13 @@ function App() {
               <Icon name="play" size={24} />
             </span>
             <span className="home-resume-sub">
-              {getWorkout(resumable.workoutId).name} · {countDone(resumable)} of {getWorkout(resumable.workoutId).groups.length} done
+              {getWorkout(resumable.workoutId).name} · {countDone(resumable)} of{' '}
+              {displayedGroups(getWorkout(resumable.workoutId).groups).length} done
             </span>
             <span className="home-rail" aria-hidden="true">
-              {getWorkout(resumable.workoutId).groups.map((group) => {
+              {displayedGroups(getWorkout(resumable.workoutId).groups).map(({ group }) => {
                 const groupEntry = resumable.groupEntries[group.id]
-                const result = groupEntry?.entries[groupEntry.activeVariantId]?.result
+                const result = groupEntry?.entries[group.activeVariantId]?.result
                 return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
               })}
             </span>
@@ -1615,7 +1686,7 @@ function App() {
             <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
             <span className="home-tile-text">
               <span>Settings</span>
-              <small>Backup, reset</small>
+              <small>Sync, backup, reset</small>
             </span>
           </button>
         </div>
@@ -1658,7 +1729,7 @@ function App() {
                 </>
               )}
 
-              <button className="start-cancel" type="button" onClick={() => setStartDialogOpen(false)}>
+              <button className="choice-cancel" type="button" onClick={() => setStartDialogOpen(false)}>
                 Cancel
               </button>
             </div>
@@ -1673,7 +1744,7 @@ function App() {
     return (
       <Page title={title} onBack={onBack}>
         {sessions.length === 0 ? (
-          <EmptyState text="No sessions yet." />
+          <EmptyState text="No workouts yet — sessions you start will show up here." />
         ) : (
           <>
             <div className="hist-tracker" aria-label="Last 14 days">
@@ -1711,7 +1782,9 @@ function App() {
               {sessions.map((session) => {
                 const workout = getWorkout(session.workoutId)
                 const doneCount = countDone(session)
-                const total = workout.groups.length
+                // Count displayed slots (linked pairs collapse, hidden drop) — same base as countDone,
+                // so a finished session actually reads as finished.
+                const total = displayedGroups(workout.groups).length
                 const finished = doneCount === total
                 return (
                   <article
@@ -1726,7 +1799,7 @@ function App() {
                         <small className="hist-ago">{formatRelative(session.createdAt)}</small>
                       </span>
                       <span className={`hist-chip ${finished ? 'done' : 'unfinished'}`}>
-                        {finished ? 'Done' : 'Unfinished'}
+                        {finished ? 'Finished' : 'Unfinished'}
                         <em>{doneCount}/{total}</em>
                       </span>
                     </button>
@@ -1811,6 +1884,11 @@ function App() {
       return
     }
 
+    // Forget which account this device last synced with, so signing back in (even to the same
+    // account) re-shows the "choose which data to keep" prompt. This lets the user work locally after
+    // logging out and consciously decide, on re-login, whether to keep those local changes or the
+    // account's data — instead of silently last-write-wins overwriting one of them.
+    setStored(SYNCED_ACCOUNT_KEY, '')
     setCloudActionBusy(false)
     setCloudUser(null)
     void haptic('confirm')
@@ -1877,7 +1955,9 @@ function App() {
         <button className="set-row" type="button" onClick={exportData}>
           <span className="set-main">
             <strong>Export backup</strong>
-            <small>Download all your data as a JSON file</small>
+            <small className={backupMessage?.target === 'export' && backupMessage.error ? 'set-note-error' : undefined} role="status">
+              {backupMessage?.target === 'export' ? backupMessage.text : 'Download all your data as a JSON file'}
+            </small>
           </span>
           <Icon name="download" />
         </button>
@@ -1885,7 +1965,9 @@ function App() {
         <label className="set-row">
           <span className="set-main">
             <strong>Import backup</strong>
-            <small>Replace your data from a JSON file</small>
+            <small className={backupMessage?.target === 'import' && backupMessage.error ? 'set-note-error' : undefined} role="status">
+              {backupMessage?.target === 'import' ? backupMessage.text : 'Replace your data from a JSON file'}
+            </small>
           </span>
           <Icon name="upload" />
           <input type="file" accept="application/json,.json" onChange={importData} />
@@ -1894,7 +1976,7 @@ function App() {
         <button className="set-row" type="button" onClick={testVibration}>
           <span className="set-main">
             <strong>Test vibration</strong>
-            <small>{vibrationMessage || 'Buzz the phone once'}</small>
+            <small role="status">{vibrationMessage || 'Buzz the phone once'}</small>
           </span>
           <Icon name="bell" />
         </button>
@@ -1956,10 +2038,16 @@ function App() {
 
   const renderSession = (session: WorkoutSession) => {
     const workout = getWorkout(session.workoutId)
-    // Edit mode may collapse to none; normal mode always keeps one exercise open.
+    // The workout (doing) screen shows collapsed slots (linked pairs merged); edit mode shows every
+    // exercise as its own row.
+    const slots = displayedGroups(workout.groups)
+    // Edit mode may collapse to none; normal mode always keeps one shown exercise open. If the stored
+    // expanded id is no longer a visible slot (e.g. it was just hidden by a swap), fall back to the
+    // first slot.
+    const storedExpanded = data.expandedBySession[session.id]
     const expandedGroupId = editMode
-      ? data.expandedBySession[session.id] ?? ''
-      : data.expandedBySession[session.id] || workout.groups[0]?.id || ''
+      ? storedExpanded ?? ''
+      : (slots.some(({ group }) => group.id === storedExpanded) ? storedExpanded : '') || slots[0]?.group.id || ''
     const activeGroup = workout.groups.find((group) => group.id === expandedGroupId)
     const activeRest = clampRestValue(activeGroup?.restSeconds ?? DEFAULT_REST_SECONDS)
     const doneCount = countDone(session)
@@ -1978,7 +2066,7 @@ function App() {
           )}
           <div className="ws-head-title">
             <strong>{workout.name}</strong>
-            <span>{editMode ? 'Editing' : `${doneCount}/${workout.groups.length} done`}</span>
+            <span>{editMode ? 'Editing' : `${doneCount}/${slots.length} done`}</span>
           </div>
           <button
             className={`ws-back ws-edit-toggle${editMode ? ' saving' : ''}`}
@@ -1999,10 +2087,10 @@ function App() {
           >
             <Icon name={editMode ? 'check' : 'edit'} />
           </button>
-          <div className="ws-rail" aria-label={`${doneCount} of ${workout.groups.length} exercises done`}>
-            {workout.groups.map((group) => {
+          <div className="ws-rail" aria-label={`${doneCount} of ${slots.length} exercises done`}>
+            {slots.map(({ group }) => {
               const groupEntry = session.groupEntries[group.id]
-              const result = groupEntry?.entries[groupEntry.activeVariantId]?.result
+              const result = groupEntry?.entries[group.activeVariantId]?.result
               return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
             })}
           </div>
@@ -2017,27 +2105,37 @@ function App() {
               onDragEnd={(event) => reorderGroups(workout.id, event)}
             >
               <SortableContext items={workout.groups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
-                {workout.groups.map((group) => (
-                  <EditableExerciseItem
-                    key={group.id}
-                    id={group.id}
-                    variants={group.variants}
-                    restSeconds={group.restSeconds}
-                    isExpanded={expandedGroupId === group.id}
-                    canRemove={workout.groups.length > 1}
-                    onToggle={() => toggleExpand(session.id, group.id)}
-                    onVariant={(variantId, patch) => editVariant(session.id, group.id, variantId, patch)}
-                    onCategory={(category) => editGroupCategory(group.id, category)}
-                    onRest={(value) => editGroupRest(group.id, value)}
-                    onRemove={() => removeGroup(workout.id, group.id)}
-                    onAddVariant={() => addVariant(workout.id, group.id)}
-                    onRemoveVariant={(variantId) => removeVariant(workout.id, group.id, variantId)}
-                  />
-                ))}
+                {workout.groups.map((group) => {
+                  const partner = group.linkId
+                    ? workout.groups.find((other) => other.id !== group.id && other.linkId === group.linkId)
+                    : undefined
+                  return (
+                    <EditableExerciseItem
+                      key={group.id}
+                      id={group.id}
+                      variant={soleVariant(group)}
+                      restSeconds={group.restSeconds}
+                      hidden={Boolean(group.hidden)}
+                      linkedPartnerName={partner ? soleVariant(partner).name : undefined}
+                      isExpanded={expandedGroupId === group.id}
+                      canRemove={workout.groups.length > 1}
+                      canLink={!group.linkId && workout.groups.some((other) => other.id !== group.id && !other.linkId)}
+                      onToggle={() => toggleExpand(session.id, group.id)}
+                      onVariant={(patch) => editVariant(session.id, group.id, group.activeVariantId, patch)}
+                      onRest={(value) => editGroupRest(group.id, value)}
+                      onRemove={() => removeGroup(workout.id, group.id)}
+                      onToggleHidden={() => toggleHidden(workout.id, group.id)}
+                      onLink={() => setLinkDialog({ workoutId: workout.id, groupId: group.id })}
+                      onUnlink={() => unlinkExercise(workout.id, group.id)}
+                    />
+                  )
+                })}
               </SortableContext>
             </DndContext>
           ) : (
-            workout.groups.map((group, index) => renderExerciseRow(workout, session, group, expandedGroupId, index))
+            slots.map(({ group, partner }, index) =>
+              renderExerciseRow(workout, session, group, partner, expandedGroupId, index),
+            )
           )}
           {editMode && (
             <button
@@ -2063,6 +2161,7 @@ function App() {
     workout: WorkoutTemplate,
     session: WorkoutSession,
     group: ExerciseGroup,
+    partner: ExerciseGroup | undefined,
     expandedGroupId: string,
     index: number,
   ) => {
@@ -2076,6 +2175,9 @@ function App() {
     const isExpanded = expandedGroupId === group.id
     const muscle = muscleColor(variant.category)
     const numLabel = String(index + 1).padStart(2, '0')
+    // "Increase weight?" confirmation: only when last time was a success and it hasn't been resolved
+    // for this session yet. Failed / no-record exercises skip straight to the normal controls.
+    const showIncrease = previous === 'success' && !entry.increaseResolved
 
     return (
       <article
@@ -2107,17 +2209,6 @@ function App() {
         <div className="ws-item-body">
           <div className="ws-item-body-inner">
             <div className="ws-item-body-content">
-              <button
-                className={`ws-guide ${guidanceClass(previous)}`}
-                type="button"
-                onClick={() =>
-                  setPreviousDialog({ workoutId: workout.id, sessionId: session.id, groupId: group.id, variantId: variant.id })
-                }
-              >
-                <Icon name={previous === 'success' ? 'arrow-up' : previous === 'failure' ? 'repeat' : 'clock'} size={18} />
-                <span>{guidanceSentence(previous)}</span>
-              </button>
-
               <div className="ws-facts">
                 <div className="ws-fact">
                   <span>Setup</span>
@@ -2129,83 +2220,171 @@ function App() {
                 </div>
               </div>
 
-              <div className="ws-step" aria-label={`${variant.name} weight`}>
-                <button
-                  className="ws-stepbtn"
-                  type="button"
-                  aria-label="Decrease weight"
-                  onPointerDown={() => {
-                    if (entry.weight > 0) {
-                      startHold(() => adjustWeight(session.id, group.id, variant.id, -1.25))
-                    }
-                  }}
-                  onPointerUp={finishHold}
-                  onPointerLeave={stopHold}
-                  onPointerCancel={stopHold}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      if (entry.weight > 0) {
-                        adjustWeight(session.id, group.id, variant.id, -1.25)
-                        void haptic('increment')
+              <button
+                className={`ws-guide ${guidanceClass(previous)}`}
+                type="button"
+                onClick={() =>
+                  setPreviousDialog({ workoutId: workout.id, sessionId: session.id, groupId: group.id, variantId: variant.id })
+                }
+              >
+                <Icon name={previous === 'success' ? 'arrow-up' : previous === 'failure' ? 'repeat' : 'clock'} size={18} />
+                <span>{guidanceSentence(previous)}</span>
+              </button>
+
+              {showIncrease ? (
+                <>
+                  <div className="ws-step" aria-label={`${variant.name} weight increase`}>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="Less increase"
+                      onClick={() => {
+                        if (entry.increaseDelta === undefined || entry.increaseDelta > 0) {
+                          adjustIncrease(session.id, group.id, variant.id, -1)
+                          void haptic('increment')
+                        }
+                      }}
+                    >
+                      <Icon name="minus" size={20} />
+                    </button>
+                    <button
+                      className="ws-weight ws-weight-increase"
+                      type="button"
+                      onClick={() =>
+                        setWeightDialog({
+                          sessionId: session.id,
+                          groupId: group.id,
+                          variantId: variant.id,
+                          increase: true,
+                          value: entry.increaseDelta === undefined ? '' : String(entry.increaseDelta),
+                        })
                       }
-                    }
-                  }}
-                >
-                  <Icon name="minus" size={20} />
-                </button>
-                <button
-                  className="ws-weight"
-                  type="button"
-                  onClick={() =>
-                    setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
-                  }
-                >
-                  <strong>{formatWeight(entry.weight)}</strong>
-                  <span>{variant.perHand ? 'per hand' : 'total'}</span>
-                </button>
-                <button
-                  className="ws-stepbtn"
-                  type="button"
-                  aria-label="Increase weight"
-                  onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
-                  onPointerUp={finishHold}
-                  onPointerLeave={stopHold}
-                  onPointerCancel={stopHold}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      adjustWeight(session.id, group.id, variant.id, 1.25)
-                      void haptic('increment')
-                    }
-                  }}
-                >
-                  <Icon name="plus" size={20} />
-                </button>
-              </div>
+                    >
+                      {entry.increaseDelta === undefined ? (
+                        <strong className="ws-weight-prompt">
+                          Increase
+                          <br />
+                          weight by?
+                        </strong>
+                      ) : (
+                        <strong>{formatWeight(entry.increaseDelta)}</strong>
+                      )}
+                    </button>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="More increase"
+                      onClick={() => {
+                        adjustIncrease(session.id, group.id, variant.id, 1)
+                        void haptic('increment')
+                      }}
+                    >
+                      <Icon name="plus" size={20} />
+                    </button>
+                  </div>
 
-              <div className="ws-result" aria-label={`${variant.name} result`}>
-                <button
-                  className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
-                  type="button"
-                  aria-pressed={entry.result === 'success'}
-                  onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
-                >
-                  Done
-                </button>
-                <button
-                  className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
-                  type="button"
-                  aria-pressed={entry.result === 'failure'}
-                  onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
-                >
-                  Failed
-                </button>
-              </div>
+                  <div className="ws-result" aria-label={`${variant.name} increase`}>
+                    <button
+                      className="ws-resultbtn done"
+                      type="button"
+                      onClick={() => acceptIncrease(session.id, group.id, variant.id)}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      className="ws-resultbtn failed"
+                      type="button"
+                      onClick={() => cancelIncrease(session.id, group.id, variant.id)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="ws-step" aria-label={`${variant.name} weight`}>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="Decrease weight"
+                      onPointerDown={() => {
+                        if (entry.weight > 0) {
+                          startHold(() => adjustWeight(session.id, group.id, variant.id, -1.25))
+                        }
+                      }}
+                      onPointerUp={finishHold}
+                      onPointerLeave={stopHold}
+                      onPointerCancel={stopHold}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          if (adjustWeight(session.id, group.id, variant.id, -1.25)) {
+                            void haptic('increment')
+                          }
+                        }
+                      }}
+                    >
+                      <Icon name="minus" size={20} />
+                    </button>
+                    <button
+                      className="ws-weight"
+                      type="button"
+                      onClick={() =>
+                        setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
+                      }
+                    >
+                      <strong>{formatWeight(entry.weight)}</strong>
+                      <span>{variant.perHand ? 'per hand' : 'total'}</span>
+                    </button>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="Increase weight"
+                      onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
+                      onPointerUp={finishHold}
+                      onPointerLeave={stopHold}
+                      onPointerCancel={stopHold}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          if (adjustWeight(session.id, group.id, variant.id, 1.25)) {
+                            void haptic('increment')
+                          }
+                        }
+                      }}
+                    >
+                      <Icon name="plus" size={20} />
+                    </button>
+                  </div>
 
-              {group.variants.length > 1 && (
-                <button className="ws-swap" type="button" onClick={() => swapVariant(session.id, group)}>
-                  Swap to {getNextVariant(group, variant.id).name}
+                  <div className="ws-result" aria-label={`${variant.name} result`}>
+                    <button
+                      className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
+                      type="button"
+                      aria-pressed={entry.result === 'success'}
+                      onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
+                    >
+                      Done
+                    </button>
+                    <button
+                      className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
+                      type="button"
+                      aria-pressed={entry.result === 'failure'}
+                      onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
+                    >
+                      Failed
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {partner && (
+                <button
+                  className="ws-swap"
+                  type="button"
+                  onClick={() => swapLinked(session.id, workout.id, group.id, partner.id)}
+                >
+                  Swap with {soleVariant(partner).name}
                 </button>
               )}
             </div>
@@ -2225,6 +2404,9 @@ function App() {
               Rest
             </span>
             <strong>{formatTimer(restSeconds)}</strong>
+            <span className="ws-dock-bar" aria-hidden="true">
+              <i style={{ width: `${Math.max(0, Math.min(100, (restSeconds / Math.max(1, restDuration)) * 100))}%` }} />
+            </span>
           </div>
           <button
             className="ws-dock-cancel"
@@ -2248,6 +2430,7 @@ function App() {
           onClick={() => {
             const endsAt = Date.now() + activeRest * 1000
             setRestSeconds(activeRest)
+            setRestDuration(activeRest)
             setRestEndsAt(endsAt)
             setRestRunning(true)
             setRestNotificationMessage('')
@@ -2272,7 +2455,7 @@ function App() {
             <Icon name={restPulse ? 'check' : 'clock'} size={18} />
             {restPulse ? 'Rest done' : 'Rest timer'}
           </span>
-          <strong>{restPulse ? '' : `Start · ${activeRest}s`}</strong>
+          <strong>{restPulse ? '' : `Start · ${formatTimer(activeRest)}`}</strong>
         </button>
       )}
       {restNotificationMessage && (
@@ -2444,134 +2627,190 @@ function App() {
     }))
   }
 
-  // A swap always shares the main exercise's muscle group, so changing the muscle applies to every
-  // variant in the group at once (the picker is only shown for the main exercise).
-  const editGroupCategory = (groupId: string, category: Category) => {
+  // Hide/show an exercise. For a linked pair exactly one member is visible, so toggling one flips its
+  // partner the other way; for a standalone exercise it's a plain hide (removed from the workout).
+  const toggleHidden = (workoutId: WorkoutId, groupId: string) => {
+    void haptic('selection')
     setEditDirty(true)
     setData((current) => ({
       ...current,
-      templates: current.templates.map((template) => ({
-        ...template,
-        groups: template.groups.map((group) =>
-          group.id === groupId
-            ? { ...group, variants: group.variants.map((variant) => ({ ...variant, category })) }
-            : group,
-        ),
-      })),
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const target = template.groups.find((group) => group.id === groupId)
+        if (!target) {
+          return template
+        }
+        const nextHidden = !target.hidden
+        return {
+          ...template,
+          groups: template.groups.map((group) => {
+            if (group.id === groupId) {
+              return { ...group, hidden: nextHidden }
+            }
+            // Keep the partner opposite so a pair always has exactly one visible member.
+            if (target.linkId && group.linkId === target.linkId) {
+              return { ...group, hidden: !nextHidden }
+            }
+            return group
+          }),
+        }
+      }),
     }))
   }
 
-  // Add a swap alternative to an existing exercise: a new variant sharing the main's muscle group.
-  const addVariant = (workoutId: WorkoutId, groupId: string) => {
-    const workout = data.templates.find((template) => template.id === workoutId)
-    const group = workout?.groups.find((candidate) => candidate.id === groupId)
-    const main = group?.variants[0]
-    if (!main) {
-      return
-    }
-
-    const variantId = createId()
-    const newVariant: ExerciseVariant = {
-      id: variantId,
-      name: 'Swap option',
-      category: main.category,
-      setup: '',
-      sets: main.sets,
-      reps: main.reps,
-      weight: main.weight,
-      perHand: main.perHand,
-      lastResult: 'missing',
-    }
+  // Link the given exercise to another as a swap pair. The one higher in the list stays visible.
+  const linkExercise = (workoutId: WorkoutId, groupId: string, targetId: string) => {
+    setLinkDialog(null)
     setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const linkId = createId()
+        const firstIndex = Math.min(
+          template.groups.findIndex((group) => group.id === groupId),
+          template.groups.findIndex((group) => group.id === targetId),
+        )
+        const topmostId = template.groups[firstIndex]?.id
+        return {
+          ...template,
+          groups: template.groups.map((group) =>
+            group.id === groupId || group.id === targetId
+              ? { ...group, linkId, hidden: group.id !== topmostId }
+              : group,
+          ),
+        }
+      }),
+    }))
+    void haptic('selection')
+  }
+
+  // Unlink an exercise from its pair: both become standalone and visible again.
+  const unlinkExercise = (workoutId: WorkoutId, groupId: string) => {
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const target = template.groups.find((group) => group.id === groupId)
+        const linkId = target?.linkId
+        if (!linkId) {
+          return template
+        }
+        return {
+          ...template,
+          groups: template.groups.map((group) =>
+            group.linkId === linkId ? { ...group, linkId: undefined, hidden: false } : group,
+          ),
+        }
+      }),
+    }))
+    void haptic('selection')
+  }
+
+  // Swap which member of a linked pair is visible (used on the workout screen). Move the expanded
+  // state to the newly-visible partner so the slot the user was on stays open.
+  const swapLinked = (sessionId: string, workoutId: WorkoutId, currentId: string, partnerId: string) => {
+    void haptic('selection')
     setData((current) => ({
       ...current,
       templates: current.templates.map((template) =>
         template.id === workoutId
           ? {
               ...template,
-              groups: template.groups.map((candidate) =>
-                candidate.id === groupId ? { ...candidate, variants: [...candidate.variants, newVariant] } : candidate,
-              ),
+              groups: template.groups.map((group) => {
+                if (group.id === currentId) {
+                  return { ...group, hidden: true }
+                }
+                if (group.id === partnerId) {
+                  return { ...group, hidden: false }
+                }
+                return group
+              }),
             }
           : template,
       ),
-      baselineResults: { ...current.baselineResults, [variantId]: 'missing' },
+      expandedBySession: { ...current.expandedBySession, [sessionId]: partnerId },
     }))
   }
 
-  // Remove a swap alternative. The main variant (index 0) is never removable here; if the removed
-  // swap happens to be the one currently selected, fall back to the main so nothing dangles.
-  const removeVariant = (workoutId: WorkoutId, groupId: string, variantId: string) => {
-    setConfirmDialog({
-      title: 'Remove this swap?',
-      message: 'This alternative and its saved weight will be taken out of the exercise.',
-      confirmLabel: 'Remove',
-      danger: true,
-      haptic: 'destructive',
-      onConfirm: () => {
-        setEditDirty(true)
-        setData((current) => {
-          let mainId = variantId
-          const templates = current.templates.map((template) =>
-            template.id === workoutId
-              ? {
-                  ...template,
-                  groups: template.groups.map((group) => {
-                    if (group.id !== groupId || group.variants.length <= 1) {
-                      return group
-                    }
-                    mainId = group.variants[0].id
-                    const variants = group.variants.filter((variant) => variant.id !== variantId)
-                    return {
-                      ...group,
-                      variants,
-                      activeVariantId: group.activeVariantId === variantId ? mainId : group.activeVariantId,
-                    }
-                  }),
-                }
-              : template,
-          )
-          const variantPrefs =
-            current.variantPrefs[groupId] === variantId
-              ? { ...current.variantPrefs, [groupId]: mainId }
-              : current.variantPrefs
-          return {
-            ...current,
-            templates,
-            variantPrefs,
-            baselineResults: removeKey(current.baselineResults, variantId),
-          }
-        })
-        setConfirmDialog(null)
-      },
-    })
-  }
-
-  const adjustWeight = (sessionId: string, groupId: string, variantId: string, delta: number) => {
+  // Returns whether the weight actually changed, so callers only give haptic feedback for a real
+  // step (a − at 0 kg stays silent, matching every other stepper at its bound).
+  const adjustWeight = (sessionId: string, groupId: string, variantId: string, delta: number): boolean => {
+    const session = dataRef.current.sessions.find((candidate) => candidate.id === sessionId)
+    const currentWeight = session ? getEntry(session, groupId, variantId).weight : 0
+    if (roundWeight(Math.max(0, currentWeight + delta)) === currentWeight) {
+      return false
+    }
     updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({
       ...entry,
       weight: roundWeight(Math.max(0, entry.weight + delta)),
     }))
+    return true
+  }
+
+  // "Increase weight by?" stage. The first −/+ tap seeds the amount (0 from −, 1.25 from +); after
+  // that it steps by ±1.25 and never goes below 0.
+  const adjustIncrease = (sessionId: string, groupId: string, variantId: string, direction: 1 | -1) => {
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => {
+      const current = entry.increaseDelta
+      const next = current === undefined ? (direction < 0 ? 0 : 1.25) : Math.max(0, current + direction * 1.25)
+      return { ...entry, increaseDelta: roundWeight(next) }
+    })
+  }
+
+  // Accept the increase: add the chosen amount on top of last session's carried weight and return the
+  // card to its normal state. An unset amount counts as +0 (a deliberate "no change today").
+  const acceptIncrease = (sessionId: string, groupId: string, variantId: string) => {
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({
+      ...entry,
+      weight: roundWeight(entry.weight + (entry.increaseDelta ?? 0)),
+      increaseDelta: undefined,
+      increaseResolved: true,
+    }))
+    void haptic('confirm')
+  }
+
+  // Cancel: ignore any entered amount and keep the carried weight, but still mark the stage resolved
+  // so the normal controls appear. Same feedback tier as Accept — it's the same decision pair.
+  const cancelIncrease = (sessionId: string, groupId: string, variantId: string) => {
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({
+      ...entry,
+      increaseDelta: undefined,
+      increaseResolved: true,
+    }))
+    void haptic('confirm')
   }
 
   // Press-and-hold to repeat (weight steppers). A quick tap applies once on release; a deliberate
-  // hold starts after 380ms and then repeats. Scrolling cancels the pointer before either path fires,
-  // so starting a scroll on the control cannot change weight or produce haptic feedback.
-  const startHold = (action: () => void) => {
+  // hold starts after 380ms and then repeats, ticking once per real step so the amount can be counted
+  // by feel without looking. Scrolling cancels the pointer before either path fires, so starting a
+  // scroll on the control cannot change weight or produce haptic feedback.
+  const startHold = (action: () => boolean) => {
     stopHold()
     holdRef.current.action = action
     holdRef.current.timeout = window.setTimeout(() => {
       holdRef.current.started = true
-      action()
-      void haptic('increment')
-      holdRef.current.interval = window.setInterval(action, 110)
+      if (action()) {
+        void haptic('increment')
+      }
+      holdRef.current.interval = window.setInterval(() => {
+        if (action()) {
+          void haptic('increment')
+        }
+      }, 110)
     }, 380)
   }
 
   const finishHold = () => {
     const { action, started } = holdRef.current
-    if (action && !started) {
-      action()
+    if (action && !started && action()) {
       void haptic('increment')
     }
     stopHold()
@@ -2621,48 +2860,6 @@ function App() {
     void haptic('confirm')
   }
 
-  const swapVariant = (sessionId: string, group: ExerciseGroup) => {
-    setData((current) => {
-      const sessions = current.sessions.map((session) => {
-        if (session.id !== sessionId) {
-          return session
-        }
-
-        const groupEntry = ensureSessionGroup(session, group, current)
-        const nextVariant = getNextVariant(group, groupEntry.activeVariantId)
-        return {
-          ...session,
-          groupEntries: {
-            ...session.groupEntries,
-            [group.id]: {
-              ...groupEntry,
-              activeVariantId: nextVariant.id,
-              entries: {
-                ...groupEntry.entries,
-                [nextVariant.id]: groupEntry.entries[nextVariant.id] ?? createSessionEntry(current, session.workoutId, nextVariant),
-              },
-            },
-          },
-        }
-      })
-
-      const changedSession = sessions.find((session) => session.id === sessionId)
-      const changedGroup = changedSession?.groupEntries[group.id]
-
-      return {
-        ...current,
-        sessions,
-        variantPrefs: changedGroup
-          ? {
-              ...current.variantPrefs,
-              [group.id]: changedGroup.activeVariantId,
-            }
-          : current.variantPrefs,
-      }
-    })
-    void haptic('selection')
-  }
-
   const updateExerciseEntry = (
     sessionId: string,
     groupId: string,
@@ -2701,10 +2898,11 @@ function App() {
       return
     }
 
-    updateExerciseEntry(weightDialog.sessionId, weightDialog.groupId, weightDialog.variantId, (entry) => ({
-      ...entry,
-      weight: roundWeight(parsed),
-    }))
+    updateExerciseEntry(weightDialog.sessionId, weightDialog.groupId, weightDialog.variantId, (entry) =>
+      weightDialog.increase
+        ? { ...entry, increaseDelta: roundWeight(parsed) }
+        : { ...entry, weight: roundWeight(parsed) },
+    )
     setWeightDialog(null)
     void haptic('confirm')
   }
@@ -2722,26 +2920,43 @@ function App() {
 
       const target = findPreviousTarget(current, previousDialog.workoutId, session, previousDialog.groupId, previousDialog.variantId)
 
-      if (target.sessionId) {
-        return {
-          ...current,
-          sessions: current.sessions.map((candidate) =>
-            candidate.id === target.sessionId
-              ? updateSessionEntry(candidate, previousDialog.groupId, previousDialog.variantId, {
-                  ...getEntry(candidate, previousDialog.groupId, previousDialog.variantId),
-                  result: status === 'missing' ? undefined : status,
-                })
-              : candidate,
-          ),
+      // Re-choosing the previous result reopens the "Increase weight?" stage on the current card, so
+      // toggling it away from and back to "done" lets the user increase again (stacking on top of any
+      // increase they already applied). Only clears the increase flags; the weight is preserved.
+      const reopenIncrease = (candidate: WorkoutSession): WorkoutSession => {
+        if (candidate.id !== previousDialog.sessionId) {
+          return candidate
         }
+        const existing = candidate.groupEntries[previousDialog.groupId]?.entries[previousDialog.variantId]
+        if (!existing) {
+          return candidate
+        }
+        return updateSessionEntry(candidate, previousDialog.groupId, previousDialog.variantId, {
+          ...existing,
+          increaseResolved: false,
+          increaseDelta: undefined,
+        })
       }
+
+      let sessions = current.sessions
+      if (target.sessionId) {
+        sessions = sessions.map((candidate) =>
+          candidate.id === target.sessionId
+            ? updateSessionEntry(candidate, previousDialog.groupId, previousDialog.variantId, {
+                ...getEntry(candidate, previousDialog.groupId, previousDialog.variantId),
+                result: status === 'missing' ? undefined : status,
+              })
+            : candidate,
+        )
+      }
+      sessions = sessions.map(reopenIncrease)
 
       return {
         ...current,
-        baselineResults: {
-          ...current.baselineResults,
-          [previousDialog.variantId]: status,
-        },
+        sessions,
+        baselineResults: target.sessionId
+          ? current.baselineResults
+          : { ...current.baselineResults, [previousDialog.variantId]: status },
       }
     })
 
@@ -2759,9 +2974,10 @@ function App() {
       anchor.download = `fitness-hub-${new Date().toISOString().slice(0, 10)}.json`
       anchor.click()
       void haptic('confirm')
+      setBackupMessage({ target: 'export', text: 'Backup downloaded.' })
     } catch {
       void haptic('error')
-      window.alert('Could not export your backup.')
+      setBackupMessage({ target: 'export', text: 'Could not export your backup.', error: true })
     } finally {
       if (url) {
         URL.revokeObjectURL(url)
@@ -2785,15 +3001,15 @@ function App() {
         }
         setData(normalizeData(parsed))
         void haptic('confirm')
-        window.alert('Data imported.')
+        setBackupMessage({ target: 'import', text: 'Data imported.' })
       } catch {
         void haptic('error')
-        window.alert('Could not import that JSON file.')
+        setBackupMessage({ target: 'import', text: 'Could not import that JSON file.', error: true })
       }
     }
     reader.onerror = () => {
       void haptic('error')
-      window.alert('Could not read that backup file.')
+      setBackupMessage({ target: 'import', text: 'Could not read that backup file.', error: true })
     }
     reader.readAsText(file)
   }
@@ -2839,7 +3055,7 @@ function App() {
           </Page>
         )}
         {weightDialog && (
-          <Dialog title="Edit weight">
+          <Dialog title={weightDialog.increase ? 'Increase weight by' : 'Edit weight'}>
             <input
               className="number-input"
               inputMode="decimal"
@@ -2881,6 +3097,46 @@ function App() {
             </button>
           </Dialog>
         )}
+        {linkDialog &&
+          (() => {
+            const workout = data.templates.find((template) => template.id === linkDialog.workoutId)
+            const source = workout?.groups.find((group) => group.id === linkDialog.groupId)
+            const candidates = (workout?.groups ?? []).filter(
+              (group) => group.id !== linkDialog.groupId && !group.linkId,
+            )
+            return (
+              <Dialog title="Link a swap">
+                <p className="dialog-help">
+                  Pick an exercise to pair with {source ? soleVariant(source).name : 'this exercise'}. Only one shows
+                  on the workout at a time, with a Swap button to switch between them.
+                </p>
+                {candidates.length === 0 ? (
+                  <p className="dialog-help">No other unlinked exercises to link with.</p>
+                ) : (
+                  <div className="choice-list">
+                    {candidates.map((group) => (
+                      <button
+                        key={group.id}
+                        className="choice"
+                        type="button"
+                        onClick={() => linkExercise(linkDialog.workoutId, linkDialog.groupId, group.id)}
+                      >
+                        <span
+                          className="ws-dot"
+                          style={{ background: muscleColor(soleVariant(group).category) }}
+                          aria-hidden="true"
+                        />
+                        <span>{soleVariant(group).name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button className="choice-cancel" type="button" onClick={() => setLinkDialog(null)}>
+                  Cancel
+                </button>
+              </Dialog>
+            )
+          })()}
       </>
     )
   }
@@ -3118,10 +3374,31 @@ function getVariant(group: ExerciseGroup, variantId: string) {
   return group.variants.find((candidate) => candidate.id === variantId) ?? group.variants[0]
 }
 
-function getNextVariant(group: ExerciseGroup, currentVariantId: string) {
-  const currentIndex = group.variants.findIndex((variant) => variant.id === currentVariantId)
-  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % group.variants.length : 0
-  return group.variants[nextIndex]
+// The single exercise a group holds (groups are single-exercise now).
+function soleVariant(group: ExerciseGroup) {
+  return group.variants[0]
+}
+
+// The slots shown on the workout (doing) screen: each linked pair collapses to one slot at its
+// topmost member's position, showing the visible member (with its partner for the Swap button);
+// hidden standalone exercises are dropped.
+function displayedGroups(groups: ExerciseGroup[]): { group: ExerciseGroup; partner?: ExerciseGroup }[] {
+  const seenLinks = new Set<string>()
+  const slots: { group: ExerciseGroup; partner?: ExerciseGroup }[] = []
+  for (const group of groups) {
+    if (group.linkId) {
+      if (seenLinks.has(group.linkId)) {
+        continue
+      }
+      seenLinks.add(group.linkId)
+      const members = groups.filter((candidate) => candidate.linkId === group.linkId)
+      const visible = members.find((candidate) => !candidate.hidden) ?? members[0]
+      slots.push({ group: visible, partner: members.find((candidate) => candidate.id !== visible.id) })
+    } else if (!group.hidden) {
+      slots.push({ group })
+    }
+  }
+  return slots
 }
 
 function ensureSessionGroup(session: WorkoutSession, group: ExerciseGroup, data: AppData): SessionGroup {
@@ -3235,17 +3512,19 @@ function findPreviousTarget(
   return previous ? { sessionId: previous.id } : { sessionId: null }
 }
 
+// Counts over the displayed slots (a linked pair counts once — the visible member), so progress
+// matches what's actually on the workout screen.
 function countDone(session: WorkoutSession) {
-  return getWorkout(session.workoutId).groups.filter((group) => {
+  return displayedGroups(getWorkout(session.workoutId).groups).filter(({ group }) => {
     const groupEntry = session.groupEntries[group.id]
-    return Boolean(groupEntry?.entries[groupEntry.activeVariantId]?.result)
+    return Boolean(groupEntry?.entries[group.activeVariantId]?.result)
   }).length
 }
 
-// A session is "finished" when every exercise has a logged result (done or failed); otherwise the
-// workout was left part-way. Used for the green/red status across history and the tracker.
+// A session is "finished" when every displayed exercise has a logged result (done or failed);
+// otherwise the workout was left part-way. Used for the green/red status across history and tracker.
 function isSessionFinished(session: WorkoutSession) {
-  const total = getWorkout(session.workoutId).groups.length
+  const total = displayedGroups(getWorkout(session.workoutId).groups).length
   return total > 0 && countDone(session) === total
 }
 
@@ -3287,14 +3566,16 @@ function dayKey(timestamp: number) {
 }
 
 function getNextPendingGroupId(session: WorkoutSession, currentGroupId: string) {
-  const workout = getWorkout(session.workoutId)
-  return nextPendingId(workout.groups.map((group) => group.id), currentGroupId, (groupId) => {
-    const group = workout.groups.find((candidate) => candidate.id === groupId)
+  // Advance only through the slots actually shown on the workout screen (visible members of linked
+  // pairs, no hidden exercises), in display order.
+  const slots = displayedGroups(getWorkout(session.workoutId).groups)
+  return nextPendingId(slots.map(({ group }) => group.id), currentGroupId, (groupId) => {
+    const group = slots.find(({ group: candidate }) => candidate.id === groupId)?.group
     if (!group) {
       return true
     }
     const groupEntry = session.groupEntries[group.id]
-    return Boolean(groupEntry?.entries[groupEntry.activeVariantId]?.result)
+    return Boolean(groupEntry?.entries[group.activeVariantId]?.result)
   })
 }
 
@@ -3401,15 +3682,6 @@ function formatTimer(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remainder = String(seconds % 60).padStart(2, '0')
   return `${minutes}:${remainder}`
-}
-
-function formatRestPreset(seconds: number) {
-  if (seconds < 60) {
-    return `${seconds}s`
-  }
-  const minutes = Math.floor(seconds / 60)
-  const remainder = seconds % 60
-  return remainder === 0 ? `${minutes}m` : `${minutes}m${remainder}s`
 }
 
 function formatRelative(timestamp: number) {

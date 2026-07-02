@@ -42,7 +42,7 @@
   color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
 }
 
 .ws-head-title {
@@ -300,7 +300,7 @@
   color: var(--accent);
   background: var(--raised);
   border: 1px solid var(--accent-line);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
 }
 
 /* Bolder blue glyph so the −/+ read clearly on the grey button. */
@@ -317,13 +317,22 @@
   color: var(--text);
   background: rgba(20, 21, 27, 0.5);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
 }
 
 .ws-weight strong {
   font-size: var(--fs-title);
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
+}
+
+/* The "Increase weight by?" prompt is two lines ("Increase" / "weight by?"), stepped down a size so
+   it fits the box cleanly. There's no total/per-hand caption in the increase stage, so the prompt is
+   vertically centered on its own. */
+.ws-weight-prompt {
+  font-size: var(--fs-body);
+  line-height: 1.12;
+  text-align: center;
 }
 
 .ws-weight span {
@@ -344,7 +353,7 @@
   color: var(--text);
   background: rgba(255, 255, 255, 0.035);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   font-size: var(--fs-body);
   font-weight: var(--fw-bold);
 }
@@ -377,7 +386,7 @@
   color: var(--text);
   background: var(--surface-3);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
 }
@@ -415,13 +424,15 @@
   color: var(--text);
   background: var(--raised);
   border: 1px solid var(--line);
-  border-radius: 15px;
+  border-radius: var(--radius-card);
   box-shadow: var(--soft-shadow);
   font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
 }
 
 .ws-dock-time {
+  position: relative;
+  overflow: hidden;
   height: 54px;
   padding: 0 18px;
   display: flex;
@@ -431,9 +442,29 @@
   color: var(--text);
   background: var(--raised);
   border: 1px solid var(--line);
-  border-radius: 15px;
+  border-radius: var(--radius-card);
   box-shadow: var(--soft-shadow);
   animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Thin drain bar along the bottom of the running timer — a glance shows how much rest is left
+   without reading the number. Width animates linearly between the 1s countdown ticks. */
+.ws-dock-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  pointer-events: none;
+}
+
+.ws-dock-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 999px 999px 0;
+  transition: width 1000ms linear;
 }
 
 .ws-dock-left {
@@ -447,7 +478,7 @@
 .ws-dock-start strong,
 .ws-dock-time strong {
   font-size: var(--fs-heading);
-  font-weight: 850;
+  font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -457,7 +488,7 @@
   color: var(--text);
   background: var(--surface-3);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   font-size: var(--fs-label);
   font-weight: var(--fw-bold);
 }
@@ -499,14 +530,18 @@
 
 .ws-item:not(.open) .ws-item-head:active,
 .ws-guide:active,
-.ws-stepbtn:active,
 .ws-weight:active,
 .ws-resultbtn:active,
 .ws-swap:active,
-.ws-back:active,
 .ws-dock-start:active,
 .ws-dock-cancel:active {
   transform: scale(0.98);
+}
+
+/* Small/icon controls press slightly deeper — one standard with the editor steppers and pills. */
+.ws-stepbtn:active,
+.ws-back:active {
+  transform: scale(0.95);
 }
 
 .ws-back:focus-visible,
