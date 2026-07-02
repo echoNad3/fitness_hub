@@ -4,6 +4,7 @@ import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
   initialLocalTimestamp,
+  isMeaningfulChange,
   nextLocalTimestamp,
   parseCloudTimestamp,
 } from '../src/cloudSync.ts'
@@ -33,6 +34,24 @@ test('existing local changes receive a migration timestamp', () => {
   assert.equal(hasMeaningfulLocalData(changed, initial), true)
   assert.equal(initialLocalTimestamp(null, true, 500), 500)
   assert.equal(initialLocalTimestamp('250', true, 500), 250)
+})
+
+test('only real data edits count as meaningful for sync', () => {
+  const base = {
+    sessions: [] as unknown[],
+    templates: [] as unknown[],
+    variantPrefs: {},
+    baselineResults: {},
+    currentSessionByWorkout: {},
+    restSeconds: 90,
+  }
+
+  // Untouched slices keep their identity — scroll/expanded bookkeeping changes reuse them.
+  assert.equal(isMeaningfulChange(base, { ...base }), false)
+  // A real edit replaces its slice with a new object.
+  assert.equal(isMeaningfulChange(base, { ...base, sessions: [] }), true)
+  assert.equal(isMeaningfulChange(base, { ...base, templates: [] }), true)
+  assert.equal(isMeaningfulChange(base, { ...base, restSeconds: 120 }), true)
 })
 
 test('local timestamps always move forward', () => {

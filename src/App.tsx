@@ -27,6 +27,7 @@ import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
   initialLocalTimestamp,
+  isMeaningfulChange,
   nextLocalTimestamp,
   parseCloudTimestamp,
 } from './cloudSync'
@@ -1133,7 +1134,8 @@ function App() {
   useEffect(() => {
     setStored(STORAGE_KEY, JSON.stringify(data))
 
-    if (lastPersistedDataRef.current === data) {
+    const previous = lastPersistedDataRef.current
+    if (previous === data) {
       return
     }
     lastPersistedDataRef.current = data
@@ -1143,6 +1145,12 @@ function App() {
       applyingRemoteTimestampRef.current = null
       localUpdatedAtRef.current = remoteTimestamp
       setStored(LOCAL_UPDATED_KEY, String(remoteTimestamp))
+      return
+    }
+
+    // Pure UI bookkeeping (scroll position, expanded exercise) persists locally above but must not
+    // advance the sync timestamp or upload — see isMeaningfulChange for why.
+    if (!isMeaningfulChange(previous, data)) {
       return
     }
 
@@ -2238,10 +2246,16 @@ function App() {
                       className="ws-stepbtn"
                       type="button"
                       aria-label="Less increase"
-                      onClick={() => {
-                        if (entry.increaseDelta === undefined || entry.increaseDelta > 0) {
-                          adjustIncrease(session.id, group.id, variant.id, -1)
-                          void haptic('increment')
+                      onPointerDown={() => startHold(() => adjustIncrease(session.id, group.id, variant.id, -1))}
+                      onPointerUp={finishHold}
+                      onPointerLeave={stopHold}
+                      onPointerCancel={stopHold}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          if (adjustIncrease(session.id, group.id, variant.id, -1)) {
+                            void haptic('increment')
+                          }
                         }
                       }}
                     >
@@ -2274,9 +2288,17 @@ function App() {
                       className="ws-stepbtn"
                       type="button"
                       aria-label="More increase"
-                      onClick={() => {
-                        adjustIncrease(session.id, group.id, variant.id, 1)
-                        void haptic('increment')
+                      onPointerDown={() => startHold(() => adjustIncrease(session.id, group.id, variant.id, 1))}
+                      onPointerUp={finishHold}
+                      onPointerLeave={stopHold}
+                      onPointerCancel={stopHold}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          if (adjustIncrease(session.id, group.id, variant.id, 1)) {
+                            void haptic('increment')
+                          }
+                        }
                       }}
                     >
                       <Icon name="plus" size={20} />
@@ -2467,13 +2489,19 @@ function App() {
   )
 
   const openSession = (workoutId: WorkoutId, sessionId: string) => {
-    setData((current) => ({
-      ...current,
-      currentSessionByWorkout: {
-        ...current.currentSessionByWorkout,
-        [workoutId]: sessionId,
-      },
-    }))
+    setData((current) =>
+      // Re-opening the already-current session isn't a data change — keep the object identity so it
+      // doesn't count as a meaningful edit for sync.
+      current.currentSessionByWorkout[workoutId] === sessionId
+        ? current
+        : {
+            ...current,
+            currentSessionByWorkout: {
+              ...current.currentSessionByWorkout,
+              [workoutId]: sessionId,
+            },
+          },
+    )
     setEditMode(false)
     navigate({ name: 'session', workoutId, sessionId })
   }
@@ -2756,13 +2784,17 @@ function App() {
   }
 
   // "Increase weight by?" stage. The first −/+ tap seeds the amount (0 from −, 1.25 from +); after
-  // that it steps by ±1.25 and never goes below 0.
-  const adjustIncrease = (sessionId: string, groupId: string, variantId: string, direction: 1 | -1) => {
-    updateExerciseEntry(sessionId, groupId, variantId, (entry) => {
-      const current = entry.increaseDelta
-      const next = current === undefined ? (direction < 0 ? 0 : 1.25) : Math.max(0, current + direction * 1.25)
-      return { ...entry, increaseDelta: roundWeight(next) }
-    })
+  // that it steps by ±1.25 and never goes below 0. Returns whether the amount actually changed, so
+  // taps and hold-repeats give the same per-step feedback as the normal weight stepper.
+  const adjustIncrease = (sessionId: string, groupId: string, variantId: string, direction: 1 | -1): boolean => {
+    const session = dataRef.current.sessions.find((candidate) => candidate.id === sessionId)
+    const current = session ? getEntry(session, groupId, variantId).increaseDelta : undefined
+    const next = roundWeight(current === undefined ? (direction < 0 ? 0 : 1.25) : Math.max(0, current + direction * 1.25))
+    if (next === current) {
+      return false
+    }
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({ ...entry, increaseDelta: next }))
+    return true
   }
 
   // Accept the increase: add the chosen amount on top of last session's carried weight and return the

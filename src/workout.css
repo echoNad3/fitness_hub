@@ -326,12 +326,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The "Increase weight by?" prompt is two lines ("Increase" / "weight by?"), stepped down a size so
-   it fits the box cleanly. There's no total/per-hand caption in the increase stage, so the prompt is
-   vertically centered on its own. */
-.ws-weight-prompt {
-  font-size: var(--fs-body);
-  line-height: 1.12;
+/* The "Increase weight by?" prompt is two lines ("Increase" / "weight by?"). It's a question, not
+   the weight value, so it steps down to label size — two lines at the value's size crowded the box.
+   Selector matches ".ws-weight strong" in specificity, or that value rule silently wins. */
+.ws-weight strong.ws-weight-prompt {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
   text-align: center;
 }
 

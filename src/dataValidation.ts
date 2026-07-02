@@ -57,6 +57,15 @@ function isExerciseGroup(value: unknown) {
     return false
   }
 
+  // Swap-pair flags: hidden dims/hides an exercise, linkId pairs two exercises. Both optional, but a
+  // malformed value would silently break the swap logic, so type-check them when present.
+  if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
+    return false
+  }
+  if (value.linkId !== undefined && !isNonEmptyString(value.linkId)) {
+    return false
+  }
+
   if (!Array.isArray(value.variants) || value.variants.length === 0 || !value.variants.every(isVariant)) {
     return false
   }
@@ -110,7 +119,9 @@ function isSessionExercise(value: unknown) {
     isOptionalString(value.setup) &&
     isOptionalPositiveInteger(value.sets) &&
     isOptionalPositiveInteger(value.reps) &&
-    (value.result === undefined || value.result === 'success' || value.result === 'failure')
+    (value.result === undefined || value.result === 'success' || value.result === 'failure') &&
+    (value.increaseResolved === undefined || typeof value.increaseResolved === 'boolean') &&
+    (value.increaseDelta === undefined || isFiniteNonNegative(value.increaseDelta))
   )
 }
 

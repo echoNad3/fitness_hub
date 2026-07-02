@@ -236,6 +236,10 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   `https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk` is surfaced in
   Settings as "Get the Android app" (hidden when running inside the native app). Native offline now
   relies on the cached service worker after the first online launch.
+- **UI bookkeeping is sync-silent:** `scrollBySession` / `expandedBySession` changes persist to
+  localStorage but do not advance `fitness-hub-v1-updated-at` or trigger a cloud push
+  (`isMeaningfulChange` in `cloudSync.ts`). Only real edits (sessions, templates, prefs, baselines,
+  current-session pointers, rest default) count for last-write-wins.
 - Cloud sync is **offline-first and last-write-wins**: sign-in compares local and remote
   `updated_at`; newer validated remote data is pulled, otherwise local data is upserted. Later
   local changes debounce for 900ms before upload. Remote data must pass `isValidBackup` before it
@@ -263,7 +267,25 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Latest commit (with the two batches below in one commit): **QoL polish for public use.**
+- Latest commit: **increase-stage parity + backend audit.**
+  (1) The increase −/+ buttons behave exactly like the normal weight −/+: press-and-hold repeats
+  with a tick per real step, quick tap steps once, scroll-cancel safe, silent at 0
+  (`adjustIncrease` returns whether the amount changed, read via `dataRef`).
+  (2) **Root-caused the oversized "Increase weight by?" prompt:** the `.ws-weight-prompt` size rule
+  was dead CSS — `.ws-weight strong` (higher specificity) always won, so the prompt rendered at the
+  22px value size. Now `.ws-weight strong.ws-weight-prompt` at `--fs-label`/semibold.
+  (3) **Sync fix (backend):** scrolling or expanding an exercise no longer advances the sync
+  timestamp or uploads to the cloud. `isMeaningfulChange` in `cloudSync.ts` compares the synced
+  slices (sessions/templates/variantPrefs/baselineResults/currentSessionByWorkout/restSeconds) by
+  object identity; pure UI bookkeeping (`scrollBySession`, `expandedBySession`) still persists to
+  localStorage but is sync-silent. Previously a device that merely scrolled could win
+  last-write-wins over another device's real edits. `openSession` keeps object identity when
+  re-opening the already-current session for the same reason.
+  (4) **Backup validation tightened:** `hidden`/`linkId` on groups and
+  `increaseResolved`/`increaseDelta` on session entries are type-checked when present.
+  (5) Tests grew 15 → 18 (meaningful-change, swap flags, increase fields). Native Java plugins,
+  storage wrappers, rest alarm chain, and cloud client were audited — no changes needed.
+- Previous commit `9bc02a0` (three batches in one commit): **QoL polish for public use.**
   (1) Holding the session weight −/+ ticks once per real 1.25 step (countable by feel);
   `adjustWeight` returns whether the value changed, so a − at 0 kg is silent like every other
   stepper at its bound. (2) The running rest dock has a thin accent **drain bar** along its bottom

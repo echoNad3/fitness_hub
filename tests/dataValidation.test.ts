@@ -45,6 +45,38 @@ test('malformed template data cannot be imported', () => {
   assert.equal(isValidBackup({ sessions: [], templates: [{ id: 'workout-a' }] }), false)
 })
 
+test('swap-pair flags must be well-typed when present', () => {
+  const templates = [template('workout-a'), template('workout-b')]
+  const linked = structuredClone(templates)
+  Object.assign(linked[0].groups[0], { hidden: false, linkId: 'pair-1' })
+  assert.equal(isValidTemplates(linked), true)
+
+  const badHidden = structuredClone(templates)
+  Object.assign(badHidden[0].groups[0], { hidden: 'yes' })
+  assert.equal(isValidTemplates(badHidden), false)
+
+  const badLink = structuredClone(templates)
+  Object.assign(badLink[0].groups[0], { linkId: 42 })
+  assert.equal(isValidTemplates(badLink), false)
+})
+
+test('increase-stage fields must be well-typed when present', () => {
+  const entry = (extra: object) => [
+    {
+      id: 'session-1',
+      workoutId: 'workout-a',
+      createdAt: Date.now(),
+      groupEntries: {
+        exercise: { activeVariantId: 'exercise', entries: { exercise: { weight: 20, ...extra } } },
+      },
+    },
+  ]
+
+  assert.equal(isValidSessions(entry({ increaseResolved: true, increaseDelta: 2.5 })), true)
+  assert.equal(isValidSessions(entry({ increaseResolved: 'yes' })), false)
+  assert.equal(isValidSessions(entry({ increaseDelta: -2.5 })), false)
+})
+
 test('session entries reject invalid weights and result values', () => {
   const validSession = {
     id: 'session-1',
