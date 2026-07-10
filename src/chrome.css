@@ -436,6 +436,11 @@
   color: var(--warning);
 }
 
+/* Reused outside sync too (the Android tile/dialog): a newer APK is ready to install. */
+.sync-status.update {
+  color: var(--accent);
+}
+
 .cloud-error {
   color: var(--danger);
   font-size: var(--fs-caption);

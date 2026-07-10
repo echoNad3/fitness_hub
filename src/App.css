@@ -228,6 +228,11 @@ h2 {
   transform: scale(0.98);
 }
 
+/* Choices can be links (the APK download) — same look as the button choices. */
+a.choice {
+  text-decoration: none;
+}
+
 .choice:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -281,6 +286,41 @@ h2 {
 .account-status small {
   color: var(--quiet);
   font-size: var(--fs-meta);
+}
+
+/* Password input with a reveal toggle sitting inside the field's right edge. */
+.pw-field {
+  position: relative;
+  display: block;
+}
+
+.pw-field input {
+  width: 100%;
+  padding-right: 48px;
+}
+
+.pw-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.pw-toggle:active {
+  transform: scale(0.95);
+}
+
+.pw-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-control);
 }
 
 .dialog-actions .primary-action {

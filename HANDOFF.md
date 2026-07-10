@@ -267,7 +267,21 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Latest commit: **menu-consistency rework of the account/app entries** (user feedback on the batch
+- Latest commit: **bigger launcher tiles, Android-app dialog, password reveal.**
+  (1) The four home tiles are now **square-ish vertical tiles** (min-height 128px; icon chip on
+  top, title + subtitle pinned to the bottom) — full-width text lines, so titles like "Android app"
+  and status lines fit without squeezing.
+  (2) The Android tile **opens an explainer dialog** instead of downloading directly: what the APK
+  gives you (home screen, offline, locked-screen buzz), a status block (Update available / You're
+  on the latest version / Installed version unknown / Not installed) with installed + latest build
+  numbers and the release date, a Download choice (an `a.choice` link), and Close. The tile's
+  subtitle mirrors the account tile's status-dot pattern: accent dot "Update ready", green dot
+  "Up to date" (`.sync-status.update` added), or plain text ("Get it · Build N" on the web,
+  "Version unknown" on unstamped APKs). `apkDialogOpen` joins the overlay/back system.
+  (3) **PasswordInput** component: every password field (sign in / create account / change / reset)
+  has an in-field eye toggle (`.pw-field`/`.pw-toggle`) to reveal what's typed.
+  (4) Deploy note: the two earlier Pages failures were transient — `a37934d` deployed successfully.
+- Previous commit `a37934d`: **menu-consistency rework of the account/app entries** (user feedback on the batch
   below). The two slim `.home-row`s were replaced by two extra **tiles in the same `.home-tiles`
   2×2 grid** — identical 80px size and spacing as History/Settings. Short texts: "Sign in / Sync
   your data", signed-in "Account / <status dot+label>", "Android / Build N · 3d ago"

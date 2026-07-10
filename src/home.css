@@ -200,12 +200,16 @@
   gap: 10px;
 }
 
+/* Square-ish launcher tiles: icon chip up top, title + status pinned to the bottom. The taller
+   shape gives subtitles a full line of room instead of squeezing beside the icon. */
 .home-tile {
-  min-height: 80px;
-  padding: 15px 14px;
+  min-height: 128px;
+  padding: 14px;
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
   color: var(--text);
   text-align: left;
   background: var(--surface);
@@ -226,8 +230,9 @@
 
 .home-tile-text {
   min-width: 0;
+  width: 100%;
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
 /* Direct child only — the Account tile nests spans (sync status) inside its subtitle. */
@@ -245,11 +250,6 @@
   font-size: var(--fs-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Tiles can be links (the APK download) — same look as the button tiles. */
-a.home-tile {
-  text-decoration: none;
 }
 
 /* Sync status line inside the Account tile: dot + label at the same size as the other subtitles. */

@@ -586,6 +586,41 @@ const blurOnEnter = (event: { key: string; currentTarget: HTMLInputElement }) =>
   }
 }
 
+// Password field with an eye toggle to reveal what's being typed. Used by every password entry
+// (sign in, create account, change/reset password).
+function PasswordInput({
+  value,
+  autoComplete,
+  onChange,
+}: {
+  value: string
+  autoComplete: string
+  onChange: (value: string) => void
+}) {
+  const [show, setShow] = useState(false)
+
+  return (
+    <span className="pw-field">
+      <input
+        className="number-input text-input"
+        type={show ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <button
+        className="pw-toggle"
+        type="button"
+        aria-label={show ? 'Hide password' : 'Show password'}
+        aria-pressed={show}
+        onClick={() => setShow((current) => !current)}
+      >
+        <Icon name={show ? 'eye-off' : 'eye'} size={19} />
+      </button>
+    </span>
+  )
+}
+
 // The editable fields for a single exercise. Swap alternatives are equal siblings, so every one shows
 // the full set of fields including its own muscle picker. Drafts are held locally and committed on
 // blur so typing never fights the persisted value.
@@ -1010,6 +1045,7 @@ function App() {
   const [cloudActionError, setCloudActionError] = useState('')
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
+  const [apkDialogOpen, setApkDialogOpen] = useState(false)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
   // When this device last completed a successful sync — shown on the home account row.
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
@@ -1054,6 +1090,7 @@ function App() {
     authDialog !== null ||
     passwordDialog !== null ||
     accountDialogOpen ||
+    apkDialogOpen ||
     confirmDialog !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
@@ -1668,6 +1705,7 @@ function App() {
     setAuthDialog(null)
     setPasswordDialog(null)
     setAccountDialogOpen(false)
+    setApkDialogOpen(false)
     setStartDialogOpen(false)
     setConfirmDialog(null)
   }
@@ -1692,36 +1730,51 @@ function App() {
     pulseTimer.current = window.setTimeout(() => setRestPulse(false), 1100)
   }
 
-  // The Android app tile on the home screen — same size and styling as the other tiles. On the web
-  // it's the download entry point; inside the native app it becomes a version status, highlighted
-  // when the latest release is newer than the installed build, quiet when up to date, and neutral
-  // when the installed build is unknown (APKs older than build stamping).
-  const renderApkTile = () => {
+  // Version facts shared by the Android tile and its dialog. `updateAvailable`/`upToDate` can only
+  // be decided inside the native app on a build-stamped APK; everywhere else they stay false.
+  const apkStatus = () => {
     const native = Capacitor.isNativePlatform()
     const build = latestApk?.build ?? null
-    const released = latestApk?.publishedAt != null ? formatRelativeShort(latestApk.publishedAt) : null
-    const updateAvailable = native && build !== null && installedBuild !== null && build > installedBuild
-    const upToDate = native && build !== null && installedBuild !== null && build <= installedBuild
-
-    let title = 'Android'
-    let sub = native ? 'Reinstall to update' : 'Get the app'
-    if (updateAvailable) {
-      title = 'Update'
-      sub = `Build ${build}${released ? ` · ${released}` : ''}`
-    } else if (upToDate) {
-      sub = 'Up to date'
-    } else if (build !== null) {
-      sub = `Build ${build}${released ? ` · ${released}` : ''}`
+    const released = latestApk?.publishedAt != null ? formatRelative(latestApk.publishedAt) : null
+    return {
+      native,
+      build,
+      released,
+      updateAvailable: native && build !== null && installedBuild !== null && build > installedBuild,
+      upToDate: native && build !== null && installedBuild !== null && build <= installedBuild,
     }
+  }
+
+  // The Android app tile — same size and styling as the other tiles. It opens an explainer dialog
+  // (what the app is, version status, download button) rather than downloading straight away. The
+  // subtitle mirrors the account tile: a status dot when the state is known.
+  const renderApkTile = () => {
+    const { native, build, updateAvailable, upToDate } = apkStatus()
 
     return (
-      <a className={`home-tile${updateAvailable ? ' update' : ''}`} href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer noopener">
+      <button className={`home-tile${updateAvailable ? ' update' : ''}`} type="button" onClick={() => setApkDialogOpen(true)}>
         <span className="home-tile-icon"><Icon name="download" size={22} /></span>
         <span className="home-tile-text">
-          <span>{title}</span>
-          <small>{sub}</small>
+          <span>Android app</span>
+          {updateAvailable ? (
+            <small className="home-tile-status">
+              <span className="sync-status update">
+                <i aria-hidden="true" />
+                Update ready
+              </span>
+            </small>
+          ) : upToDate ? (
+            <small className="home-tile-status">
+              <span className="sync-status synced">
+                <i aria-hidden="true" />
+                Up to date
+              </span>
+            </small>
+          ) : (
+            <small>{native ? 'Version unknown' : build !== null ? `Get it · Build ${build}` : 'Get the app'}</small>
+          )}
         </span>
-      </a>
+      </button>
     )
   }
 
@@ -3267,12 +3320,10 @@ function App() {
           </label>
           <label className="ex-field">
             <span>Password</span>
-            <input
-              className="number-input text-input"
-              type="password"
+            <PasswordInput
               autoComplete={authDialog.mode === 'in' ? 'current-password' : 'new-password'}
               value={authDialog.password}
-              onChange={(event) => setAuthDialog({ ...authDialog, password: event.target.value, error: '' })}
+              onChange={(value) => setAuthDialog({ ...authDialog, password: value, error: '' })}
             />
           </label>
           <div className="auth-links">
@@ -3336,6 +3387,55 @@ function App() {
           </button>
         </Dialog>
       )}
+      {apkDialogOpen &&
+        (() => {
+          const { native, build, released, updateAvailable, upToDate } = apkStatus()
+          return (
+            <Dialog title="Android app">
+              <p className="dialog-help">
+                Fitness Hub also runs as a full Android app: it installs on your home screen, works offline, and can
+                buzz through a locked screen when your rest ends. Download the APK below and open it to install.
+                Updating works the same way — your data stays.
+              </p>
+              <div className="account-status">
+                {updateAvailable ? (
+                  <span className="sync-status update">
+                    <i aria-hidden="true" />
+                    Update available
+                  </span>
+                ) : upToDate ? (
+                  <span className="sync-status synced">
+                    <i aria-hidden="true" />
+                    You&rsquo;re on the latest version
+                  </span>
+                ) : native ? (
+                  <span className="sync-status">
+                    <i aria-hidden="true" />
+                    Installed version unknown — reinstall once to enable update checks
+                  </span>
+                ) : (
+                  <span className="sync-status">
+                    <i aria-hidden="true" />
+                    Not installed on this device
+                  </span>
+                )}
+                <small>
+                  {native && installedBuild !== null && `Installed: Build ${installedBuild} · `}
+                  {build !== null ? `Latest: Build ${build}${released ? `, released ${released}` : ''}` : 'Latest version unavailable right now'}
+                </small>
+              </div>
+              <div className="choice-list">
+                <a className="choice" href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer noopener">
+                  <Icon name="download" size={18} />
+                  <span>{updateAvailable && build !== null ? `Download build ${build}` : 'Download the APK'}</span>
+                </a>
+              </div>
+              <button className="choice-cancel" type="button" onClick={() => setApkDialogOpen(false)}>
+                Close
+              </button>
+            </Dialog>
+          )
+        })()}
       {passwordDialog && (
         <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
           {passwordDialog.mode === 'recovery' && (
@@ -3343,12 +3443,10 @@ function App() {
           )}
           <label className="ex-field">
             <span>New password</span>
-            <input
-              className="number-input text-input"
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               value={passwordDialog.value}
-              onChange={(event) => setPasswordDialog({ ...passwordDialog, value: event.target.value, error: '' })}
+              onChange={(value) => setPasswordDialog({ ...passwordDialog, value, error: '' })}
             />
           </label>
           {passwordDialog.error && <p className="auth-error">{passwordDialog.error}</p>}
@@ -3925,30 +4023,6 @@ function formatRelative(timestamp: number) {
 
 function plural(count: number, unit: string) {
   return `${count} ${unit}${count === 1 ? '' : 's'} ago`
-}
-
-// Compact relative time for tight spots (the home tiles): "5m ago", "3h ago", "2d ago".
-function formatRelativeShort(timestamp: number) {
-  const mins = Math.floor((Date.now() - timestamp) / 60000)
-  if (mins < 1) {
-    return 'just now'
-  }
-  if (mins < 60) {
-    return `${mins}m ago`
-  }
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) {
-    return `${hours}h ago`
-  }
-  const days = Math.floor(hours / 24)
-  if (days < 30) {
-    return `${days}d ago`
-  }
-  const months = Math.floor(days / 30)
-  if (months < 12) {
-    return `${months}mo ago`
-  }
-  return `${Math.floor(days / 365)}y ago`
 }
 
 // Full weekday + date for the home header — e.g. "Tuesday 2 July".
