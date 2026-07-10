@@ -555,6 +555,14 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M18 6 6 18M6 6l12 12" />
         </svg>
       )
+    case 'info':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5" />
+          <path d="M12 7.5v.5" />
+        </svg>
+      )
     case 'qr':
       return (
         <svg {...props}>
@@ -1087,6 +1095,7 @@ function App() {
   const [apkDialogOpen, setApkDialogOpen] = useState(false)
   const [passDialogOpen, setPassDialogOpen] = useState(false)
   const [passError, setPassError] = useState('')
+  const [aboutDialogOpen, setAboutDialogOpen] = useState(false)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
   // When this device last completed a successful sync — shown on the home account row.
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
@@ -1133,6 +1142,7 @@ function App() {
     accountDialogOpen ||
     apkDialogOpen ||
     passDialogOpen ||
+    aboutDialogOpen ||
     confirmDialog !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
@@ -1749,6 +1759,7 @@ function App() {
     setAccountDialogOpen(false)
     setApkDialogOpen(false)
     setPassDialogOpen(false)
+    setAboutDialogOpen(false)
     setStartDialogOpen(false)
     setConfirmDialog(null)
   }
@@ -1946,23 +1957,30 @@ function App() {
             ))}
 
           {renderApkTile()}
-        </div>
 
-        <button
-          className="home-pass"
-          type="button"
-          onClick={() => {
-            setPassError('')
-            setPassDialogOpen(true)
-          }}
-        >
-          <span className="home-tile-icon"><Icon name="qr" size={22} /></span>
-          <span className="home-pass-text">
-            <span>Gym pass</span>
-            <small>{data.gymPass ? 'Show your entry code' : 'Add your entry code'}</small>
-          </span>
-          <Icon name="forward" size={18} />
-        </button>
+          <button
+            className="home-tile"
+            type="button"
+            onClick={() => {
+              setPassError('')
+              setPassDialogOpen(true)
+            }}
+          >
+            <span className="home-tile-icon"><Icon name="qr" size={22} /></span>
+            <span className="home-tile-text">
+              <span>Gym pass</span>
+              <small>{data.gymPass ? 'Show entry code' : 'Add entry code'}</small>
+            </span>
+          </button>
+
+          <button className="home-tile" type="button" onClick={() => setAboutDialogOpen(true)}>
+            <span className="home-tile-icon"><Icon name="info" size={22} /></span>
+            <span className="home-tile-text">
+              <span>About</span>
+              <small>What this is</small>
+            </span>
+          </button>
+        </div>
 
         {startDialogOpen && (
           <Dialog title="Start workout">
@@ -3457,8 +3475,8 @@ function App() {
             return (
               <Dialog title="Link a swap">
                 <p className="dialog-help">
-                  Pick an exercise to pair with {source ? soleVariant(source).name : 'this exercise'}. Only one shows
-                  on the workout at a time, with a Swap button to switch between them.
+                  Pair with {source ? soleVariant(source).name : 'this exercise'} — one shows on the workout, a
+                  Swap button switches.
                 </p>
                 {candidates.length === 0 ? (
                   <p className="dialog-help">No other unlinked exercises to link with.</p>
@@ -3585,9 +3603,8 @@ function App() {
           return (
             <Dialog title="Android app">
               <p className="dialog-help">
-                Fitness Hub also runs as a full Android app: it installs on your home screen, works offline, and can
-                buzz through a locked screen when your rest ends. Download the APK below and open it to install.
-                Updating works the same way — your data stays.
+                Home-screen app with the locked-screen rest buzz. Download, open, install — updates work the
+                same way, your data stays.
               </p>
               <div className="account-status">
                 {updateAvailable ? (
@@ -3603,7 +3620,7 @@ function App() {
                 ) : native ? (
                   <span className="sync-status">
                     <i aria-hidden="true" />
-                    Installed version unknown — reinstall once to enable update checks
+                    Version unknown — reinstall once to fix
                   </span>
                 ) : (
                   <span className="sync-status">
@@ -3635,23 +3652,21 @@ function App() {
               <img src={data.gymPass} alt="Your gym entry code" />
             </div>
           ) : (
-            <p className="dialog-help">
-              Save your gym&rsquo;s entry QR code here so you can scan in straight from Fitness Hub instead of
-              opening the gym&rsquo;s app. Upload a screenshot or photo of the code — a tight crop works best.
-            </p>
+            <p className="dialog-help">Your gym&rsquo;s entry QR code, one tap away. A tight crop scans best.</p>
           )}
           {passError && <p className="auth-error">{passError}</p>}
           <div className="choice-list">
-            <label className="choice">
-              <Icon name="upload" size={18} />
-              <span>{data.gymPass ? 'Replace image' : 'Upload image'}</span>
-              <input type="file" accept="image/*" onChange={importGymPass} />
-            </label>
-            {data.gymPass && (
+            {data.gymPass ? (
               <button className="choice failed" type="button" onClick={removeGymPass}>
                 <Icon name="trash" size={18} />
                 <span>Remove</span>
               </button>
+            ) : (
+              <label className="choice">
+                <Icon name="upload" size={18} />
+                <span>Upload image</span>
+                <input type="file" accept="image/*" onChange={importGymPass} />
+              </label>
             )}
           </div>
           <button className="choice-cancel" type="button" onClick={() => setPassDialogOpen(false)}>
@@ -3659,10 +3674,22 @@ function App() {
           </button>
         </Dialog>
       )}
+      {aboutDialogOpen && (
+        <Dialog title="About">
+          <p className="dialog-help">
+            Fitness Hub is your gym command panel: your routine, weights, rest timers, and results on one
+            fast screen. Mark each exercise Done or Failed — it carries your weights forward and tells you
+            when to go heavier. Works offline; sign in to sync across devices.
+          </p>
+          <button className="choice-cancel" type="button" onClick={() => setAboutDialogOpen(false)}>
+            Close
+          </button>
+        </Dialog>
+      )}
       {passwordDialog && (
         <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
           {passwordDialog.mode === 'recovery' && (
-            <p className="dialog-help">You followed a password-reset link — choose a new password for your account.</p>
+            <p className="dialog-help">Choose a new password for your account.</p>
           )}
           <label className="ex-field">
             <span>New password</span>
@@ -3686,8 +3713,7 @@ function App() {
       {syncConflict && (
         <Dialog title="Choose which data to keep">
           <p className="dialog-help">
-            This device has workout data that isn&rsquo;t in your account yet, and your account already has
-            saved data. Keep one — the other is replaced.
+            Both this device and your account have saved data. Keep one — the other is replaced.
           </p>
           <div className="choice-list">
             <button className="choice done" type="button" onClick={() => void resolveSyncConflict('account')}>

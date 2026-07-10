@@ -266,177 +266,56 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 
 ## 7. What is currently implemented (DONE)
 
-Git history (newest first); each commit is a clean restore point:
-- Latest commit: **five approved QoL features + backup check.**
-  (1) **Workout duration** — `WorkoutSession.finishedAt?` is stamped when the last displayed
-  exercise gets a result (re-stamped on re-finish after clearing); History cards read
-  "· took 52 min" (`formatDuration`: "N min" / "1h 24m").
-  (2) **Finish moment** — the session header subtitle becomes an uppercase green
-  "Workout complete" (`.ws-head-title span.complete`, pop-in) when every displayed slot has a
-  result.
-  (3) **Rest "+10s"** — a `+10s` button (`.ws-dock-extend`, cancel-style) sits between the running
-  timer and Cancel; it pushes `restEndsAt` out, extends the drain-bar duration, ticks `increment`,
-  and re-arms the native alarm via the new shared `startRestAlarm(endsAt)` helper (also used by
-  start). Dock grid is `1fr auto auto`.
-  (4) **Per-exercise notes** — optional `ExerciseVariant.note`; a Note field in the editor (commit
-  on blur, empty → undefined) and a single quiet muted line (`.ws-note`) between the facts and
-  guidance on the workout card. Validated as an optional string.
-  (5) **History upgrades** — the tracker covers **28 days (4×7)** (`buildTrackerDays`); above it a
-  **2×2 stats grid** (`.hist-stats`): total workouts, completion % (green), average per week
-  (total / weeks since the oldest session, min 1), and average length (finished sessions only, "—"
-  when none). Four-across overflowed 375px screens, hence 2×2.
-  (6) **Gym pass** — `AppData.gymPass?` stores the user's gym entry QR as a data-URL image
-  (canvas-downscaled to ≤640px, PNG, JPEG-0.9 fallback over 400KB). A full-width `.home-pass` row
-  under the home tiles opens a dialog: the image on a white pad (`.pass-image`,
-  `image-rendering: pixelated`), Upload/Replace (hidden file input inside a `.choice`), a red
-  Remove choice (confirm dialog, destructive haptic), Close. Synced like all data (`gymPass` added
-  to `isMeaningfulChange` slices), validated as an optional string, normalized only if it starts
-  with `data:image/`. New `qr` icon.
-  (7) **Backup check** — export/import verified in-browser (valid import round-trips incl. the gym
-  pass; invalid JSON rejected with the red inline note and data untouched). Export's blob URL is
-  now revoked on a 2s delay — same-tick revoke can abort the save on some browsers.
-  Tests 18 → 19; lint + strict build green.
-- Previous commit `8f513df`: **bigger launcher tiles, Android-app dialog, password reveal.**
-  (1) The four home tiles are now **square-ish vertical tiles** (min-height 128px; icon chip on
-  top, title + subtitle pinned to the bottom) — full-width text lines, so titles like "Android app"
-  and status lines fit without squeezing.
-  (2) The Android tile **opens an explainer dialog** instead of downloading directly: what the APK
-  gives you (home screen, offline, locked-screen buzz), a status block (Update available / You're
-  on the latest version / Installed version unknown / Not installed) with installed + latest build
-  numbers and the release date, a Download choice (an `a.choice` link), and Close. The tile's
-  subtitle mirrors the account tile's status-dot pattern: accent dot "Update ready", green dot
-  "Up to date" (`.sync-status.update` added), or plain text ("Get it · Build N" on the web,
-  "Version unknown" on unstamped APKs). `apkDialogOpen` joins the overlay/back system.
-  (3) **PasswordInput** component: every password field (sign in / create account / change / reset)
-  has an in-field eye toggle (`.pw-field`/`.pw-toggle`) to reveal what's typed.
-  (4) Deploy note: the two earlier Pages failures were transient — `a37934d` deployed successfully.
-- Previous commit `a37934d`: **menu-consistency rework of the account/app entries** (user feedback on the batch
-  below). The two slim `.home-row`s were replaced by two extra **tiles in the same `.home-tiles`
-  2×2 grid** — identical 80px size and spacing as History/Settings. Short texts: "Sign in / Sync
-  your data", signed-in "Account / <status dot+label>", "Android / Build N · 3d ago"
-  (`formatRelativeShort`), update state "Update / Build N · Xd ago" with accent tile
-  (`.home-tile.update`), native up-to-date "Android / Up to date". Tile titles and subtitles are
-  single-line ellipsis (`.home-tile-text > span` — direct child, the Account tile nests spans).
-  The **sign-in dialog was rebuilt on the standard dialog grid** (fields as direct Dialog children
-  → even 12px gaps; the old `.ex-form` wrapper collapsed the spacing) with one `.auth-links` row:
-  mode-switch left, "Forgot password?" right. The "N workouts in the last 7 days" subtitle was
-  removed (clutter) — the home subtitle is the date only. `.home-row*` CSS removed.
-  ⚠️ **Deploy watch:** the Pages deploys for `9fd3d56` and `c174e86` FAILED at the
-  `actions/deploy-pages` step (build job green both times; no public log detail). The live site was
-  still `9bc02a0` at that point. The Android APK builds succeeded. If the next deploy also fails,
-  investigate the Pages environment/deployment settings rather than the app code.
-- Previous commit `c174e86`: **account system + main-menu upgrade.**
-  (1) **Home hub redesign:** under the title a subtitle reads "{Weekday d Month} · N workouts in
-  the last 7 days". Below the History/Settings tiles sit two slim `.home-row`s: the **account row**
-  (signed out: "Sign in to sync" → auth dialog; signed in: email + live sync-status dot + "synced
-  X ago" → Account dialog) and the **Android app row** (web: "Get the Android app · Build N ·
-  updated X ago"; native: "Update available — Build N · released X ago" with accent highlight when
-  the release is newer than the installed build, "Up to date · Build N" otherwise, neutral when the
-  installed build is unknown). Cloud sync and the APK link were removed from Settings (now backup /
-  vibration / reset only; dead `.set-cloud/.set-pill/.set-link/.set-rest` CSS removed).
-  (2) **Account dialog** (root-level): sync status block (dot + label + "Last synced X ago" +
-  errors), Sync now, Change password, Sign out (busy state), Close.
-  (3) **Forgot password:** the Sign-in dialog has "Forgot password? Email me a reset link" →
-  `resetPasswordForEmail(email, { redirectTo: PUBLIC_APP_URL })`. Opening the emailed link lands on
-  the live web app; the `PASSWORD_RECOVERY` auth event opens a **"Set a new password"** dialog
-  (`updateUser({ password })`, min 6 chars). The same dialog doubles as **Change password** from the
-  Account dialog. ⚠️ Requires the Supabase project's Auth → URL Configuration to allow
-  `https://echonad3.github.io/fitness_hub/` as a redirect URL.
-  (4) **Last synced** (`fitness-hub-v1-last-synced`): set by `markSynced()` on every successful
-  push/pull/conflict resolution; shown on the home row and Account dialog.
-  (5) **APK build stamping:** `android.yml` passes `-PappBuildNumber=${{ github.run_number }}`;
-  `build.gradle` writes it into `versionCode`/`versionName`. The app reads it back natively via
-  `CapacitorApp.getInfo()` (builds ≤ 1 = pre-stamping, treated as unknown) and compares with the
-  latest GitHub release (`fetchLatestApk` → build + publishedAt). Old APKs can't self-identify
-  until reinstalled once. `apkVersion.ts` was rewritten accordingly.
-  (6) All new dialogs participate in the overlay/back-gesture system (`dialogOpen`,
-  `closeAllDialogs`); haptics follow the groups (reset link sent / password saved = confirm,
-  failures = error).
-- Previous commit `9fd3d56`: **increase-stage parity + backend audit.**
-  (1) The increase −/+ buttons behave exactly like the normal weight −/+: press-and-hold repeats
-  with a tick per real step, quick tap steps once, scroll-cancel safe, silent at 0
-  (`adjustIncrease` returns whether the amount changed, read via `dataRef`).
-  (2) **Root-caused the oversized "Increase weight by?" prompt:** the `.ws-weight-prompt` size rule
-  was dead CSS — `.ws-weight strong` (higher specificity) always won, so the prompt rendered at the
-  22px value size. Now `.ws-weight strong.ws-weight-prompt` at `--fs-label`/semibold.
-  (3) **Sync fix (backend):** scrolling or expanding an exercise no longer advances the sync
-  timestamp or uploads to the cloud. `isMeaningfulChange` in `cloudSync.ts` compares the synced
-  slices (sessions/templates/variantPrefs/baselineResults/currentSessionByWorkout/restSeconds) by
-  object identity; pure UI bookkeeping (`scrollBySession`, `expandedBySession`) still persists to
-  localStorage but is sync-silent. Previously a device that merely scrolled could win
-  last-write-wins over another device's real edits. `openSession` keeps object identity when
-  re-opening the already-current session for the same reason.
-  (4) **Backup validation tightened:** `hidden`/`linkId` on groups and
-  `increaseResolved`/`increaseDelta` on session entries are type-checked when present.
-  (5) Tests grew 15 → 18 (meaningful-change, swap flags, increase fields). Native Java plugins,
-  storage wrappers, rest alarm chain, and cloud client were audited — no changes needed.
-- Previous commit `9bc02a0` (three batches in one commit): **QoL polish for public use.**
-  (1) Holding the session weight −/+ ticks once per real 1.25 step (countable by feel);
-  `adjustWeight` returns whether the value changed, so a − at 0 kg is silent like every other
-  stepper at its bound. (2) The running rest dock has a thin accent **drain bar** along its bottom
-  edge (`.ws-dock-bar`, width animates 1s linear between countdown ticks; driven by a new
-  `restDuration` state captured at start so switching exercises mid-rest doesn't skew it).
-  (3) Settings inline notes (backup results, vibration test) **auto-clear after 5s**.
-  (4) **Bug fix:** History and the home Resume card counted "total" from raw `workout.groups`
-  (hidden + both linked members), while progress counts displayed slots — a finished Workout B read
-  "6/8 Unfinished" and Resume never disappeared. Both now use `displayedGroups` /
-  `isSessionFinished`. (5) The history chip reads **Finished** (was "Done"), matching the tracker
-  legend; the home Settings tile subtitle is "Sync, backup, reset"; friendlier empty-history text.
-  (6) Decision: the "Download the Android app" row **stays visible inside the native app** — it's
-  the reinstall path for native updates.
-- Same commit: **frontend consistency audit** (haptics + UI). Haptics: the Load segmented control fires `selection` on both options (was
-  `toggle-on/off` — Android's TOGGLE_OFF is near-imperceptible, so tapping "Total" felt silent, the
-  user-reported bug); Hide/Show on workout fires `selection` (was silent); Link fires `selection`
-  (was `confirm`) so **all lineup edits — hide/show, link/unlink, swap, add, reorder — share the
-  light selection/drag group**; the increase stage's Cancel fires `confirm` matching Accept (same
-  button pair as Done/Failed); steppers are silent when a tap can't change the value (rest at the
-  5s/10m bounds, increase − already at 0), matching Sets/Reps. UI: Settings Export/Import replaced
-  `window.alert` with inline row notes like Test vibration (errors use `.set-note-error` danger
-  color, `role="status"`); the Hide button uses new `eye`/`eye-off` icons (was up/down chevrons,
-  which read as expand/collapse); the Start-workout dialog Cancel is `.choice-cancel` (one-off
-  `.start-cancel` removed); dock start/time/cancel unified at `--radius-card` (were 15/15/14px);
-  hardcoded 12px/10px control radii tokenized to `--radius-control` (`.ws-back`, `.ws-stepbtn`,
-  `.ws-weight`, `.ws-resultbtn`, `.ws-swap`, `.set-stepper button`, `.set-pill`,
-  `.home-tile-icon`); press feedback standardized — small/icon controls scale 0.95 (`.ws-back`,
-  `.ws-stepbtn`, `.hist-del`, `.ex-muscle`), large surfaces stay 0.98; `font-weight: 850` on the
-  dock value → `--fw-bold`; `hist-chip.unfinished` text `#4b1116` matches `ws-chip.failed`; merged
-  the duplicate `.hist-card` rule; `.ex-control-btn` transitions the standard property set. Tests
-  (15), lint, and build pass; verified in the browser preview (home, start dialog, session, edit
-  mode, settings) with no console errors.
-- Same commit: five changes from live-app feedback.
-  (1) **Time is mm:ss everywhere** — the rest dock reads `Start · 3:00`, the collapsed edit row reads
-  `rest 3:00`, the running countdown stays `2:30`. In edit mode rest is a **[−] [m] [s] [+]** control:
-  the `[m]`/`[s]` windows are typeable and centered, and the −/+ step ±10s and **roll over** (2:50 +
-  10s → 3:00). Stored as total seconds, clamped 5s–10m. `formatRestPreset` was removed.
-  (2) **Last-result guidance box** always sits **below** Setup/Target, in every phase.
-  (3) **Log out re-prompts** — sign-out clears `SYNCED_ACCOUNT_KEY`, so signing back in (even to the
-  same account) re-shows "choose which data to keep." Lets the user work locally after logout and
-  consciously pick on re-login. (Local data is never deleted on sign-out.)
-  (4) **Swaps are hide + link (flat model)** — every exercise is its own reorderable row (no nesting).
-  Each group holds a single exercise (`variants` is length-1) plus optional `hidden?` and `linkId?`
-  flags. In the editor each exercise's footer has **Hide from workout** (dims the row; excluded from
-  the workout screen) and **Link with another exercise** (a picker of unlinked exercises → pairs them
-  via a shared `linkId`, hiding all but the topmost). Linked rows show a `⇄ partner` badge and an
-  **Unlink** action. On the workout screen `displayedGroups()` collapses a linked pair to **one slot at
-  the topmost member's position**, showing the visible member with a **"Swap with X"** button
-  (`swapLinked` flips which is hidden and moves the expanded state to the newcomer). Hidden standalone
-  exercises are dropped from the workout. Rail / `countDone` / `isSessionFinished` / auto-advance
-  (`getNextPendingGroupId`) / the home resume rail all count displayed slots. `swapVariant`,
-  `getNextVariant`, `addVariant`, `removeVariant` were removed; `linkExercise` / `unlinkExercise` /
-  `toggleHidden` / `swapLinked` added. **Pairs only** (a linked exercise can't be a link target until
-  unlinked); **each keeps its own rest**. Per the user, no data migration was needed (testing phase) —
-  the default Workout B fly groups were re-authored as flat linked pairs; legacy multi-variant saves
-  simply show their first variant.
-  (5) **"Increase weight?" confirmation stage** — when an exercise's last result was a *success*, the
-  freshly-opened card shows "Increase weight by?" in the weight box with the −/+ (first − seeds 0,
-  first + seeds 1.25, then ±1.25; tap the box to type the amount to add), and Done/Failed become
-  **Accept**/**Cancel**. Accept sets weight = carried weight **+** amount and returns the card to
-  normal; Cancel keeps the carried weight. Both mark the stage resolved (session entry fields
-  `increaseResolved` / `increaseDelta`) so it doesn't reappear. Failed / no-record exercises skip the
-  stage entirely. This forces a conscious "did I increase?" decision when tired. The prompt reads
-  "Increase" / "weight by?" on two lines (no total/per-hand caption). **Re-selecting "done"** in the
-  Last-result prompt reopens the stage (`setPreviousResult` clears the increase flags), so the user
-  can stack another increase on top of a prior one.
+Git history (newest first); each commit is a clean restore point. Entries are summaries — details
+live in the commit messages and the feature list below. **Verification note for the latest
+commit:** the browser-preview tool was unavailable that session, so it shipped on tests (19) +
+lint + strict build + reuse of previously verified components; give the live app a quick look.
+- Latest commit: **menu polish round.** Gym pass became a square tile and a new **About** tile
+  (short app summary dialog) fills the grid — six tiles, 3×2; the full-width `.home-pass` row and
+  its CSS were removed. The gym-pass dialog offers **Remove or Upload, never both** (replace =
+  remove, then upload). Dialog copy tightened app-wide (Android app, gym pass, link-a-swap, sync
+  conflict, password recovery — short and direct, no filler). The rest dock's `+10s` and `Cancel`
+  share one class with `min-width: 88px`, so they are equal-sized. New `info` icon.
+- `62114c5` **Five QoL features + backup check:** workout duration on History cards
+  (`WorkoutSession.finishedAt`, stamped when the last displayed exercise gets a result); green
+  "Workout complete" header state (`.ws-head-title span.complete`); rest **+10s** re-arms the
+  native alarm via the shared `startRestAlarm(endsAt)` helper; optional per-exercise
+  `ExerciseVariant.note` (editor field + quiet `.ws-note` line on the card); History = **28-day
+  4×7 tracker** (`buildTrackerDays`) + **2×2 stats grid** (total / completion % / per-week / avg
+  length — 4-across overflowed 375px); **Gym pass** (`AppData.gymPass`: canvas-downscaled ≤640px
+  data-URL, PNG with JPEG fallback >400KB, synced via `isMeaningfulChange`, validated, shown on a
+  white `.pass-image` pad with `image-rendering: pixelated`); export blob-URL revoke delayed 2s
+  (same-tick revoke can abort the download). Import/export verified incl. invalid-file rejection.
+- `8f513df` Square launcher tiles (icon top, text bottom, min-height 128px, single-line ellipsis);
+  Android tile opens an explainer **dialog** with a status dot (accent "Update ready" / green "Up
+  to date", `.sync-status.update`); `PasswordInput` eye toggle on every password field.
+- `a37934d` Account/app entries became grid tiles matching History/Settings; the sign-in dialog was
+  rebuilt on the standard 12px dialog grid (a wrapper div had collapsed it) with an `.auth-links`
+  row; week-count subtitle removed. (The two prior Pages deploy failures were transient.)
+- `c174e86` **Account system + menu upgrade:** Account dialog (sync status, "last synced" via
+  `markSynced()` → `fitness-hub-v1-last-synced`, Sync now, Change password, Sign out);
+  forgot-password reset emails (`resetPasswordForEmail` → `PUBLIC_APP_URL`) and a
+  `PASSWORD_RECOVERY` set-new-password dialog (⚠️ Supabase Auth → URL Configuration must allow
+  `https://echonad3.github.io/fitness_hub/` — the user configured this); **APK build stamping**
+  (`android.yml` passes `-PappBuildNumber=${{ github.run_number }}` → `versionCode`; read back via
+  `CapacitorApp.getInfo()`, builds ≤ 1 treated as unknown) compared against `fetchLatestApk`
+  (build + release date). Cloud/APK rows left Settings.
+- `9fd3d56` Increase-stage −/+ hold-to-repeat parity with the weight stepper; fixed the oversized
+  "Increase weight by?" prompt (its size rule was dead CSS, out-specified by `.ws-weight strong`);
+  **sync fix** — scroll/expand no longer bumps the sync timestamp or uploads
+  (`isMeaningfulChange` in `cloudSync.ts`; UI bookkeeping persists locally but is sync-silent —
+  previously a merely-scrolled device could overwrite real edits via last-write-wins); backup
+  validation tightened (swap flags, increase fields).
+- `9bc02a0` Three batches in one commit: **QoL polish** (hold-stepper ticks per real step, rest
+  dock **drain bar** driven by `restDuration`, Settings notes auto-clear after 5s, finished-count
+  bug fix — History/Resume now count displayed slots via `displayedGroups`/`isSessionFinished`,
+  "Finished" chip wording); the app-wide **consistency audit** (semantic haptic groups: segmented
+  controls and all lineup edits = `selection`, increase Accept/Cancel = `confirm` like Done/Failed,
+  steppers silent at bounds; inline notes replaced `window.alert`; eye icons for Hide; radii →
+  tokens, press-depth standardized 0.98/0.95, dialog cancels unified); and the **five live-app
+  changes** (mm:ss everywhere with the `[−][m][s][+]` rest control, guidance box below
+  Setup/Target, log-out re-prompts the sync choice, **swaps = hide + link flat model**, the
+  **"Increase weight?" stage** — both fully described in the feature list below).
 - Previous implementation: refresh the first-use/reset Workout A and Workout B seeds with the user's
   revised exercise names, setup notes, rest times, targets, weights, and baseline results. Existing
   saved routines are intentionally untouched; `y` maps to Done/success and `n` to Failed/failure.
@@ -444,29 +323,13 @@ Git history (newest first); each commit is a clean restore point:
   haptics; add an Android `performHapticFeedback` bridge that respects system settings; change the
   locked-screen timer alert from ~6s pulses to one maximum-amplitude 3s vibration.
 - `abe5872` Prevent haptics when scrolling from buttons
-- `f79b1c2` Editor, haptics, and swap overhaul from live APK feedback, refined over
-  two further rounds of feedback —
-  (1) **universal haptics**: one delegated listener gives every button the same light tap, with a
-  firm tier for meaningful actions (`data-haptic="confirm"`); replaces the scattered inconsistent
-  calls. (2) **Stepper −/+ contrast**: −/+ buttons (editor Sets/Reps/Rest + the session weight
-  stepper) stay **grey (`--raised`) with a blue accent glyph**, at the original compact size — the
-  glyph is enlarged to 20px and bolded (`stroke-width` 2.4) via CSS with an accent-tinted border so
-  it reads clearly. (An earlier attempt made them bigger/spread out, then fully blue-filled; both were
-  walked back — blue-fill everywhere looked garish. Only the save ✓ and the selected Load segment are
-  filled blue.) (3) **Load** is a two-option **segmented control** (Total / Per hand, both visible).
-  Fixed a horizontal-overflow bug in the editor grids (`minmax(0,1fr)` + `min-width:0`). (4) **Swap
-  alternatives editable in place**: each exercise's editor has a "Swap alternatives" section to
-  add/remove alternates; a swap inherits the main's muscle group (no muscle picker; changing the
-  main's muscle updates them all). (5) **Per-variant last result**: guidance reaches back to the last
-  session where *that specific variant* was actually performed. (6) **Remove exercise** sits in a
-  divider-separated "danger" footer as a quiet red text button, well away from Add-swap, and — like
-  all edits — it **stays in edit mode and is only persisted on save (✓)**; ✕/back reverts it via the
-  edit snapshot. (7) Collapsed edit-mode rows are **the same height (68px) as collapsed session rows**
-  so toggling edit mode doesn't resize the list. (8) The cloud **"choose which data to keep"** prompt
-  now has a **Cancel** that signs back out and returns to the pre-login state (local data untouched);
-  the "Last session result" prompt's dismiss is a matching quiet **Cancel** (`.choice-cancel`).
-  (9) Fixed a real setState-in-render bug (commit-on-blur handlers were calling a parent `setState`
-  inside a `setState` updater). Rest labels read `1m30s` (was `1m30`).
+- `f79b1c2` Editor/haptics/swap overhaul from live APK feedback: grey −/+ steppers with a bold blue
+  glyph (full blue fill was tried and walked back — only the save ✓ and selected Load segment stay
+  filled); the Load segmented control; an editor horizontal-overflow fix (`minmax(0,1fr)` +
+  `min-width:0`); per-variant last result; the danger-footer Remove that only persists on save (✓);
+  68px collapsed edit rows matching session rows; conflict-prompt Cancel; and a real
+  setState-in-render bug fix. (Its universal-haptics listener was later replaced by the semantic
+  haptic system.)
 - Previous change: suppress incidental workout scrolling, seal the rest dock's lower edge, and make
   expanded exercise name/setup/target read-only (all routine edits remain under the header pencil).
 - `8c90072` Establish a type/spacing scale and apply it app-wide
@@ -521,10 +384,11 @@ Git history (newest first); each commit is a clean restore point:
   dock whose opaque lower mask prevents exercise content leaking below it; while the timer runs a
   thin accent drain bar along the dock's bottom edge shows remaining rest at a glance. Viewport-fit sessions
   suppress up to 64px of incidental overflow; longer routines retain normal scrolling.
-- **Home hub** (`main`) — title + date/week-count subtitle, **Resume** card (only for an unfinished
-  latest session), **Start** (auto-suggests the opposite of the last workout), **History** /
-  **Settings** tiles, then the **account row** (sign-in / account management) and the **Android
-  app row** (version-aware download/update). No browser confirms.
+- **Home hub** (`main`) — title + date subtitle, **Resume** card (only for an unfinished latest
+  session), **Start** (auto-suggests the opposite of the last workout), then a 3×2 grid of square
+  launcher tiles: **History**, **Settings**, **Sign in / Account** (live sync-status dot),
+  **Android app** (version-aware status dot; opens the download dialog), **Gym pass** (the saved
+  entry QR; opens its dialog), and **About** (short app summary). No browser confirms.
 - **History** — clean cards, relative + absolute time, a green **Finished** / red **Unfinished**
   chip with the displayed-slot count, the 14-day tracker, trash delete.
 - **Settings** — Export/Import JSON backup, Test vibration, Reset (cloud sync and the APK download
@@ -532,8 +396,12 @@ Git history (newest first); each commit is a clean restore point:
   rows (no browser alert popups anywhere in the app) and auto-clear after 5 seconds.
 - **Account management** — optional email/password auth with create-account, forgot-password reset
   emails, a recovery flow that prompts for a new password, an Account dialog (sync status, last
-  synced, Sync now, Change password, Sign out), and a home-row sync status. See the latest-commit
-  entry above for wiring details.
+  synced, Sync now, Change password, Sign out), and a home-tile sync status.
+- **Gym pass** — the user's gym entry QR code, uploaded as an image (canvas-downscaled data URL in
+  `AppData.gymPass`, synced + backed up), shown full-size on a white pad from its home tile. The
+  dialog offers Upload (when empty) or Remove (when set) — never both.
+- **About tile** — a short app-summary dialog; the user called it temporary (it fills the sixth
+  grid slot until something better exists).
 - **In-place editing** — the pencil turns the workout screen into edit mode *on the same screen* (no
   separate menu, no dialog). Each exercise becomes a drag-sortable accordion (`EditableExerciseItem`,
   grip handle, press-and-hold to drag) whose expanded body is the **inline editor**. The editor is

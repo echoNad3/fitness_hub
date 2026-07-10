@@ -275,46 +275,9 @@
   background: var(--accent);
 }
 
-/* Gym pass — a full-width row under the tiles that opens the saved entry QR code. */
-.home-pass {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 70px;
-  padding: 14px;
-  color: var(--text);
-  text-align: left;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-}
-
-.home-pass-text {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.home-pass-text span {
-  font-size: var(--fs-heading);
-  font-weight: var(--fw-bold);
-}
-
-.home-pass-text small {
-  color: var(--muted);
-  font-size: var(--fs-meta);
-}
-
-.home-pass > svg:last-child {
-  flex: 0 0 auto;
-  color: var(--quiet);
-}
-
 .home-resume,
 .home-start-primary,
-.home-tile,
-.home-pass {
+.home-tile {
   cursor: pointer;
   transition:
     transform 120ms ease,
@@ -324,15 +287,13 @@
 
 .home-resume:active,
 .home-start-primary:active,
-.home-tile:active,
-.home-pass:active {
+.home-tile:active {
   transform: scale(0.98);
 }
 
 .home-resume:focus-visible,
 .home-start-primary:focus-visible,
-.home-tile:focus-visible,
-.home-pass:focus-visible {
+.home-tile:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -340,8 +301,7 @@
 @media (prefers-reduced-motion: reduce) {
   .home-resume,
   .home-start-primary,
-  .home-tile,
-  .home-pass {
+  .home-tile {
     transition: none;
   }
 }

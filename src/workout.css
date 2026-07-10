@@ -500,20 +500,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Cancel and "+10s" share one look and one size — equal widths, per the layout standard. */
 .ws-dock-cancel {
   height: 54px;
-  padding: 0 18px;
+  min-width: 88px;
+  padding: 0 12px;
+  display: grid;
+  place-items: center;
   color: var(--text);
   background: var(--surface-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   font-size: var(--fs-label);
   font-weight: var(--fw-bold);
-}
-
-/* "+10s" shares the cancel button's look; slightly narrower and numeric. */
-.ws-dock-cancel.ws-dock-extend {
-  padding: 0 14px;
   font-variant-numeric: tabular-nums;
 }
 
