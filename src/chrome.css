@@ -115,7 +115,48 @@
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-/* Last-14-days tracker (today first / leftmost) */
+/* Headline stats: total workouts, completion rate, weekly average, average length. Two per row —
+   four across forces the uppercase captions past the viewport on narrow phones. */
+.hist-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.hist-stat {
+  min-height: 66px;
+  padding: 10px 8px;
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.hist-stat strong {
+  font-size: var(--fs-heading);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hist-stat strong.good {
+  color: var(--success);
+}
+
+.hist-stat span {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Last-28-days tracker (today first / top-left, 4 rows × 7 columns) */
 
 .hist-tracker {
   display: grid;

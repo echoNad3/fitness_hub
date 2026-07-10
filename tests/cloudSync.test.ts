@@ -52,6 +52,7 @@ test('only real data edits count as meaningful for sync', () => {
   assert.equal(isMeaningfulChange(base, { ...base, sessions: [] }), true)
   assert.equal(isMeaningfulChange(base, { ...base, templates: [] }), true)
   assert.equal(isMeaningfulChange(base, { ...base, restSeconds: 120 }), true)
+  assert.equal(isMeaningfulChange(base, { ...base, gymPass: 'data:image/png;base64,abc' }), true)
 })
 
 test('local timestamps always move forward', () => {

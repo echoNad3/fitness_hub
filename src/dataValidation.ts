@@ -42,7 +42,8 @@ function isVariant(value: unknown) {
     isFiniteNonNegative(value.weight) &&
     typeof value.perHand === 'boolean' &&
     typeof value.lastResult === 'string' &&
-    PREVIOUS_RESULTS.has(value.lastResult)
+    PREVIOUS_RESULTS.has(value.lastResult) &&
+    isOptionalString(value.note)
   )
 }
 
@@ -142,6 +143,7 @@ function isWorkoutSession(value: unknown) {
     WORKOUT_IDS.has(value.workoutId) &&
     typeof value.createdAt === 'number' &&
     Number.isFinite(value.createdAt) &&
+    (value.finishedAt === undefined || (typeof value.finishedAt === 'number' && Number.isFinite(value.finishedAt))) &&
     isRecord(value.groupEntries) &&
     Object.values(value.groupEntries).every(isSessionGroup)
   )
@@ -172,6 +174,7 @@ export function isValidBackup(value: unknown) {
     (value.currentSessionByWorkout === undefined ||
       isRecordOf(value.currentSessionByWorkout, (entry) => typeof entry === 'string')) &&
     (value.restSeconds === undefined ||
-      (typeof value.restSeconds === 'number' && Number.isFinite(value.restSeconds) && value.restSeconds > 0))
+      (typeof value.restSeconds === 'number' && Number.isFinite(value.restSeconds) && value.restSeconds > 0)) &&
+    isOptionalString(value.gymPass)
   )
 }

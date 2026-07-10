@@ -233,6 +233,27 @@ a.choice {
   text-decoration: none;
 }
 
+/* Choices can host a hidden file input (the gym-pass upload). */
+.choice input[type='file'] {
+  display: none;
+}
+
+/* The saved gym QR code — on a white pad so scanners get clean contrast, crisp edges preserved. */
+.pass-image {
+  padding: 14px;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  border-radius: var(--radius-control);
+}
+
+.pass-image img {
+  width: 100%;
+  max-height: min(58vh, 340px);
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .choice:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

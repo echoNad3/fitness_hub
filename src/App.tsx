@@ -55,6 +55,8 @@ type ExerciseVariant = {
   weight: number
   perHand: boolean
   lastResult: PreviousResult
+  // Optional free-text note ("grip felt off", "try seat 5") shown quietly on the workout card.
+  note?: string
 }
 
 // A group is a single exercise slot. `variants` always holds exactly one exercise now (swaps are no
@@ -103,6 +105,9 @@ type WorkoutSession = {
   id: string
   workoutId: WorkoutId
   createdAt: number
+  // Set when the last displayed exercise gets a result (the session transitions to finished), so
+  // History can show how long the workout took.
+  finishedAt?: number
   groupEntries: Record<string, SessionGroup>
 }
 
@@ -115,6 +120,8 @@ type AppData = {
   scrollBySession: Record<string, number>
   currentSessionByWorkout: Partial<Record<WorkoutId, string>>
   restSeconds: number
+  // The user's gym entry QR code, stored as a downscaled data-URL image (shown from the home menu).
+  gymPass?: string
 }
 
 type Screen =
@@ -548,6 +555,16 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M18 6 6 18M6 6l12 12" />
         </svg>
       )
+    case 'qr':
+      return (
+        <svg {...props}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <path d="M14 14h3v3h-3z" />
+          <path d="M21 14v1M14 20v1M18 21h3M21 18h-1" />
+        </svg>
+      )
     case 'eye':
       return (
         <svg {...props}>
@@ -634,6 +651,7 @@ function VariantFields({
   const { name, category, setup, sets, reps, weight, perHand } = variant
   const [nameDraft, setNameDraft] = useState<string | null>(null)
   const [setupDraft, setSetupDraft] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [weightDraft, setWeightDraft] = useState<string | null>(null)
 
   // Commit on blur. Read the draft from state and call the parent update OUTSIDE any setState updater
@@ -654,6 +672,13 @@ function VariantFields({
     if (setupDraft !== null) {
       onPatch({ setup: setupDraft.trim() })
       setSetupDraft(null)
+    }
+  }
+  const commitNote = () => {
+    if (noteDraft !== null) {
+      const trimmed = noteDraft.trim()
+      onPatch({ note: trimmed === '' ? undefined : trimmed })
+      setNoteDraft(null)
     }
   }
   const commitWeight = () => {
@@ -777,6 +802,20 @@ function VariantFields({
           onFocus={() => setSetupDraft(setup)}
           onChange={(event) => setSetupDraft(event.target.value)}
           onBlur={commitSetup}
+          onKeyDown={blurOnEnter}
+        />
+      </label>
+
+      <label className="ex-field">
+        <span>Note</span>
+        <input
+          className="ws-editor-input"
+          type="text"
+          placeholder="e.g. grip felt off, go slower"
+          value={noteDraft ?? (variant.note ?? '')}
+          onFocus={() => setNoteDraft(variant.note ?? '')}
+          onChange={(event) => setNoteDraft(event.target.value)}
+          onBlur={commitNote}
           onKeyDown={blurOnEnter}
         />
       </label>
@@ -1046,6 +1085,8 @@ function App() {
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
   const [apkDialogOpen, setApkDialogOpen] = useState(false)
+  const [passDialogOpen, setPassDialogOpen] = useState(false)
+  const [passError, setPassError] = useState('')
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
   // When this device last completed a successful sync — shown on the home account row.
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
@@ -1091,6 +1132,7 @@ function App() {
     passwordDialog !== null ||
     accountDialogOpen ||
     apkDialogOpen ||
+    passDialogOpen ||
     confirmDialog !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
@@ -1706,6 +1748,7 @@ function App() {
     setPasswordDialog(null)
     setAccountDialogOpen(false)
     setApkDialogOpen(false)
+    setPassDialogOpen(false)
     setStartDialogOpen(false)
     setConfirmDialog(null)
   }
@@ -1717,6 +1760,39 @@ function App() {
     window.setTimeout(() => {
       setHighlightSession((current) => (current === sessionId ? null : current))
     }, 1800)
+  }
+
+  // Schedule (or reschedule) the native locked-screen alarm for the given end time, surfacing the
+  // outdated-APK / failure states under the dock. Shared by starting and extending the rest timer.
+  const startRestAlarm = (endsAt: number) => {
+    setRestNotificationMessage('')
+    void scheduleRestNotification(endsAt).then((result) => {
+      if (result.status === 'outdated') {
+        setRestNotificationMessage(
+          'Locked-screen buzz needs an app update — reinstall the latest APK. The visible timer still works.',
+        )
+        void haptic('error')
+      } else if (result.status === 'failed') {
+        if (result.detail) {
+          console.warn('Rest alarm failed:', result.detail)
+        }
+        setRestNotificationMessage('Locked-screen buzz unavailable. The visible timer still works.')
+        void haptic('error')
+      }
+    })
+  }
+
+  // "+10s" while resting: push the end time out without restarting, and re-arm the native alarm.
+  const extendRest = () => {
+    if (!restRunning || restEndsAt === null) {
+      return
+    }
+    const endsAt = restEndsAt + 10_000
+    setRestEndsAt(endsAt)
+    setRestSeconds(restSecondsRemaining(endsAt, Date.now()))
+    setRestDuration((current) => current + 10)
+    void haptic('increment')
+    startRestAlarm(endsAt)
   }
 
   const triggerRestDone = () => {
@@ -1872,6 +1948,22 @@ function App() {
           {renderApkTile()}
         </div>
 
+        <button
+          className="home-pass"
+          type="button"
+          onClick={() => {
+            setPassError('')
+            setPassDialogOpen(true)
+          }}
+        >
+          <span className="home-tile-icon"><Icon name="qr" size={22} /></span>
+          <span className="home-pass-text">
+            <span>Gym pass</span>
+            <small>{data.gymPass ? 'Show your entry code' : 'Add your entry code'}</small>
+          </span>
+          <Icon name="forward" size={18} />
+        </button>
+
         {startDialogOpen && (
           <Dialog title="Start workout">
             <div className="start-sheet">
@@ -1921,14 +2013,46 @@ function App() {
   }
 
   const renderHistory = (sessions: WorkoutSession[], onBack: () => void, title = 'History') => {
-    const tracker = buildTwoWeekTracker(sessions)
+    const tracker = buildTrackerDays(sessions)
+    // Headline stats over all recorded sessions (the list is sorted newest-first).
+    const totalCount = sessions.length
+    const finishedCount = sessions.filter(isSessionFinished).length
+    const completionRate = totalCount > 0 ? Math.round((finishedCount / totalCount) * 100) : 0
+    const oldest = sessions[sessions.length - 1]
+    const spanWeeks = oldest ? Math.max(1, (Date.now() - oldest.createdAt) / (7 * 24 * 60 * 60 * 1000)) : 1
+    const perWeek = (totalCount / spanWeeks).toFixed(1)
+    const durations = sessions
+      .filter((session) => session.finishedAt !== undefined && session.finishedAt > session.createdAt)
+      .map((session) => (session.finishedAt as number) - session.createdAt)
+    const avgLength =
+      durations.length > 0 ? formatDuration(durations.reduce((sum, value) => sum + value, 0) / durations.length) : '—'
+
     return (
       <Page title={title} onBack={onBack}>
         {sessions.length === 0 ? (
           <EmptyState text="No workouts yet — sessions you start will show up here." />
         ) : (
           <>
-            <div className="hist-tracker" aria-label="Last 14 days">
+            <div className="hist-stats" aria-label="Workout stats">
+              <div className="hist-stat">
+                <strong>{totalCount}</strong>
+                <span>Workouts</span>
+              </div>
+              <div className="hist-stat">
+                <strong className="good">{completionRate}%</strong>
+                <span>Completed</span>
+              </div>
+              <div className="hist-stat">
+                <strong>{perWeek}</strong>
+                <span>Per week</span>
+              </div>
+              <div className="hist-stat">
+                <strong>{avgLength}</strong>
+                <span>Avg length</span>
+              </div>
+            </div>
+
+            <div className="hist-tracker" aria-label="Last 28 days">
               <div className="hist-tracker-row">
                 {tracker.map((day) => {
                   const latest = day.sessions[0]
@@ -1955,7 +2079,7 @@ function App() {
               <div className="hist-tracker-legend">
                 <span><i className="dot done" />Finished</span>
                 <span><i className="dot unfinished" />Unfinished</span>
-                <span className="hist-tracker-ends">last 14 days</span>
+                <span className="hist-tracker-ends">last 28 days</span>
               </div>
             </div>
 
@@ -1976,7 +2100,11 @@ function App() {
                     <button className="hist-open" type="button" onClick={() => openSession(session.workoutId, session.id)}>
                       <span className="hist-main">
                         <strong>{workout.name}</strong>
-                        <small>{formatAbsolute(session.createdAt)}</small>
+                        <small>
+                          {formatAbsolute(session.createdAt)}
+                          {session.finishedAt !== undefined && session.finishedAt > session.createdAt &&
+                            ` · took ${formatDuration(session.finishedAt - session.createdAt)}`}
+                        </small>
                         <small className="hist-ago">{formatRelative(session.createdAt)}</small>
                       </span>
                       <span className={`hist-chip ${finished ? 'done' : 'unfinished'}`}>
@@ -2200,7 +2328,13 @@ function App() {
           )}
           <div className="ws-head-title">
             <strong>{workout.name}</strong>
-            <span>{editMode ? 'Editing' : `${doneCount}/${slots.length} done`}</span>
+            {editMode ? (
+              <span>Editing</span>
+            ) : doneCount === slots.length && slots.length > 0 ? (
+              <span className="complete">Workout complete</span>
+            ) : (
+              <span>{`${doneCount}/${slots.length} done`}</span>
+            )}
           </div>
           <button
             className={`ws-back ws-edit-toggle${editMode ? ' saving' : ''}`}
@@ -2353,6 +2487,8 @@ function App() {
                   <strong>{formatTarget(displaySets, displayReps)}</strong>
                 </div>
               </div>
+
+              {variant.note && <p className="ws-note">{variant.note}</p>}
 
               <button
                 className={`ws-guide ${guidanceClass(previous)}`}
@@ -2556,6 +2692,9 @@ function App() {
               <i style={{ width: `${Math.max(0, Math.min(100, (restSeconds / Math.max(1, restDuration)) * 100))}%` }} />
             </span>
           </div>
+          <button className="ws-dock-cancel ws-dock-extend" type="button" onClick={extendRest}>
+            +10s
+          </button>
           <button
             className="ws-dock-cancel"
             type="button"
@@ -2581,22 +2720,8 @@ function App() {
             setRestDuration(activeRest)
             setRestEndsAt(endsAt)
             setRestRunning(true)
-            setRestNotificationMessage('')
             void haptic('toggle-on')
-            void scheduleRestNotification(endsAt).then((result) => {
-              if (result.status === 'outdated') {
-                setRestNotificationMessage(
-                  'Locked-screen buzz needs an app update — reinstall the latest APK. The visible timer still works.',
-                )
-                void haptic('error')
-              } else if (result.status === 'failed') {
-                if (result.detail) {
-                  console.warn('Rest alarm failed:', result.detail)
-                }
-                setRestNotificationMessage('Locked-screen buzz unavailable. The visible timer still works.')
-                void haptic('error')
-              }
-            })
+            startRestAlarm(endsAt)
           }}
         >
           <span className="ws-dock-left">
@@ -2994,10 +3119,16 @@ function App() {
 
         const entry = getEntry(session, groupId, variantId)
         const nextResult = toggleResult(entry.result, status)
+        const wasFinished = isSessionFinished(session)
         updatedSession = updateSessionEntry(session, groupId, variantId, {
           ...entry,
           result: nextResult,
         })
+        // Stamp the finish time when this result completes the session, so History can show how
+        // long the workout took. Re-finishing after clearing a result re-stamps to the real end.
+        if (!wasFinished && isSessionFinished(updatedSession)) {
+          updatedSession = { ...updatedSession, finishedAt: Date.now() }
+        }
         return updatedSession
       })
 
@@ -3122,6 +3253,64 @@ function App() {
     void haptic('selection')
   }
 
+  // Store the gym's entry QR code: read the picked image, downscale it to a phone-screen-friendly
+  // size on a canvas, and keep it as a data URL inside AppData (so it syncs like everything else).
+  // PNG keeps QR edges sharp; a large photo falls back to JPEG so it can't blow the storage quota.
+  const importGymPass = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) {
+      return
+    }
+
+    const fail = () => {
+      setPassError('Could not read that image. Try a screenshot or photo of the code.')
+      void haptic('error')
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const image = new Image()
+      image.onload = () => {
+        const scale = Math.min(1, 640 / Math.max(image.width, image.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.width * scale))
+        canvas.height = Math.max(1, Math.round(image.height * scale))
+        const context = canvas.getContext('2d')
+        if (!context) {
+          fail()
+          return
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        let dataUrl = canvas.toDataURL('image/png')
+        if (dataUrl.length > 400_000) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+        }
+        setPassError('')
+        setData((current) => ({ ...current, gymPass: dataUrl }))
+        void haptic('confirm')
+      }
+      image.onerror = fail
+      image.src = String(reader.result)
+    }
+    reader.onerror = fail
+    reader.readAsDataURL(file)
+  }
+
+  const removeGymPass = () => {
+    setConfirmDialog({
+      title: 'Remove gym pass?',
+      message: 'The saved code image will be deleted from the app.',
+      confirmLabel: 'Remove',
+      danger: true,
+      haptic: 'destructive',
+      onConfirm: () => {
+        setData((current) => ({ ...current, gymPass: undefined }))
+        setConfirmDialog(null)
+      },
+    })
+  }
+
   const exportData = () => {
     let url = ''
     try {
@@ -3138,7 +3327,10 @@ function App() {
       setBackupMessage({ target: 'export', text: 'Could not export your backup.', error: true })
     } finally {
       if (url) {
-        URL.revokeObjectURL(url)
+        // Give the browser a moment to start the download before releasing the blob — revoking in
+        // the same tick can abort the save on some browsers.
+        const staleUrl = url
+        window.setTimeout(() => URL.revokeObjectURL(staleUrl), 2000)
       }
     }
   }
@@ -3436,6 +3628,37 @@ function App() {
             </Dialog>
           )
         })()}
+      {passDialogOpen && (
+        <Dialog title="Gym pass">
+          {data.gymPass ? (
+            <div className="pass-image">
+              <img src={data.gymPass} alt="Your gym entry code" />
+            </div>
+          ) : (
+            <p className="dialog-help">
+              Save your gym&rsquo;s entry QR code here so you can scan in straight from Fitness Hub instead of
+              opening the gym&rsquo;s app. Upload a screenshot or photo of the code — a tight crop works best.
+            </p>
+          )}
+          {passError && <p className="auth-error">{passError}</p>}
+          <div className="choice-list">
+            <label className="choice">
+              <Icon name="upload" size={18} />
+              <span>{data.gymPass ? 'Replace image' : 'Upload image'}</span>
+              <input type="file" accept="image/*" onChange={importGymPass} />
+            </label>
+            {data.gymPass && (
+              <button className="choice failed" type="button" onClick={removeGymPass}>
+                <Icon name="trash" size={18} />
+                <span>Remove</span>
+              </button>
+            )}
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => setPassDialogOpen(false)}>
+            Close
+          </button>
+        </Dialog>
+      )}
       {passwordDialog && (
         <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
           {passwordDialog.mode === 'recovery' && (
@@ -3602,6 +3825,7 @@ function normalizeData(value: unknown): AppData {
     scrollBySession: partial.scrollBySession ?? {},
     currentSessionByWorkout: partial.currentSessionByWorkout ?? {},
     restSeconds: defaultRest,
+    gymPass: typeof partial.gymPass === 'string' && partial.gymPass.startsWith('data:image/') ? partial.gymPass : undefined,
   }
 }
 
@@ -3844,10 +4068,10 @@ function isSessionFinished(session: WorkoutSession) {
 type DaySession = { status: 'done' | 'unfinished'; sessionId: string; createdAt: number }
 type DayCell = { key: string; label: string; sessions: DaySession[] }
 
-// The last 14 days, today first (left). Each day holds every session done that day (latest first,
-// matching the history list order) so the cell stacks their colours top-down the same way. The
-// session ids let a tap scroll to that day's entry.
-function buildTwoWeekTracker(sessions: WorkoutSession[]): DayCell[] {
+// The last 28 days (4 rows × 7 columns), today first (top-left). Each day holds every session done
+// that day (latest first, matching the history list order) so the cell stacks their colours
+// top-down the same way. The session ids let a tap scroll to that day's entry.
+function buildTrackerDays(sessions: WorkoutSession[]): DayCell[] {
   const byDay = new Map<string, DaySession[]>()
   for (const session of sessions) {
     const key = dayKey(session.createdAt)
@@ -3862,7 +4086,7 @@ function buildTwoWeekTracker(sessions: WorkoutSession[]): DayCell[] {
 
   const today = new Date()
   const days: DayCell[] = []
-  for (let i = 0; i < 14; i += 1) {
+  for (let i = 0; i < 28; i += 1) {
     const date = new Date(today)
     date.setDate(today.getDate() - i)
     const key = dayKey(date.getTime())
@@ -4023,6 +4247,17 @@ function formatRelative(timestamp: number) {
 
 function plural(count: number, unit: string) {
   return `${count} ${unit}${count === 1 ? '' : 's'} ago`
+}
+
+// Workout length from start to the final Done/Failed — "52 min" or "1h 24m".
+function formatDuration(ms: number) {
+  const mins = Math.max(1, Math.round(ms / 60000))
+  if (mins < 60) {
+    return `${mins} min`
+  }
+  const hours = Math.floor(mins / 60)
+  const rest = mins % 60
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
 }
 
 // Full weekday + date for the home header — e.g. "Tuesday 2 July".

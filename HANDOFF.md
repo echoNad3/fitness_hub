@@ -267,7 +267,36 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point:
-- Latest commit: **bigger launcher tiles, Android-app dialog, password reveal.**
+- Latest commit: **five approved QoL features + backup check.**
+  (1) **Workout duration** — `WorkoutSession.finishedAt?` is stamped when the last displayed
+  exercise gets a result (re-stamped on re-finish after clearing); History cards read
+  "· took 52 min" (`formatDuration`: "N min" / "1h 24m").
+  (2) **Finish moment** — the session header subtitle becomes an uppercase green
+  "Workout complete" (`.ws-head-title span.complete`, pop-in) when every displayed slot has a
+  result.
+  (3) **Rest "+10s"** — a `+10s` button (`.ws-dock-extend`, cancel-style) sits between the running
+  timer and Cancel; it pushes `restEndsAt` out, extends the drain-bar duration, ticks `increment`,
+  and re-arms the native alarm via the new shared `startRestAlarm(endsAt)` helper (also used by
+  start). Dock grid is `1fr auto auto`.
+  (4) **Per-exercise notes** — optional `ExerciseVariant.note`; a Note field in the editor (commit
+  on blur, empty → undefined) and a single quiet muted line (`.ws-note`) between the facts and
+  guidance on the workout card. Validated as an optional string.
+  (5) **History upgrades** — the tracker covers **28 days (4×7)** (`buildTrackerDays`); above it a
+  **2×2 stats grid** (`.hist-stats`): total workouts, completion % (green), average per week
+  (total / weeks since the oldest session, min 1), and average length (finished sessions only, "—"
+  when none). Four-across overflowed 375px screens, hence 2×2.
+  (6) **Gym pass** — `AppData.gymPass?` stores the user's gym entry QR as a data-URL image
+  (canvas-downscaled to ≤640px, PNG, JPEG-0.9 fallback over 400KB). A full-width `.home-pass` row
+  under the home tiles opens a dialog: the image on a white pad (`.pass-image`,
+  `image-rendering: pixelated`), Upload/Replace (hidden file input inside a `.choice`), a red
+  Remove choice (confirm dialog, destructive haptic), Close. Synced like all data (`gymPass` added
+  to `isMeaningfulChange` slices), validated as an optional string, normalized only if it starts
+  with `data:image/`. New `qr` icon.
+  (7) **Backup check** — export/import verified in-browser (valid import round-trips incl. the gym
+  pass; invalid JSON rejected with the red inline note and data untouched). Export's blob URL is
+  now revoked on a 2s delay — same-tick revoke can abort the save on some browsers.
+  Tests 18 → 19; lint + strict build green.
+- Previous commit `8f513df`: **bigger launcher tiles, Android-app dialog, password reveal.**
   (1) The four home tiles are now **square-ish vertical tiles** (min-height 128px; icon chip on
   top, title + subtitle pinned to the bottom) — full-width text lines, so titles like "Android app"
   and status lines fit without squeezing.

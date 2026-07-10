@@ -77,6 +77,30 @@ test('increase-stage fields must be well-typed when present', () => {
   assert.equal(isValidSessions(entry({ increaseDelta: -2.5 })), false)
 })
 
+test('new optional fields must be well-typed when present', () => {
+  // Variant note
+  const templates = [template('workout-a'), template('workout-b')]
+  const noted = structuredClone(templates)
+  Object.assign(noted[0].groups[0].variants[0], { note: 'grip felt off' })
+  assert.equal(isValidTemplates(noted), true)
+  const badNote = structuredClone(templates)
+  Object.assign(badNote[0].groups[0].variants[0], { note: 42 })
+  assert.equal(isValidTemplates(badNote), false)
+
+  // Session finishedAt + gymPass on the backup root
+  const session = {
+    id: 'session-1',
+    workoutId: 'workout-a',
+    createdAt: 100,
+    finishedAt: 200,
+    groupEntries: {},
+  }
+  assert.equal(isValidSessions([session]), true)
+  assert.equal(isValidSessions([{ ...session, finishedAt: 'noon' }]), false)
+  assert.equal(isValidBackup({ sessions: [], gymPass: 'data:image/png;base64,abc' }), true)
+  assert.equal(isValidBackup({ sessions: [], gymPass: 12 }), false)
+})
+
 test('session entries reject invalid weights and result values', () => {
   const validSession = {
     id: 'session-1',
