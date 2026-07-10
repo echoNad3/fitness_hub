@@ -123,7 +123,9 @@ flashing black with grey bars. **Reorder** in edit mode is drag-and-drop (`@dnd-
   `--surface-3 #414351`, `--raised #494b59`.
 - Text `--text #f4f5f8`, `--muted #aab2c0`, `--quiet #8b93a0`.
 - Hairline `--line rgba(255,255,255,0.065)`.
-- **Accent (soft blue) `--accent #6074f3`** — primary actions / interactive bits only.
+- **Accent (soft blue) `--accent #6074f3`** — filled primary actions, borders, and tints.
+  Foreground accent text/icons on dark gray surfaces use **`--accent-text #91a0ff`** so small labels
+  and thin glyphs meet contrast requirements without making filled actions louder.
 - **Done/success `--success #51cf7b`** (soft green).
 - **Failed/danger `--danger #f2767d`** (soft coral).
 - **Warning `--warning #f4cb59`** (amber) — reserved; available for cautions. (History now uses
@@ -455,13 +457,26 @@ lint + strict build + reuse of previously verified components; give the live app
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.
-- **Automated safety net** — `npm test` runs fifteen Node-native unit tests covering result toggles,
+- **Automated safety net** — `npm test` runs nineteen Node-native unit tests covering result toggles,
   ordering, auto-advance, rest bounds, active-variant selection, legacy migration acceptance,
   template/session validation, timestamp parsing, first-sync direction, migration safety, and
   strictly monotonic local sync timestamps, and wall-clock rest countdown calculations.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
+- **Frontend interaction hardening (2026-07-11 audit)** — the existing visual system and information
+  architecture were retained. Dialogs now move focus inside, trap keyboard focus, restore the prior
+  focus target, close safely with Escape/back, and scroll within short or keyboard-reduced viewports.
+  Dialog fields share the visible focus treatment; disabled/busy auth actions expose their state;
+  inline errors announce immediately. Settings backup import and gym-pass upload remain full-row tap
+  targets while also being keyboard/switch accessible. Primary editor utility controls and the workout
+  swap action now meet the shared 48px tap target. The cloud-data conflict prompt now participates in
+  overlay history and follows its safe sign-out path when dismissed with Back. Collapsed workout and
+  editor panels are inert and hidden from assistive navigation, so their zero-height controls cannot
+  enter keyboard/screen-reader order. Dialogs lock background scrolling while preserving their own
+  short-screen scrolling. The lighter `--accent-text` foreground token raises small blue text/icons
+  above the established contrast threshold. The rest-dock lower mask is viewport-fixed, eliminating
+  incidental document overflow without disabling real scrolling on shorter screens.
 - **Safety net** — real git repo (the original `.git` was empty/broken). "Undo everything" = ask
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
@@ -494,9 +509,19 @@ lint + strict build + reuse of previously verified components; give the live app
 
 The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
 and phone browser-preview screenshots). The latest workout viewport fix was verified at 412×915:
-default Workout B has zero document overflow and the full dock remains visible; at 412×800 the fit
-class disengages and the document regains overflow. Tests (15), lint, and production build pass.
+default Workout A/B has zero document overflow and the full dock remains visible; at 412×800 the
+document regains genuine overflow and the dock stays pinned while scrolling. Tests (19), lint, and
+production build pass.
 Cloud sync steps 3 and 4a pass build, lint, and unit tests.
+The 2026-07-11 interaction-hardening pass separately passes all 19 tests, lint, TypeScript production
+build, PWA generation, and `git diff --check`. It was then click-tested in the in-app browser across
+Home, every signed-out launcher/dialog, History, Settings, Workout A, Workout B, result/weight/rest
+interactions, edit mode, link/discard dialogs, and scrolling at 412×915, 412×800, 360×800, and a
+360×500 short dialog viewport. The default 412×915 workouts have zero overflow; 412×800 scrolls
+normally; 360px has no horizontal overflow; the 360×500 link dialog scrolls internally with the
+background locked. Browser console finished with zero warnings/errors. The signed-in Account dialog
+was not live-tested because this browser profile had no authenticated account; its shared dialog
+primitives were covered, but authenticated sync actions retain their earlier verification status.
 Its authenticated upload path was verified locally with a reversible 90s → 105s → 90s change:
 both writes reached `Synced` with no console errors. Cross-device pull was then verified on the
 live phone app using a temporary 105s marker; the cloud value was restored to 90s afterward.

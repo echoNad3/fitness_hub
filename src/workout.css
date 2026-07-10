@@ -314,7 +314,7 @@
   height: 54px;
   display: grid;
   place-items: center;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--raised);
   border: 1px solid var(--accent-line);
   border-radius: var(--radius-control);
@@ -400,7 +400,7 @@
 
 .ws-swap {
   width: 100%;
-  height: 44px;
+  height: var(--tap);
   color: var(--text);
   background: var(--surface-3);
   border: 1px solid var(--line);
@@ -423,11 +423,11 @@
 
 .ws-dock::after {
   content: '';
-  position: absolute;
-  top: 100%;
+  position: fixed;
   right: 0;
+  bottom: 0;
   left: 0;
-  height: max(32px, env(safe-area-inset-bottom));
+  height: max(8px, env(safe-area-inset-bottom));
   pointer-events: none;
   background: var(--bg);
 }

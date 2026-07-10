@@ -258,6 +258,7 @@
 }
 
 .set-row {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -306,7 +307,17 @@
 }
 
 .set-row input[type='file'] {
-  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.set-row:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .set-stepper {
@@ -384,7 +395,7 @@
   height: 42px;
   display: grid;
   place-items: center;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--raised);
   border: 1px solid var(--accent-line);
   border-radius: var(--radius-control);
@@ -462,7 +473,7 @@
 
 .sync-status.checking,
 .sync-status.syncing {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .sync-status.synced {
@@ -479,7 +490,7 @@
 
 /* Reused outside sync too (the Android tile/dialog): a newer APK is ready to install. */
 .sync-status.update {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .cloud-error {
@@ -505,7 +516,7 @@
 
 .auth-switch {
   padding: 6px 0;
-  color: var(--accent);
+  color: var(--accent-text);
   background: transparent;
   border: 0;
   text-align: left;

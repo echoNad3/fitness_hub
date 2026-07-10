@@ -223,7 +223,7 @@
   height: 42px;
   display: grid;
   place-items: center;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--surface-3);
   border-radius: var(--radius-control);
 }

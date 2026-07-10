@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useId } from 'react'
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react'
 import {
   DndContext,
@@ -962,7 +963,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
         </button>
       </div>
 
-      <div className="ws-item-body">
+      <div className="ws-item-body" aria-hidden={!isExpanded} inert={!isExpanded}>
         <div className="ws-item-body-inner">
           <div className="ws-editor">
             <VariantFields variant={variant} onPatch={props.onVariant} />
@@ -1144,6 +1145,7 @@ function App() {
     passDialogOpen ||
     aboutDialogOpen ||
     confirmDialog !== null ||
+    syncConflict !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
   const editModeRef = useRef(editMode)
@@ -1154,6 +1156,8 @@ function App() {
   const editSnapshotRef = useRef<{ templates: WorkoutTemplate[]; sessions: WorkoutSession[] } | null>(null)
   const dialogOpenRef = useRef(dialogOpen)
   dialogOpenRef.current = dialogOpen
+  const syncConflictRef = useRef(syncConflict)
+  syncConflictRef.current = syncConflict
   const overlayBuffersRef = useRef(0)
   const closingOverlayViaPopstateRef = useRef(false)
   const ignorePopstateRef = useRef(0)
@@ -1762,6 +1766,15 @@ function App() {
     setAboutDialogOpen(false)
     setStartDialogOpen(false)
     setConfirmDialog(null)
+    if (syncConflictRef.current) {
+      setSyncConflict(null)
+      setSyncStatus('idle')
+      setSyncError('')
+      if (supabase) {
+        void supabase.auth.signOut().catch(() => undefined)
+      }
+      setCloudUser(null)
+    }
   }
 
   const scrollToSession = (sessionId: string) => {
@@ -2492,7 +2505,7 @@ function App() {
           )}
         </button>
 
-        <div className="ws-item-body">
+        <div className="ws-item-body" aria-hidden={!isExpanded} inert={!isExpanded}>
           <div className="ws-item-body-inner">
             <div className="ws-item-body-content">
               <div className="ws-facts">
@@ -3550,19 +3563,19 @@ function App() {
               </button>
             )}
           </div>
-          {authDialog.error && <p className="auth-error">{authDialog.error}</p>}
+          {authDialog.error && <p className="auth-error" role="alert">{authDialog.error}</p>}
           {authDialog.note && <p className="dialog-help">{authDialog.note}</p>}
           <div className="dialog-actions">
             <button type="button" onClick={() => setAuthDialog(null)}>
               Cancel
             </button>
-            <button className="primary-action" type="button" disabled={authDialog.busy} onClick={submitAuth}>
+            <button className="primary-action" type="button" disabled={authDialog.busy} aria-busy={authDialog.busy} onClick={submitAuth}>
               {authDialog.busy ? 'Working…' : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
             </button>
           </div>
         </Dialog>
       )}
-      {accountDialogOpen && cloudUser && (
+      {accountDialogOpen && cloudUser && !passwordDialog && (
         <Dialog title="Account">
           <p className="dialog-help">Signed in as {cloudUser.email}</p>
           <div className="account-status">
@@ -3587,7 +3600,7 @@ function App() {
               <Icon name="edit" size={18} />
               <span>Change password</span>
             </button>
-            <button className="choice" type="button" disabled={cloudActionBusy} onClick={() => void signOut()}>
+            <button className="choice" type="button" disabled={cloudActionBusy} aria-busy={cloudActionBusy} onClick={() => void signOut()}>
               <Icon name="close" size={18} />
               <span>{cloudActionBusy ? 'Signing out…' : 'Sign out'}</span>
             </button>
@@ -3654,7 +3667,7 @@ function App() {
           ) : (
             <p className="dialog-help">Your gym&rsquo;s entry QR code, one tap away. A tight crop scans best.</p>
           )}
-          {passError && <p className="auth-error">{passError}</p>}
+          {passError && <p className="auth-error" role="alert">{passError}</p>}
           <div className="choice-list">
             {data.gymPass ? (
               <button className="choice failed" type="button" onClick={removeGymPass}>
@@ -3699,12 +3712,12 @@ function App() {
               onChange={(value) => setPasswordDialog({ ...passwordDialog, value, error: '' })}
             />
           </label>
-          {passwordDialog.error && <p className="auth-error">{passwordDialog.error}</p>}
+          {passwordDialog.error && <p className="auth-error" role="alert">{passwordDialog.error}</p>}
           <div className="dialog-actions">
             <button type="button" onClick={() => setPasswordDialog(null)}>
               Cancel
             </button>
-            <button className="primary-action" type="button" disabled={passwordDialog.busy} onClick={() => void submitPassword()}>
+            <button className="primary-action" type="button" disabled={passwordDialog.busy} aria-busy={passwordDialog.busy} onClick={() => void submitPassword()}>
               {passwordDialog.busy ? 'Working…' : 'Save password'}
             </button>
           </div>
@@ -3771,12 +3784,69 @@ function Page({ title, onBack, children }: { title: string; onBack: () => void; 
 }
 
 function Dialog({ title, children }: { title: string; children: ReactNode }) {
+  const dialogRef = useRef<HTMLElement>(null)
+  const titleId = useId()
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousHtmlOverflow = document.documentElement.style.overflow
+    const previousBodyOverflow = document.body.style.overflow
+    if (!dialog) {
+      return
+    }
+
+    document.documentElement.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
+
+    const focusableSelector =
+      'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+    const frame = window.requestAnimationFrame(() => focusable()[0]?.focus())
+
+    const keepFocusInside = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        window.history.back()
+        return
+      }
+      if (event.key !== 'Tab') {
+        return
+      }
+
+      const controls = focusable()
+      if (controls.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', keepFocusInside)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', keepFocusInside)
+      document.documentElement.style.overflow = previousHtmlOverflow
+      document.body.style.overflow = previousBodyOverflow
+      previouslyFocused?.focus()
+    }
+  }, [])
+
   // Intentionally no tap-outside-to-close: dialogs are dismissed only via their Cancel button or
-  // the system back gesture (handled by the overlay history sync), so a stray tap can't discard input.
+  // Escape/system back (handled by the overlay history sync), so a stray tap can't discard input.
   return (
     <div className="dialog-backdrop" role="presentation">
-      <section className="dialog" role="dialog" aria-modal="true" aria-label={title}>
-        <h2>{title}</h2>
+      <section className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef} tabIndex={-1}>
+        <h2 id={titleId}>{title}</h2>
         {children}
       </section>
     </div>
