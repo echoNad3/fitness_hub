@@ -23,7 +23,7 @@ const WEB_PATTERNS: Record<InteractionHaptic, number | number[]> = {
 
 // This deliberate, non-repeating pattern is reserved for a completed rest timer. Keep it in sync
 // with RestVibrationReceiver so Settings previews the same alert used by the real timer.
-const WEB_TIMER_PATTERN = [400, 150, 400, 150, 1000, 200, 1000]
+const WEB_TIMER_PATTERN = [400, 150, 800, 200, 1400]
 
 async function interaction(type: InteractionHaptic): Promise<boolean> {
   if (native) {

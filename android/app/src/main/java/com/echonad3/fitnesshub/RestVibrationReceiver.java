@@ -17,8 +17,8 @@ import android.os.VibratorManager;
 public class RestVibrationReceiver extends BroadcastReceiver {
 
     // Three unmistakable pulses, played once. This custom waveform is reserved for rest completion.
-    private static final long[] PATTERN = {0, 400, 150, 400, 150, 1000, 200, 1000};
-    private static final int[] AMPLITUDES = {0, 255, 0, 255, 0, 255, 0, 255};
+    private static final long[] PATTERN = {0, 400, 150, 800, 200, 1400};
+    private static final int[] AMPLITUDES = {0, 255, 0, 255, 0, 255};
 
     @Override
     public void onReceive(Context context, Intent intent) {
