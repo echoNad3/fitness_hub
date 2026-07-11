@@ -31,9 +31,9 @@ export class ErrorBoundary extends Component<Props, State> {
           background: 'var(--bg, #252730)',
         }}
       >
-        <strong style={{ fontSize: '1.1875rem', fontWeight: 800 }}>Something went wrong</strong>
+        <strong style={{ fontSize: '1.1875rem', fontWeight: 800 }}>App error</strong>
         <span style={{ color: 'var(--muted, #aab2c0)', fontSize: '0.9375rem' }}>
-          Your saved workouts are safe. Reload to continue.
+          Your data is safe. Reload the app.
         </span>
         <button
           type="button"

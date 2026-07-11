@@ -24,7 +24,7 @@ export default defineConfig({
         id: base,
         name: 'Fitness Hub',
         short_name: 'Fitness Hub',
-        description: 'A fast, phone-first workout command panel.',
+        description: 'Track workouts, weights, rest times, and results.',
         start_url: base,
         scope: base,
         display: 'standalone',

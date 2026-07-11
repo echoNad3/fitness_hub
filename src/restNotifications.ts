@@ -20,7 +20,7 @@ export async function scheduleRestNotification(endsAt: number): Promise<RestNoti
 
   try {
     if (endsAt <= Date.now()) {
-      return { status: 'failed', detail: 'rest end time already passed' }
+      return { status: 'failed', detail: 'Rest time already ended.' }
     }
     await RestAlarm.cancel()
     // Capacitor's Android getDouble() reads Double/Integer/Float but NOT Long, and an epoch-ms
@@ -31,7 +31,7 @@ export async function scheduleRestNotification(endsAt: number): Promise<RestNoti
     if (result.scheduled) {
       return { status: 'scheduled' }
     }
-    return { status: 'failed', detail: 'alarm not scheduled' }
+    return { status: 'failed', detail: 'Rest alert was not scheduled.' }
   } catch (error) {
     // Capacitor throws an UNIMPLEMENTED error when the native RestAlarm plugin isn't in the
     // installed APK. The web layer auto-updates on every deploy, but native code only ships

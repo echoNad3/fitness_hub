@@ -748,7 +748,7 @@ function VariantFields({
           <div className="set-stepper">
             <button
               type="button"
-              aria-label="Fewer sets"
+              aria-label="Decrease sets"
               onClick={() => {
                 if (sets > 1) {
                   onPatch({ sets: sets - 1 })
@@ -761,7 +761,7 @@ function VariantFields({
             <strong>{sets}</strong>
             <button
               type="button"
-              aria-label="More sets"
+              aria-label="Increase sets"
               onClick={() => {
                 onPatch({ sets: sets + 1 })
                 void haptic('increment')
@@ -776,7 +776,7 @@ function VariantFields({
           <div className="set-stepper">
             <button
               type="button"
-              aria-label="Fewer reps"
+              aria-label="Decrease reps"
               onClick={() => {
                 if (reps > 1) {
                   onPatch({ reps: reps - 1 })
@@ -789,7 +789,7 @@ function VariantFields({
             <strong>{reps}</strong>
             <button
               type="button"
-              aria-label="More reps"
+              aria-label="Increase reps"
               onClick={() => {
                 onPatch({ reps: reps + 1 })
                 void haptic('increment')
@@ -806,7 +806,7 @@ function VariantFields({
         <input
           className="ws-editor-input"
           type="text"
-          placeholder="e.g. seat 4, 20°"
+          placeholder="Seat 4, 20°"
           value={setupDraft ?? setup}
           onFocus={() => setSetupDraft(setup)}
           onChange={(event) => setSetupDraft(event.target.value)}
@@ -820,7 +820,7 @@ function VariantFields({
         <input
           className="ws-editor-input"
           type="text"
-          placeholder="e.g. grip felt off, go slower"
+          placeholder="Grip felt off; go slower"
           value={noteDraft ?? (variant.note ?? '')}
           onFocus={() => setNoteDraft(variant.note ?? '')}
           onChange={(event) => setNoteDraft(event.target.value)}
@@ -845,8 +845,8 @@ function VariantFields({
       </label>
 
       <div className="ex-field">
-        <span>Load counts as</span>
-        <div className="ex-segment" role="group" aria-label="Load">
+        <span>Weight type</span>
+        <div className="ex-segment" role="group" aria-label="Weight type">
           <button
             type="button"
             className={perHand ? '' : 'sel'}
@@ -946,7 +946,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
       className={`ws-item editing${isExpanded ? ' open' : ''}${isDragging ? ' dragging' : ''}${hidden ? ' is-hidden' : ''}`}
     >
       <div className="ws-edit-head">
-        <button className="ws-edit-handle" type="button" aria-label="Drag to reorder" {...attributes} {...listeners}>
+        <button className="ws-edit-handle" type="button" aria-label="Reorder exercise" {...attributes} {...listeners}>
           <Icon name="grip" size={18} />
         </button>
         <button className="ws-edit-open" type="button" aria-expanded={isExpanded} onClick={props.onToggle}>
@@ -969,11 +969,11 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
             <VariantFields variant={variant} onPatch={props.onVariant} />
 
             <div className="ex-field ex-slot-rest">
-              <span>Rest for this exercise</span>
+              <span>Rest time</span>
               <div className="set-stepper rest-stepper">
                 <button
                   type="button"
-                  aria-label="Less rest"
+                  aria-label="Decrease rest time"
                   onClick={() => {
                     if (restSeconds > MIN_REST_SECONDS) {
                       props.onRest(restSeconds - 10)
@@ -1017,7 +1017,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                 </div>
                 <button
                   type="button"
-                  aria-label="More rest"
+                  aria-label="Increase rest time"
                   onClick={() => {
                     if (restSeconds < MAX_REST_SECONDS) {
                       props.onRest(restSeconds + 10)
@@ -1039,7 +1039,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                 <div className="ex-linked">
                   <span className="ex-linked-label">
                     <Icon name="repeat" size={15} />
-                    Linked with {linkedPartnerName}
+                    Linked to {linkedPartnerName}
                   </span>
                   <button className="ex-control-btn" type="button" onClick={props.onUnlink}>
                     Unlink
@@ -1048,7 +1048,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
               ) : (
                 <button className="ex-control-btn" type="button" disabled={!canLink} onClick={props.onLink}>
                   <Icon name="repeat" size={15} />
-                  Link with another exercise
+                  Link another exercise
                 </button>
               )}
             </div>
@@ -1056,7 +1056,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
             <div className="ex-danger">
               <button className="ws-editor-remove" type="button" disabled={!canRemove} onClick={props.onRemove}>
                 <Icon name="trash" size={18} />
-                Remove exercise
+                Delete exercise
               </button>
             </div>
           </div>
@@ -1361,7 +1361,7 @@ function App() {
 
         const remoteUpdatedAt = remote ? parseCloudTimestamp(remote.updatedAt) : null
         if (remote && remoteUpdatedAt === null) {
-          throw new Error('Cloud data has an invalid timestamp.')
+          throw new Error('Cloud data has an invalid timestamp. Local data was not changed.')
         }
 
         // First sign-in to an account that already holds data, while this device has its own
@@ -1372,7 +1372,7 @@ function App() {
         const localMeaningful = hasMeaningfulLocalData(dataRef.current, buildInitialData())
         if (remote && remoteUpdatedAt !== null && localMeaningful && syncedAccount !== cloudUserId) {
           if (!isValidBackup(remote.data)) {
-            throw new Error('Cloud data is invalid. Your local data was kept safe.')
+            throw new Error('Cloud data is invalid. Local data was not changed.')
           }
           setSyncConflict({ remote, remoteUpdatedAt })
           setSyncStatus('conflict')
@@ -1382,7 +1382,7 @@ function App() {
         const localUpdatedAt = localUpdatedAtRef.current
         if (remote && remoteUpdatedAt !== null && chooseSyncDirection(remoteUpdatedAt, localUpdatedAt) === 'pull') {
           if (!isValidBackup(remote.data)) {
-            throw new Error('Cloud data is invalid. Your local data was kept safe.')
+            throw new Error('Cloud data is invalid. Local data was not changed.')
           }
 
           applyingRemoteTimestampRef.current = remoteUpdatedAt
@@ -1468,7 +1468,7 @@ function App() {
             window.history.pushState({ fitnessHub: true, overlay: true }, '')
             setConfirmDialog({
               title: 'Discard changes?',
-              message: 'Your edits to this workout will be lost.',
+              message: 'Your workout edits will be lost.',
               confirmLabel: 'Discard',
               danger: true,
               haptic: 'destructive',
@@ -1793,14 +1793,14 @@ function App() {
     void scheduleRestNotification(endsAt).then((result) => {
       if (result.status === 'outdated') {
         setRestNotificationMessage(
-          'Locked-screen buzz needs an app update — reinstall the latest APK. The visible timer still works.',
+          'Update the Android app for locked-screen rest alerts. The timer still works.',
         )
         void haptic('error')
       } else if (result.status === 'failed') {
         if (result.detail) {
           console.warn('Rest alarm failed:', result.detail)
         }
-        setRestNotificationMessage('Locked-screen buzz unavailable. The visible timer still works.')
+        setRestNotificationMessage('Locked-screen rest alert unavailable. The timer still works.')
         void haptic('error')
       }
     })
@@ -1860,7 +1860,7 @@ function App() {
             <small className="home-tile-status">
               <span className="sync-status update">
                 <i aria-hidden="true" />
-                Update ready
+                Update available
               </span>
             </small>
           ) : upToDate ? (
@@ -1871,7 +1871,7 @@ function App() {
               </span>
             </small>
           ) : (
-            <small>{native ? 'Version unknown' : build !== null ? `Get it · Build ${build}` : 'Get the app'}</small>
+            <small>{native ? 'Version unknown' : build !== null ? `Build ${build} available` : 'Download'}</small>
           )}
         </span>
       </button>
@@ -1919,7 +1919,7 @@ function App() {
 
         <button className="home-start-primary" type="button" onClick={() => setStartDialogOpen(true)}>
           <span className="home-start-main">
-            <strong>Start new workout</strong>
+            <strong>Start workout</strong>
             <small>Up next · {getWorkout(suggestedId).name}</small>
           </span>
           <Icon name="forward" size={24} />
@@ -1930,14 +1930,14 @@ function App() {
             <span className="home-tile-icon"><Icon name="history" size={22} /></span>
             <span className="home-tile-text">
               <span>History</span>
-              <small>{sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}</small>
+              <small>{sessionCount} {sessionCount === 1 ? 'workout' : 'workouts'}</small>
             </span>
           </button>
           <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
             <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
             <span className="home-tile-text">
               <span>Settings</span>
-              <small>Backup, reset</small>
+              <small>Backups and reset</small>
             </span>
           </button>
 
@@ -1964,7 +1964,7 @@ function App() {
                 <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
                 <span className="home-tile-text">
                   <span>Sign in</span>
-                  <small>Sync your data</small>
+                  <small>Sync across devices</small>
                 </span>
               </button>
             ))}
@@ -1982,7 +1982,7 @@ function App() {
             <span className="home-tile-icon"><Icon name="qr" size={22} /></span>
             <span className="home-tile-text">
               <span>Gym pass</span>
-              <small>{data.gymPass ? 'Show entry code' : 'Add entry code'}</small>
+              <small>{data.gymPass ? 'Show QR code' : 'Add QR code'}</small>
             </span>
           </button>
 
@@ -1990,7 +1990,7 @@ function App() {
             <span className="home-tile-icon"><Icon name="info" size={22} /></span>
             <span className="home-tile-text">
               <span>About</span>
-              <small>What this is</small>
+              <small>App details</small>
             </span>
           </button>
         </div>
@@ -2015,7 +2015,7 @@ function App() {
 
               {otherWorkouts.length > 0 && (
                 <>
-                  <p className="start-or">Or pick another</p>
+                  <p className="start-or">Other workouts</p>
                   {otherWorkouts.map((workout) => (
                     <button
                       key={workout.id}
@@ -2061,7 +2061,7 @@ function App() {
     return (
       <Page title={title} onBack={onBack}>
         {sessions.length === 0 ? (
-          <EmptyState text="No workouts yet — sessions you start will show up here." />
+          <EmptyState text="No workouts yet." />
         ) : (
           <>
             <div className="hist-stats" aria-label="Workout stats">
@@ -2079,7 +2079,7 @@ function App() {
               </div>
               <div className="hist-stat">
                 <strong>{avgLength}</strong>
-                <span>Avg length</span>
+                <span>Avg duration</span>
               </div>
             </div>
 
@@ -2089,7 +2089,7 @@ function App() {
                   const latest = day.sessions[0]
                   const label = day.sessions.length
                     ? `${day.label} · ${day.sessions.map((s) => (s.status === 'done' ? 'finished' : 'unfinished')).join(', ')}`
-                    : `${day.label} · rest day`
+                    : `${day.label} · no workout`
                   return (
                     <button
                       key={day.key}
@@ -2108,7 +2108,7 @@ function App() {
                 })}
               </div>
               <div className="hist-tracker-legend">
-                <span><i className="dot done" />Finished</span>
+                <span><i className="dot done" />Completed</span>
                 <span><i className="dot unfinished" />Unfinished</span>
                 <span className="hist-tracker-ends">last 28 days</span>
               </div>
@@ -2134,7 +2134,7 @@ function App() {
                         <small>
                           {formatAbsolute(session.createdAt)}
                           {session.finishedAt !== undefined && session.finishedAt > session.createdAt &&
-                            ` · took ${formatDuration(session.finishedAt - session.createdAt)}`}
+                            ` · ${formatDuration(session.finishedAt - session.createdAt)}`}
                         </small>
                         <small className="hist-ago">{formatRelative(session.createdAt)}</small>
                       </span>
@@ -2143,7 +2143,7 @@ function App() {
                         <em>{doneCount}/{total}</em>
                       </span>
                     </button>
-                    <button className="hist-del" type="button" aria-label="Delete session" onClick={() => deleteSession(session.id)}>
+                    <button className="hist-del" type="button" aria-label="Delete workout" onClick={() => deleteSession(session.id)}>
                       <Icon name="trash" size={18} />
                     </button>
                   </article>
@@ -2193,7 +2193,7 @@ function App() {
     } else {
       setAuthDialog((current) =>
         current
-          ? { ...current, mode: 'in', password: '', busy: false, error: '', note: 'Account created. Confirm via the email we sent, then sign in.' }
+          ? { ...current, mode: 'in', password: '', busy: false, error: '', note: 'Check your email to confirm the account, then sign in.' }
           : current,
       )
       void haptic('confirm')
@@ -2209,7 +2209,7 @@ function App() {
 
     const email = authDialog.email.trim()
     if (!email) {
-      setAuthDialog({ ...authDialog, error: 'Enter your email above first.', note: '' })
+      setAuthDialog({ ...authDialog, error: 'Enter your email first.', note: '' })
       void haptic('error')
       return
     }
@@ -2222,7 +2222,7 @@ function App() {
     } else {
       setAuthDialog((current) =>
         current
-          ? { ...current, busy: false, error: '', note: `Reset link sent to ${email}. Open it, set a new password, then sign in.` }
+          ? { ...current, busy: false, error: '', note: `Reset link sent to ${email}. Use it to set a new password.` }
           : current,
       )
       void haptic('confirm')
@@ -2270,7 +2270,7 @@ function App() {
     const { error } = await supabase.auth.signOut()
     if (error) {
       setCloudActionBusy(false)
-      setCloudActionError(`Could not sign out. ${error.message}`)
+      setCloudActionError(`Sign out failed. ${error.message}`)
       void haptic('error')
       return
     }
@@ -2291,9 +2291,9 @@ function App() {
       <div className="set-list">
         <button className="set-row" type="button" onClick={exportData}>
           <span className="set-main">
-            <strong>Export backup</strong>
+            <strong>Download backup</strong>
             <small className={backupMessage?.target === 'export' && backupMessage.error ? 'set-note-error' : undefined} role="status">
-              {backupMessage?.target === 'export' ? backupMessage.text : 'Download all your data as a JSON file'}
+              {backupMessage?.target === 'export' ? backupMessage.text : 'Download a JSON backup'}
             </small>
           </span>
           <Icon name="download" />
@@ -2303,7 +2303,7 @@ function App() {
           <span className="set-main">
             <strong>Import backup</strong>
             <small className={backupMessage?.target === 'import' && backupMessage.error ? 'set-note-error' : undefined} role="status">
-              {backupMessage?.target === 'import' ? backupMessage.text : 'Replace your data from a JSON file'}
+              {backupMessage?.target === 'import' ? backupMessage.text : 'Replace current data from a JSON backup'}
             </small>
           </span>
           <Icon name="upload" />
@@ -2313,15 +2313,15 @@ function App() {
         <button className="set-row" type="button" onClick={testVibration}>
           <span className="set-main">
             <strong>Test vibration</strong>
-            <small role="status">{vibrationMessage || 'Buzz the phone once'}</small>
+            <small role="status">{vibrationMessage || 'Play one test buzz'}</small>
           </span>
           <Icon name="bell" />
         </button>
 
         <button className="set-row danger" type="button" onClick={resetData}>
           <span className="set-main">
-            <strong>Reset app data</strong>
-            <small>Clear all sessions and changes</small>
+            <strong>Reset workout data</strong>
+            <small>Delete history, pass, and workout changes</small>
           </span>
           <Icon name="trash" />
         </button>
@@ -2538,7 +2538,7 @@ function App() {
                     <button
                       className="ws-stepbtn"
                       type="button"
-                      aria-label="Less increase"
+                      aria-label="Decrease amount"
                       onPointerDown={() => startHold(() => adjustIncrease(session.id, group.id, variant.id, -1))}
                       onPointerUp={finishHold}
                       onPointerLeave={stopHold}
@@ -2580,7 +2580,7 @@ function App() {
                     <button
                       className="ws-stepbtn"
                       type="button"
-                      aria-label="More increase"
+                      aria-label="Increase amount"
                       onPointerDown={() => startHold(() => adjustIncrease(session.id, group.id, variant.id, 1))}
                       onPointerUp={finishHold}
                       onPointerLeave={stopHold}
@@ -2604,14 +2604,14 @@ function App() {
                       type="button"
                       onClick={() => acceptIncrease(session.id, group.id, variant.id)}
                     >
-                      Accept
+                      Apply
                     </button>
                     <button
                       className="ws-resultbtn failed"
                       type="button"
                       onClick={() => cancelIncrease(session.id, group.id, variant.id)}
                     >
-                      Cancel
+                      Keep weight
                     </button>
                   </div>
                 </>
@@ -2738,7 +2738,7 @@ function App() {
               void haptic('toggle-off')
             }}
           >
-            Cancel
+            Stop
           </button>
         </>
       ) : (
@@ -2815,9 +2815,9 @@ function App() {
     }
 
     setConfirmDialog({
-      title: 'Remove exercise?',
-      message: 'It will be taken out of this workout.',
-      confirmLabel: 'Remove',
+      title: 'Delete exercise?',
+      message: 'This removes it from the workout.',
+      confirmLabel: 'Delete',
       danger: true,
       haptic: 'destructive',
       onConfirm: () => {
@@ -2868,8 +2868,8 @@ function App() {
 
   const deleteSession = (sessionId: string) => {
     setConfirmDialog({
-      title: 'Delete session?',
-      message: 'This saved workout will be removed from your history.',
+      title: 'Delete workout?',
+      message: 'This removes it from History.',
       confirmLabel: 'Delete',
       danger: true,
       haptic: 'destructive',
@@ -3295,7 +3295,7 @@ function App() {
     }
 
     const fail = () => {
-      setPassError('Could not read that image. Try a screenshot or photo of the code.')
+      setPassError('Could not read the image. Try a screenshot or photo of the QR code.')
       void haptic('error')
     }
 
@@ -3330,9 +3330,9 @@ function App() {
 
   const removeGymPass = () => {
     setConfirmDialog({
-      title: 'Remove gym pass?',
-      message: 'The saved code image will be deleted from the app.',
-      confirmLabel: 'Remove',
+      title: 'Delete gym pass?',
+      message: 'Deletes the saved QR code.',
+      confirmLabel: 'Delete',
       danger: true,
       haptic: 'destructive',
       onConfirm: () => {
@@ -3355,7 +3355,7 @@ function App() {
       setBackupMessage({ target: 'export', text: 'Backup downloaded.' })
     } catch {
       void haptic('error')
-      setBackupMessage({ target: 'export', text: 'Could not export your backup.', error: true })
+      setBackupMessage({ target: 'export', text: 'Backup download failed.', error: true })
     } finally {
       if (url) {
         // Give the browser a moment to start the download before releasing the blob — revoking in
@@ -3382,23 +3382,23 @@ function App() {
         }
         setData(normalizeData(parsed))
         void haptic('confirm')
-        setBackupMessage({ target: 'import', text: 'Data imported.' })
+        setBackupMessage({ target: 'import', text: 'Backup imported.' })
       } catch {
         void haptic('error')
-        setBackupMessage({ target: 'import', text: 'Could not import that JSON file.', error: true })
+        setBackupMessage({ target: 'import', text: 'Invalid backup file.', error: true })
       }
     }
     reader.onerror = () => {
       void haptic('error')
-      setBackupMessage({ target: 'import', text: 'Could not read that backup file.', error: true })
+      setBackupMessage({ target: 'import', text: 'Could not read the backup file.', error: true })
     }
     reader.readAsText(file)
   }
 
   const resetData = () => {
     setConfirmDialog({
-      title: 'Reset all data?',
-      message: 'Every session and workout change on this device will be cleared.',
+      title: 'Reset workout data?',
+      message: 'Deletes workout history, gym pass, and workout changes.',
       confirmLabel: 'Reset',
       danger: true,
       haptic: 'destructive',
@@ -3411,7 +3411,7 @@ function App() {
 
   const testVibration = () => {
     void haptic('destructive').then((performed) => {
-      setVibrationMessage(performed ? 'Haptic played' : 'System haptics are off or unavailable')
+      setVibrationMessage(performed ? 'Test vibration played.' : 'Vibration is off or unavailable.')
     })
   }
 
@@ -3431,8 +3431,8 @@ function App() {
         {currentSession ? (
           renderSession(currentSession)
         ) : (
-          <Page title="Session unavailable" onBack={() => goBack({ name: 'main' })}>
-            <EmptyState text="This saved session no longer exists." />
+          <Page title="Workout unavailable" onBack={() => goBack({ name: 'main' })}>
+            <EmptyState text="This workout no longer exists." />
           </Page>
         )}
         {weightDialog && (
@@ -3457,20 +3457,20 @@ function App() {
           </Dialog>
         )}
         {previousDialog && (
-          <Dialog title="Last session result">
-            <p className="dialog-help">How did this exercise go last time? It sets today&rsquo;s guidance.</p>
+          <Dialog title="Last result">
+            <p className="dialog-help">Choose the result from your last workout.</p>
             <div className="choice-list">
               <button className="choice done" type="button" onClick={() => setPreviousResult('success')}>
                 <Icon name="arrow-up" size={18} />
-                <span>Done — increase next time</span>
+                <span>Done — increase today</span>
               </button>
               <button className="choice failed" type="button" onClick={() => setPreviousResult('failure')}>
                 <Icon name="repeat" size={18} />
-                <span>Failed — repeat next time</span>
+                <span>Failed — repeat today</span>
               </button>
               <button className="choice" type="button" onClick={() => setPreviousResult('missing')}>
                 <Icon name="clock" size={18} />
-                <span>No record yet</span>
+                <span>No result</span>
               </button>
             </div>
             <button className="choice-cancel" type="button" onClick={() => setPreviousDialog(null)}>
@@ -3486,13 +3486,12 @@ function App() {
               (group) => group.id !== linkDialog.groupId && !group.linkId,
             )
             return (
-              <Dialog title="Link a swap">
+              <Dialog title="Link exercise">
                 <p className="dialog-help">
-                  Pair with {source ? soleVariant(source).name : 'this exercise'} — one shows on the workout, a
-                  Swap button switches.
+                  Choose the exercise to swap with {source ? soleVariant(source).name : 'this exercise'}.
                 </p>
                 {candidates.length === 0 ? (
-                  <p className="dialog-help">No other unlinked exercises to link with.</p>
+                  <p className="dialog-help">No exercises available.</p>
                 ) : (
                   <div className="choice-list">
                     {candidates.map((group) => (
@@ -3555,7 +3554,7 @@ function App() {
               type="button"
               onClick={() => setAuthDialog({ ...authDialog, mode: authDialog.mode === 'in' ? 'up' : 'in', error: '', note: '' })}
             >
-              {authDialog.mode === 'in' ? 'No account? Create one' : 'Have an account? Sign in'}
+              {authDialog.mode === 'in' ? 'Create account' : 'Sign in instead'}
             </button>
             {authDialog.mode === 'in' && (
               <button className="auth-switch" type="button" disabled={authDialog.busy} onClick={() => void sendPasswordReset()}>
@@ -3570,7 +3569,7 @@ function App() {
               Cancel
             </button>
             <button className="primary-action" type="button" disabled={authDialog.busy} aria-busy={authDialog.busy} onClick={submitAuth}>
-              {authDialog.busy ? 'Working…' : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
+              {authDialog.busy ? (authDialog.mode === 'in' ? 'Signing in…' : 'Creating…') : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
             </button>
           </div>
         </Dialog>
@@ -3583,14 +3582,14 @@ function App() {
               <i aria-hidden="true" />
               {syncStatusLabel(syncStatus)}
             </span>
-            <small>{lastSyncedAt !== null ? `Last synced ${formatRelative(lastSyncedAt)}` : 'Not synced on this device yet'}</small>
+            <small>{lastSyncedAt !== null ? `Last synced ${formatRelative(lastSyncedAt)}` : 'Not synced on this device'}</small>
             {syncStatus === 'error' && syncError && <span className="cloud-error">{syncError}</span>}
             {cloudActionError && <span className="cloud-error" role="alert">{cloudActionError}</span>}
           </div>
           <div className="choice-list">
             <button className="choice" type="button" onClick={retryCloudSync}>
               <Icon name="cloud" size={18} />
-              <span>Sync now</span>
+              <span>Sync</span>
             </button>
             <button
               className="choice"
@@ -3615,10 +3614,7 @@ function App() {
           const { native, build, released, updateAvailable, upToDate } = apkStatus()
           return (
             <Dialog title="Android app">
-              <p className="dialog-help">
-                Home-screen app with the locked-screen rest buzz. Download, open, install — updates work the
-                same way, your data stays.
-              </p>
+              <p className="dialog-help">Download the Android app for rest alerts when the screen is locked.</p>
               <div className="account-status">
                 {updateAvailable ? (
                   <span className="sync-status update">
@@ -3628,12 +3624,12 @@ function App() {
                 ) : upToDate ? (
                   <span className="sync-status synced">
                     <i aria-hidden="true" />
-                    You&rsquo;re on the latest version
+                    Up to date
                   </span>
                 ) : native ? (
                   <span className="sync-status">
                     <i aria-hidden="true" />
-                    Version unknown — reinstall once to fix
+                    Version unknown
                   </span>
                 ) : (
                   <span className="sync-status">
@@ -3643,13 +3639,13 @@ function App() {
                 )}
                 <small>
                   {native && installedBuild !== null && `Installed: Build ${installedBuild} · `}
-                  {build !== null ? `Latest: Build ${build}${released ? `, released ${released}` : ''}` : 'Latest version unavailable right now'}
+                  {build !== null ? `Latest: Build ${build}${released ? `, released ${released}` : ''}` : 'Latest version unavailable'}
                 </small>
               </div>
               <div className="choice-list">
                 <a className="choice" href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer noopener">
                   <Icon name="download" size={18} />
-                  <span>{updateAvailable && build !== null ? `Download build ${build}` : 'Download the APK'}</span>
+                  <span>{updateAvailable && build !== null ? `Download build ${build}` : 'Download'}</span>
                 </a>
               </div>
               <button className="choice-cancel" type="button" onClick={() => setApkDialogOpen(false)}>
@@ -3662,22 +3658,22 @@ function App() {
         <Dialog title="Gym pass">
           {data.gymPass ? (
             <div className="pass-image">
-              <img src={data.gymPass} alt="Your gym entry code" />
+              <img src={data.gymPass} alt="Gym pass QR code" />
             </div>
           ) : (
-            <p className="dialog-help">Your gym&rsquo;s entry QR code, one tap away. A tight crop scans best.</p>
+            <p className="dialog-help">Add your gym pass QR code. A tight crop scans best.</p>
           )}
           {passError && <p className="auth-error" role="alert">{passError}</p>}
           <div className="choice-list">
             {data.gymPass ? (
               <button className="choice failed" type="button" onClick={removeGymPass}>
                 <Icon name="trash" size={18} />
-                <span>Remove</span>
+                <span>Delete</span>
               </button>
             ) : (
               <label className="choice">
                 <Icon name="upload" size={18} />
-                <span>Upload image</span>
+                <span>Choose image</span>
                 <input type="file" accept="image/*" onChange={importGymPass} />
               </label>
             )}
@@ -3690,9 +3686,7 @@ function App() {
       {aboutDialogOpen && (
         <Dialog title="About">
           <p className="dialog-help">
-            Fitness Hub is your gym command panel: your routine, weights, rest timers, and results on one
-            fast screen. Mark each exercise Done or Failed — it carries your weights forward and tells you
-            when to go heavier. Works offline; sign in to sync across devices.
+            Track workouts, weights, rest times, and results. Works offline; sign in to sync across devices.
           </p>
           <button className="choice-cancel" type="button" onClick={() => setAboutDialogOpen(false)}>
             Close
@@ -3702,7 +3696,7 @@ function App() {
       {passwordDialog && (
         <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
           {passwordDialog.mode === 'recovery' && (
-            <p className="dialog-help">Choose a new password for your account.</p>
+            <p className="dialog-help">Enter a new account password.</p>
           )}
           <label className="ex-field">
             <span>New password</span>
@@ -3718,28 +3712,28 @@ function App() {
               Cancel
             </button>
             <button className="primary-action" type="button" disabled={passwordDialog.busy} aria-busy={passwordDialog.busy} onClick={() => void submitPassword()}>
-              {passwordDialog.busy ? 'Working…' : 'Save password'}
+              {passwordDialog.busy ? 'Saving…' : 'Save'}
             </button>
           </div>
         </Dialog>
       )}
       {syncConflict && (
-        <Dialog title="Choose which data to keep">
+        <Dialog title="Choose data">
           <p className="dialog-help">
-            Both this device and your account have saved data. Keep one — the other is replaced.
+            Account and device data differ. Choose one; the other will be replaced.
           </p>
           <div className="choice-list">
             <button className="choice done" type="button" onClick={() => void resolveSyncConflict('account')}>
               <Icon name="cloud" size={18} />
-              <span>Use my account&rsquo;s data</span>
+              <span>Use account data</span>
             </button>
             <button className="choice" type="button" onClick={() => void resolveSyncConflict('device')}>
               <Icon name="download" size={18} />
-              <span>Keep this device&rsquo;s data</span>
+              <span>Use device data</span>
             </button>
           </div>
           <button className="choice-cancel" type="button" onClick={() => void cancelSyncConflict()}>
-            Cancel
+            Cancel and sign out
           </button>
         </Dialog>
       )}
@@ -4221,7 +4215,7 @@ function guidanceSentence(previous: PreviousResult) {
     return 'Last result: failed. Repeat today.'
   }
 
-  return 'No previous result. Choose based on feel.'
+  return "No previous result. Choose today's weight."
 }
 
 function guidanceClass(previous: PreviousResult) {
@@ -4264,7 +4258,7 @@ function categoryLabel(category: Category) {
 
 function syncStatusLabel(status: SyncStatus) {
   if (status === 'checking') {
-    return 'Checking cloud…'
+    return 'Checking…'
   }
   if (status === 'syncing') {
     return 'Syncing…'
@@ -4276,13 +4270,13 @@ function syncStatusLabel(status: SyncStatus) {
     return 'Sync paused'
   }
   if (status === 'conflict') {
-    return 'Choose which data to keep'
+    return 'Choose data'
   }
   return 'Offline'
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error && error.message ? error.message : 'Could not reach the cloud.'
+  return error instanceof Error && error.message ? error.message : 'Cloud connection failed.'
 }
 
 function createId() {

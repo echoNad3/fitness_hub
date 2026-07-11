@@ -13,7 +13,7 @@ export type CloudState = {
 
 function requireClient() {
   if (!supabase) {
-    throw new Error('Cloud sync is not configured.')
+    throw new Error('Cloud sync is unavailable.')
   }
 
   return supabase

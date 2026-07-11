@@ -448,10 +448,10 @@ lint + strict build + reuse of previously verified components; give the live app
   **Grouping rules (2026-07-02 audit):** segmented controls (Load Total/Per hand) and muscle chips
   use `selection` on both/all options — never `toggle-on/off`, whose Android TOGGLE_OFF effect is
   near-imperceptible; all lineup edits (hide/show, link/unlink, swap, add; reorder via drag) share
-  the light selection/drag group; the increase stage's Accept **and** Cancel both use `confirm`
+  the light selection/drag group; the increase stage's Apply **and** Keep weight actions both use `confirm`
   (same pair as Done/Failed); a stepper tap that cannot change the value (at a bound) is silent.
   `toggle-on/off` remains only on the rest dock start/cancel.
-- **Confirm dialogs** — all destructive confirms (discard edits, remove exercise, delete session,
+- **Confirm dialogs** — all destructive confirms (discard edits, delete exercise, delete workout,
   reset) use one styled root-level `confirmDialog` ({title, message, confirmLabel, danger, haptic,
   onConfirm}), never `window.confirm`. It participates in the overlay/back system like other dialogs.
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
@@ -477,6 +477,13 @@ lint + strict build + reuse of previously verified components; give the live app
   short-screen scrolling. The lighter `--accent-text` foreground token raises small blue text/icons
   above the established contrast threshold. The rest-dock lower mask is viewport-fixed, eliminating
   incidental document overflow without disabling real scrolling on shorter screens.
+- **App-wide copy audit (2026-07-11)** — every user-facing string in screens, cards, settings,
+  workout controls, dialogs, confirmations, status messages, errors, empty states, placeholders,
+  accessibility labels, and PWA metadata was reviewed and rewritten in short, direct, plain English.
+  Marketing language, metaphors, filler, repeated explanations, and inconsistent session/workout
+  terminology were removed. Destructive prompts still state the consequence, sync errors still protect
+  and describe local data, and action labels now use direct verbs such as Save, Delete, Sync, Download,
+  Apply, and Stop. A second codebase search confirmed the retired copy is gone from user-facing code.
 - **Safety net** — real git repo (the original `.git` was empty/broken). "Undo everything" = ask
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
@@ -513,15 +520,17 @@ default Workout A/B has zero document overflow and the full dock remains visible
 document regains genuine overflow and the dock stays pinned while scrolling. Tests (19), lint, and
 production build pass.
 Cloud sync steps 3 and 4a pass build, lint, and unit tests.
-The 2026-07-11 interaction-hardening pass separately passes all 19 tests, lint, TypeScript production
+The 2026-07-11 interaction-hardening and copy-audit passes separately pass all 19 tests, lint, TypeScript production
 build, PWA generation, and `git diff --check`. It was then click-tested in the in-app browser across
 Home, every signed-out launcher/dialog, History, Settings, Workout A, Workout B, result/weight/rest
 interactions, edit mode, link/discard dialogs, and scrolling at 412×915, 412×800, 360×800, and a
 360×500 short dialog viewport. The default 412×915 workouts have zero overflow; 412×800 scrolls
 normally; 360px has no horizontal overflow; the 360×500 link dialog scrolls internally with the
-background locked. Browser console finished with zero warnings/errors. The signed-in Account dialog
-was not live-tested because this browser profile had no authenticated account; its shared dialog
-primitives were covered, but authenticated sync actions retain their earlier verification status.
+  background locked. Browser console finished with zero warnings/errors. The signed-in Account dialog
+  was later tested with the dedicated test account: it showed the account state, manual Sync moved from
+  Syncing to Synced, and Change password opened and canceled without changing the password. The browser's
+  localhost policy blocked a second DOM pass after the copy-only rewrite; tests, lint, build, diff review,
+  and the exhaustive stale-copy search cover the resulting bundle without claiming a post-rewrite click test.
 Its authenticated upload path was verified locally with a reversible 90s → 105s → 90s change:
 both writes reached `Synced` with no console errors. Cross-device pull was then verified on the
 live phone app using a temporary 105s marker; the cloud value was restored to 90s afterward.
