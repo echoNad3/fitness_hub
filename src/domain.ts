@@ -17,6 +17,21 @@ export function nextPendingId(
 
 export const MIN_REST_SECONDS = 5
 export const MAX_REST_SECONDS = 600
+export const MAX_WORKOUT_DURATION_MINUTES = 23 * 60 + 59
+
+export function workoutDurationMinutes(hours: number, minutes: number) {
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null
+  }
+  const total = hours * 60 + minutes
+  return total >= 1 && total <= MAX_WORKOUT_DURATION_MINUTES ? total : null
+}
 
 // Clamp a rest length to the supported range.
 export function clampRestValue(value: number) {

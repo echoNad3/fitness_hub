@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { clampRestValue, nextPendingId, restSecondsRemaining, toggleResult } from '../src/domain.ts'
+import { clampRestValue, nextPendingId, restSecondsRemaining, toggleResult, workoutDurationMinutes } from '../src/domain.ts'
 
 test('result buttons toggle, switch, and clear predictably', () => {
   assert.equal(toggleResult(undefined, 'success'), 'success')
@@ -26,4 +26,14 @@ test('rest countdown follows its wall-clock end time', () => {
   assert.equal(restSecondsRemaining(100_000, 99_001), 1)
   assert.equal(restSecondsRemaining(100_000, 100_000), 0)
   assert.equal(restSecondsRemaining(100_000, 120_000), 0)
+})
+
+test('edited workout duration must be a real time under 24 hours', () => {
+  assert.equal(workoutDurationMinutes(1, 15), 75)
+  assert.equal(workoutDurationMinutes(0, 1), 1)
+  assert.equal(workoutDurationMinutes(23, 59), 1439)
+  assert.equal(workoutDurationMinutes(0, 0), null)
+  assert.equal(workoutDurationMinutes(24, 0), null)
+  assert.equal(workoutDurationMinutes(1, 60), null)
+  assert.equal(workoutDurationMinutes(1.5, 0), null)
 })

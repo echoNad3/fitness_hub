@@ -272,6 +272,12 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **History workout options + duration repair:** each History card is now one full-width target;
+  tapping it opens `Workout options` with Edit workout, Edit duration (finished sessions only),
+  Delete workout, and Cancel. Duration uses manual hours/minutes fields plus the shared hold-stepper
+  behavior, validates 1 minute–23h 59m, updates `finishedAt` while preserving `createdAt`, and
+  immediately recalculates the card and average. Finished/Unfinished chips share an exact 92px ×
+  48px footprint. The old separate trash column was removed.
 - Latest commit: **default workout seed refresh.** `defaultWorkouts` updated to match the user's
   revised spreadsheet: several exercises renamed (e.g. Chest-Supported Machine Row → Machine Row,
   Seated/Reverse Cable/Machine Chest/Rear-Delt Fly → Cable Fly/Machine Fly/Reverse Cable
@@ -417,8 +423,10 @@ live in the commit messages and the feature list below.
   launcher tiles: **History**, **Settings**, **Sign in / Account** (live sync-status dot),
   **Android app** (version-aware status dot; opens the download dialog), **Gym pass** (the saved
   entry QR; opens its dialog), and **About** (short app summary). No browser confirms.
-- **History** — clean cards, relative + absolute time, a green **Finished** / red **Unfinished**
-  chip with the displayed-slot count, the 14-day tracker, trash delete.
+- **History** — full-width cards, relative + absolute time, equal-size green **Finished** / red
+  **Unfinished** chips with the displayed-slot count, the 28-day tracker, and a `Workout options`
+  dialog for opening, editing a finished duration, or deleting. Duration editing accepts manual
+  hours/minutes or the standard hold-to-repeat −/+ controls.
 - **Settings** — Export/Import JSON backup, Test vibration, Reset (cloud sync and the APK download
   live on the home hub now). Export/Import and vibration outcomes show as inline notes on their
   rows (no browser alert popups anywhere in the app) and auto-clear after 5 seconds.
@@ -469,7 +477,7 @@ live in the commit messages and the feature list below.
   and failures; destructive confirmations use a strong effect. Android uses system-aware semantic
   constants, while the locked-screen rest alarm remains a separate four-pulse maximum-amplitude alert.
   The old raw `@capacitor/haptics` dependency was removed so there is only one interaction path.
-  Every numeric −/+ stepper (sets, reps, rest, weight, and increase amount) applies a quick tap on
+  Every numeric −/+ stepper (sets, reps, rest, weight, increase amount, and History duration) applies a quick tap on
   release and delays repeat until 380ms, so a touch that becomes scrolling is cancelled before either
   the value or haptic can change. Deliberate holds repeat every 110ms with one Selection per real step.
   **Grouping rules (2026-07-02 audit):** segmented controls (Load Total/Per hand) and muscle chips

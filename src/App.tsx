@@ -32,7 +32,7 @@ import {
   nextLocalTimestamp,
   parseCloudTimestamp,
 } from './cloudSync'
-import { MAX_REST_SECONDS, MIN_REST_SECONDS, clampRestValue, nextPendingId, restSecondsRemaining, toggleResult } from './domain'
+import { MAX_REST_SECONDS, MIN_REST_SECONDS, clampRestValue, nextPendingId, restSecondsRemaining, toggleResult, workoutDurationMinutes } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
@@ -151,6 +151,13 @@ type PreviousDialog = {
 type LinkDialog = {
   workoutId: WorkoutId
   groupId: string
+}
+
+type DurationDialog = {
+  sessionId: string
+  hours: string
+  minutes: string
+  error: string
 }
 
 
@@ -700,6 +707,80 @@ function useHoldStepper() {
   return { bind, stop }
 }
 
+function DurationEditor({
+  dialog,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  dialog: DurationDialog
+  onChange: (next: DurationDialog) => void
+  onCancel: () => void
+  onSave: () => void
+}) {
+  const hoursRef = useRef(dialog.hours)
+  const minutesRef = useRef(dialog.minutes)
+  hoursRef.current = dialog.hours
+  minutesRef.current = dialog.minutes
+  const holdStepper = useHoldStepper()
+
+  const step = (field: 'hours' | 'minutes', delta: number) => {
+    const source = field === 'hours' ? hoursRef.current : minutesRef.current
+    const current = Number.parseInt(source, 10)
+    const maximum = field === 'hours' ? 999 : 59
+    const next = Math.min(maximum, Math.max(0, (Number.isFinite(current) ? current : 0) + delta))
+    if (String(next) === source) return false
+    if (field === 'hours') hoursRef.current = String(next)
+    else minutesRef.current = String(next)
+    onChange({ ...dialog, [field]: String(next), error: '' })
+    return true
+  }
+
+  return (
+    <Dialog title="Edit duration">
+      <div className="duration-fields">
+        {(['hours', 'minutes'] as const).map((field) => (
+          <label className="duration-field" key={field}>
+            <span>{field === 'hours' ? 'Hours' : 'Minutes'}</span>
+            <span className="duration-control">
+              <button
+                type="button"
+                aria-label={`Decrease ${field}`}
+                {...holdStepper.bind(() => step(field, -1))}
+              >
+                <Icon name="minus" size={18} />
+              </button>
+              <input
+                className="number-input"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max={field === 'hours' ? undefined : 59}
+                step="1"
+                value={dialog[field]}
+                aria-label={field === 'hours' ? 'Hours' : 'Minutes'}
+                onChange={(event) => onChange({ ...dialog, [field]: event.target.value, error: '' })}
+              />
+              <button
+                type="button"
+                aria-label={`Increase ${field}`}
+                {...holdStepper.bind(() => step(field, 1))}
+              >
+                <Icon name="plus" size={18} />
+              </button>
+            </span>
+          </label>
+        ))}
+      </div>
+      {dialog.error && <p className="auth-error" role="alert">{dialog.error}</p>}
+      <div className="dialog-actions">
+        <button type="button" onClick={onCancel}>Cancel</button>
+        <button className="primary-action" type="button" onClick={onSave}>Save</button>
+      </div>
+    </Dialog>
+  )
+}
+
 // The editable fields for a single exercise. Swap alternatives are equal siblings, so every one shows
 // the full set of fields including its own muscle picker. Drafts are held locally and committed on
 // blur so typing never fights the persisted value.
@@ -1159,6 +1240,8 @@ function App() {
     danger?: boolean
     onConfirm: () => void
   } | null>(null)
+  const [historyOptionsSessionId, setHistoryOptionsSessionId] = useState<string | null>(null)
+  const [durationDialog, setDurationDialog] = useState<DurationDialog | null>(null)
   const [syncError, setSyncError] = useState('')
   const [syncAttempt, setSyncAttempt] = useState(0)
   const [cloudActionBusy, setCloudActionBusy] = useState(false)
@@ -1219,6 +1302,8 @@ function App() {
     passDialogOpen ||
     aboutDialogOpen ||
     confirmDialog !== null ||
+    historyOptionsSessionId !== null ||
+    durationDialog !== null ||
     syncConflict !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
@@ -1749,6 +1834,9 @@ function App() {
     () => [...data.sessions].sort((a, b) => b.createdAt - a.createdAt),
     [data.sessions],
   )
+  const historyOptionsSession = historyOptionsSessionId
+    ? data.sessions.find((session) => session.id === historyOptionsSessionId) ?? null
+    : null
 
   // Drag-to-reorder in edit mode: press-and-hold to start (the standard mobile reorder gesture), so
   // the interaction is consistent — every drag begins the same way and fires one haptic at drag
@@ -1863,6 +1951,8 @@ function App() {
     setAboutDialogOpen(false)
     setStartDialogOpen(false)
     setConfirmDialog(null)
+    setHistoryOptionsSessionId(null)
+    setDurationDialog(null)
     if (syncConflictRef.current) {
       setSyncConflict(null)
       setSyncStatus('idle')
@@ -1881,6 +1971,40 @@ function App() {
     window.setTimeout(() => {
       setHighlightSession((current) => (current === sessionId ? null : current))
     }, 1800)
+  }
+
+  const openDurationEditor = (session: WorkoutSession) => {
+    if (session.finishedAt === undefined || session.finishedAt <= session.createdAt) return
+    const totalMinutes = Math.max(1, Math.round((session.finishedAt - session.createdAt) / 60000))
+    setHistoryOptionsSessionId(null)
+    setDurationDialog({
+      sessionId: session.id,
+      hours: String(Math.floor(totalMinutes / 60)),
+      minutes: String(totalMinutes % 60),
+      error: '',
+    })
+  }
+
+  const saveDuration = () => {
+    if (!durationDialog) return
+    const hours = Number(durationDialog.hours)
+    const minutes = Number(durationDialog.minutes)
+    const totalMinutes = workoutDurationMinutes(hours, minutes)
+    if (totalMinutes === null) {
+      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 1 minute to 23 hours 59 minutes.' })
+      void haptics.reject()
+      return
+    }
+    setData((current) => ({
+      ...current,
+      sessions: current.sessions.map((session) =>
+        session.id === durationDialog.sessionId
+          ? { ...session, finishedAt: session.createdAt + totalMinutes * 60000 }
+          : session,
+      ),
+    }))
+    setDurationDialog(null)
+    void haptics.confirm()
   }
 
   // Schedule (or reschedule) the native locked-screen alarm for the given end time, surfacing the
@@ -2226,7 +2350,7 @@ function App() {
                     id={`hist-${session.id}`}
                     key={session.id}
                   >
-                    <button className="hist-open" type="button" onClick={() => openSession(session.workoutId, session.id)}>
+                    <button className="hist-open" type="button" onClick={() => setHistoryOptionsSessionId(session.id)}>
                       <span className="hist-main">
                         <strong>{workout.name}</strong>
                         <small>
@@ -2240,9 +2364,6 @@ function App() {
                         {finished ? 'Finished' : 'Unfinished'}
                         <em>{doneCount}/{total}</em>
                       </span>
-                    </button>
-                    <button className="hist-del" type="button" aria-label="Delete workout" onClick={() => deleteSession(session.id)}>
-                      <Icon name="trash" size={18} />
                     </button>
                   </article>
                 )
@@ -2823,7 +2944,7 @@ function App() {
     </section>
   )
 
-  const openSession = (workoutId: WorkoutId, sessionId: string) => {
+  const openSession = (workoutId: WorkoutId, sessionId: string, confirmResume = true) => {
     setData((current) =>
       // Re-opening the already-current session isn't a data change — keep the object identity so it
       // doesn't count as a meaningful edit for sync.
@@ -2838,7 +2959,7 @@ function App() {
           },
     )
     setEditMode(false)
-    void haptics.confirm()
+    if (confirmResume) void haptics.confirm()
     navigate({ name: 'session', workoutId, sessionId })
   }
 
@@ -3802,6 +3923,56 @@ function App() {
             Cancel and sign out
           </button>
         </Dialog>
+      )}
+      {historyOptionsSession && (
+        <Dialog title="Workout options">
+          <p className="dialog-help">
+            {getWorkout(historyOptionsSession.workoutId).name} · {formatAbsolute(historyOptionsSession.createdAt)}
+          </p>
+          <div className="choice-list">
+            <button
+              className="choice"
+              type="button"
+              onClick={() => {
+                setHistoryOptionsSessionId(null)
+                editSnapshotRef.current = { templates: data.templates, sessions: data.sessions }
+                openSession(historyOptionsSession.workoutId, historyOptionsSession.id, false)
+                setEditMode(true)
+              }}
+            >
+              <Icon name="edit" size={18} />
+              <span>Edit workout</span>
+            </button>
+            {historyOptionsSession.finishedAt !== undefined && historyOptionsSession.finishedAt > historyOptionsSession.createdAt && (
+              <button className="choice" type="button" onClick={() => openDurationEditor(historyOptionsSession)}>
+                <Icon name="clock" size={18} />
+                <span>Edit duration</span>
+              </button>
+            )}
+            <button
+              className="choice failed"
+              type="button"
+              onClick={() => {
+                setHistoryOptionsSessionId(null)
+                deleteSession(historyOptionsSession.id)
+              }}
+            >
+              <Icon name="trash" size={18} />
+              <span>Delete workout</span>
+            </button>
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => setHistoryOptionsSessionId(null)}>
+            Cancel
+          </button>
+        </Dialog>
+      )}
+      {durationDialog && (
+        <DurationEditor
+          dialog={durationDialog}
+          onChange={setDurationDialog}
+          onCancel={() => setDurationDialog(null)}
+          onSave={saveDuration}
+        />
       )}
       {confirmDialog && (
         <Dialog title={confirmDialog.title}>

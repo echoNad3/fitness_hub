@@ -33,15 +33,13 @@
 }
 
 .hist-card {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
   scroll-margin-top: calc(70px + env(safe-area-inset-top));
   border-radius: var(--radius-card);
   transition: box-shadow 200ms ease;
 }
 
 .hist-open {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -83,6 +81,9 @@
 
 .hist-chip.done,
 .hist-chip.unfinished {
+  width: 92px;
+  min-height: var(--tap);
+  align-content: center;
   display: grid;
   gap: 1px;
   justify-items: center;
@@ -247,16 +248,6 @@
   color: var(--quiet);
 }
 
-.hist-del {
-  width: 52px;
-  display: grid;
-  place-items: center;
-  color: var(--danger);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-}
-
 .set-row {
   position: relative;
   display: grid;
@@ -419,7 +410,6 @@
 }
 
 .hist-open,
-.hist-del,
 .set-row {
   cursor: pointer;
   transition:
@@ -433,13 +423,7 @@
   transform: scale(0.98);
 }
 
-/* Small/icon control — deeper press, one standard with the steppers and pills. */
-.hist-del:active {
-  transform: scale(0.95);
-}
-
 .hist-open:focus-visible,
-.hist-del:focus-visible,
 .set-row:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -447,7 +431,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hist-open,
-  .hist-del,
   .set-row {
     transition: none;
   }
