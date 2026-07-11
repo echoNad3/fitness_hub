@@ -99,4 +99,11 @@ public class RestAlarmPlugin extends Plugin {
         }
         call.resolve();
     }
+
+    @PluginMethod
+    public void preview(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("performed", RestVibrationReceiver.vibrate(getContext()));
+        call.resolve(result);
+    }
 }

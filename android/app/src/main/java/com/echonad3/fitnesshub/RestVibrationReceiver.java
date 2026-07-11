@@ -11,14 +11,14 @@ import android.os.Vibrator;
 import android.os.VibratorManager;
 
 /**
- * Fires when the rest timer ends. Plays a maximum-amplitude 3-second vibration so it is felt
- * clearly even while the phone is locked — independent of any notification.
+ * Fires when the rest timer ends. Plays the strong one-shot rest pattern so it is felt clearly
+ * while the phone is locked, using Android's alarm vibration policy.
  */
 public class RestVibrationReceiver extends BroadcastReceiver {
 
-    // Leading 0 = no initial wait; amplitude 255 is the strongest supported waveform level.
-    private static final long[] PATTERN = {0, 3000};
-    private static final int[] AMPLITUDES = {0, 255};
+    // Three unmistakable pulses, played once. This custom waveform is reserved for rest completion.
+    private static final long[] PATTERN = {0, 400, 150, 400, 150, 1000, 200, 1000};
+    private static final int[] AMPLITUDES = {0, 255, 0, 255, 0, 255, 0, 255};
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -30,15 +30,18 @@ public class RestVibrationReceiver extends BroadcastReceiver {
             wakeLock.acquire(5000L);
         }
 
+        vibrate(context);
+    }
+
+    public static boolean vibrate(Context context) {
         Vibrator vibrator = getVibrator(context);
         if (vibrator == null || !vibrator.hasVibrator()) {
-            return;
+            return false;
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Mark this as an ALARM vibration. Without a usage, Android suppresses background
-            // vibrations while the screen is locked/off; USAGE_ALARM is allowed to play through a
-            // locked screen and through Do Not Disturb — which is exactly the rest-end alert we want.
+            // Mark this as an alarm so Android applies the device's alarm vibration policy and can
+            // deliver the user-started rest alert while the screen is locked.
             AudioAttributes attributes = new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -47,9 +50,10 @@ public class RestVibrationReceiver extends BroadcastReceiver {
         } else {
             vibrator.vibrate(PATTERN, -1);
         }
+        return true;
     }
 
-    private Vibrator getVibrator(Context context) {
+    private static Vibrator getVibrator(Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             VibratorManager manager = (VibratorManager) context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
             return manager != null ? manager.getDefaultVibrator() : null;

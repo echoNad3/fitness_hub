@@ -39,7 +39,7 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApk, type LatestApk } from './apkVersion'
 import { getStored, setStored } from './storage'
-import { haptic, type HapticEvent } from './haptics'
+import { haptics } from './haptics'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -639,7 +639,10 @@ function PasswordInput({
         type="button"
         aria-label={show ? 'Hide password' : 'Show password'}
         aria-pressed={show}
-        onClick={() => setShow((current) => !current)}
+        onClick={() => {
+          setShow((current) => !current)
+          void haptics.selection()
+        }}
       >
         <Icon name={show ? 'eye-off' : 'eye'} size={19} />
       </button>
@@ -669,24 +672,32 @@ function VariantFields({
     if (nameDraft !== null) {
       const nextName = nameDraft.trim()
       if (!nextName) {
-        void haptic('error')
+        void haptics.reject()
         setNameDraft(null)
         return
       }
-      onPatch({ name: nextName })
+      if (nextName !== name) {
+        onPatch({ name: nextName })
+      }
       setNameDraft(null)
     }
   }
   const commitSetup = () => {
     if (setupDraft !== null) {
-      onPatch({ setup: setupDraft.trim() })
+      const nextSetup = setupDraft.trim()
+      if (nextSetup !== setup) {
+        onPatch({ setup: nextSetup })
+      }
       setSetupDraft(null)
     }
   }
   const commitNote = () => {
     if (noteDraft !== null) {
       const trimmed = noteDraft.trim()
-      onPatch({ note: trimmed === '' ? undefined : trimmed })
+      const nextNote = trimmed === '' ? undefined : trimmed
+      if (nextNote !== variant.note) {
+        onPatch({ note: nextNote })
+      }
       setNoteDraft(null)
     }
   }
@@ -694,9 +705,12 @@ function VariantFields({
     if (weightDraft !== null) {
       const parsed = Number(weightDraft)
       if (weightDraft.trim() !== '' && Number.isFinite(parsed) && parsed >= 0) {
-        onPatch({ weight: roundWeight(parsed) })
+        const nextWeight = roundWeight(parsed)
+        if (nextWeight !== weight) {
+          onPatch({ weight: nextWeight })
+        }
       } else {
-        void haptic('error')
+        void haptics.reject()
       }
       setWeightDraft(null)
     }
@@ -731,7 +745,7 @@ function VariantFields({
                 onClick={() => {
                   if (!selected) {
                     onPatch({ category: cat })
-                    void haptic('selection')
+                    void haptics.selection()
                   }
                 }}
               >
@@ -752,7 +766,7 @@ function VariantFields({
               onClick={() => {
                 if (sets > 1) {
                   onPatch({ sets: sets - 1 })
-                  void haptic('increment')
+                  void haptics.selection()
                 }
               }}
             >
@@ -764,7 +778,7 @@ function VariantFields({
               aria-label="Increase sets"
               onClick={() => {
                 onPatch({ sets: sets + 1 })
-                void haptic('increment')
+                void haptics.selection()
               }}
             >
               <Icon name="plus" size={18} />
@@ -780,7 +794,7 @@ function VariantFields({
               onClick={() => {
                 if (reps > 1) {
                   onPatch({ reps: reps - 1 })
-                  void haptic('increment')
+                  void haptics.selection()
                 }
               }}
             >
@@ -792,7 +806,7 @@ function VariantFields({
               aria-label="Increase reps"
               onClick={() => {
                 onPatch({ reps: reps + 1 })
-                void haptic('increment')
+                void haptics.selection()
               }}
             >
               <Icon name="plus" size={18} />
@@ -854,7 +868,7 @@ function VariantFields({
             onClick={() => {
               if (perHand) {
                 onPatch({ perHand: false })
-                void haptic('selection')
+                void haptics.selection()
               }
             }}
           >
@@ -867,7 +881,7 @@ function VariantFields({
             onClick={() => {
               if (!perHand) {
                 onPatch({ perHand: true })
-                void haptic('selection')
+                void haptics.selection()
               }
             }}
           >
@@ -930,9 +944,12 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
     const secs = Number(secDraft ?? String(restSecondsPart))
     if (Number.isFinite(mins) && Number.isFinite(secs)) {
       const total = Math.max(0, Math.round(mins)) * 60 + Math.max(0, Math.round(secs))
-      props.onRest(Math.min(600, Math.max(5, total)))
+      const nextRest = Math.min(600, Math.max(5, total))
+      if (nextRest !== restSeconds) {
+        props.onRest(nextRest)
+      }
     } else {
-      void haptic('error')
+      void haptics.reject()
     }
     setMinDraft(null)
     setSecDraft(null)
@@ -977,7 +994,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                   onClick={() => {
                     if (restSeconds > MIN_REST_SECONDS) {
                       props.onRest(restSeconds - 10)
-                      void haptic('increment')
+                      void haptics.selection()
                     }
                   }}
                 >
@@ -1021,7 +1038,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                   onClick={() => {
                     if (restSeconds < MAX_REST_SECONDS) {
                       props.onRest(restSeconds + 10)
-                      void haptic('increment')
+                      void haptics.selection()
                     }
                   }}
                 >
@@ -1084,7 +1101,6 @@ function App() {
     message: string
     confirmLabel: string
     danger?: boolean
-    haptic?: HapticEvent
     onConfirm: () => void
   } | null>(null)
   const [syncError, setSyncError] = useState('')
@@ -1124,6 +1140,7 @@ function App() {
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
   const syncTimer = useRef<number | null>(null)
+  const manualSyncPendingRef = useRef(false)
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
   const expandedRef = useRef<string | null>(null)
@@ -1186,6 +1203,15 @@ function App() {
     setStored(LAST_SYNCED_KEY, String(now))
   }
 
+  const finishManualSync = (success: boolean) => {
+    if (!manualSyncPendingRef.current) {
+      return false
+    }
+    manualSyncPendingRef.current = false
+    void (success ? haptics.confirm() : haptics.reject())
+    return true
+  }
+
   queueCloudPushRef.current = () => {
     const user = cloudUserRef.current
     if (!supabase || !user || !syncReadyRef.current) {
@@ -1213,6 +1239,7 @@ function App() {
         }
 
         markSynced()
+        finishManualSync(true)
         if (localUpdatedAtRef.current > pushedAt) {
           queueCloudPushRef.current()
         } else {
@@ -1222,6 +1249,9 @@ function App() {
         if (cloudUserRef.current?.id === user.id) {
           setSyncStatus('error')
           setSyncError(errorMessage(error))
+        }
+        if (!finishManualSync(false)) {
+          void haptics.reject()
         }
       }
     }, SYNC_DEBOUNCE_MS)
@@ -1376,6 +1406,7 @@ function App() {
           }
           setSyncConflict({ remote, remoteUpdatedAt })
           setSyncStatus('conflict')
+          manualSyncPendingRef.current = false
           return
         }
 
@@ -1393,6 +1424,7 @@ function App() {
           setData(normalizeData(remote.data))
           setSyncStatus('synced')
           markSynced()
+          finishManualSync(true)
           return
         }
 
@@ -1407,6 +1439,7 @@ function App() {
         setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
         syncReadyRef.current = true
         markSynced()
+        finishManualSync(true)
         if (localUpdatedAtRef.current > pushedAt) {
           queueCloudPushRef.current()
         } else {
@@ -1416,6 +1449,9 @@ function App() {
         if (!cancelled) {
           setSyncStatus('error')
           setSyncError(errorMessage(error))
+          if (!finishManualSync(false)) {
+            void haptics.reject()
+          }
         }
       }
     }
@@ -1471,7 +1507,6 @@ function App() {
               message: 'Your workout edits will be lost.',
               confirmLabel: 'Discard',
               danger: true,
-              haptic: 'destructive',
               onConfirm: () => {
                 if (editSnapshotRef.current) {
                   const snapshot = editSnapshotRef.current
@@ -1668,7 +1703,12 @@ function App() {
     if (!over || active.id === over.id) {
       return
     }
-    void haptic('drag-end')
+    const workout = data.templates.find((template) => template.id === workoutId)
+    const oldIndex = workout?.groups.findIndex((group) => group.id === active.id) ?? -1
+    const newIndex = workout?.groups.findIndex((group) => group.id === over.id) ?? -1
+    if (oldIndex < 0 || newIndex < 0) {
+      return
+    }
     setEditDirty(true)
     setData((current) => ({
       ...current,
@@ -1676,20 +1716,17 @@ function App() {
         if (template.id !== workoutId) {
           return template
         }
-        const oldIndex = template.groups.findIndex((group) => group.id === active.id)
-        const newIndex = template.groups.findIndex((group) => group.id === over.id)
-        if (oldIndex < 0 || newIndex < 0) {
-          return template
-        }
         return { ...template, groups: arrayMove(template.groups, oldIndex, newIndex) }
       }),
     }))
+    void haptics.dragDrop()
   }
 
   // Cancel the "choose which data to keep" prompt: undo the sign-in attempt entirely by signing out,
   // so the app returns to exactly the state it was in before this account was tried. Local data is
   // never touched by the conflict flow, so nothing is lost.
   const cancelSyncConflict = async () => {
+    manualSyncPendingRef.current = false
     setSyncConflict(null)
     setSyncStatus('idle')
     setSyncError('')
@@ -1718,7 +1755,7 @@ function App() {
         setData(normalizeData(conflict.remote.data))
         setSyncStatus('synced')
         markSynced()
-        void haptic('destructive')
+        void haptics.confirm()
       } else {
         const pushedAt = Math.max(localUpdatedAtRef.current, Date.now())
         localUpdatedAtRef.current = pushedAt
@@ -1727,12 +1764,12 @@ function App() {
         syncReadyRef.current = true
         setSyncStatus('synced')
         markSynced()
-        void haptic('destructive')
+        void haptics.confirm()
       }
     } catch (error) {
       setSyncStatus('error')
       setSyncError(errorMessage(error))
-      void haptic('error')
+      void haptics.reject()
     }
   }
 
@@ -1795,13 +1832,13 @@ function App() {
         setRestNotificationMessage(
           'Update the Android app for locked-screen rest alerts. The timer still works.',
         )
-        void haptic('error')
+        void haptics.reject()
       } else if (result.status === 'failed') {
         if (result.detail) {
           console.warn('Rest alarm failed:', result.detail)
         }
         setRestNotificationMessage('Locked-screen rest alert unavailable. The timer still works.')
-        void haptic('error')
+        void haptics.reject()
       }
     })
   }
@@ -1815,12 +1852,12 @@ function App() {
     setRestEndsAt(endsAt)
     setRestSeconds(restSecondsRemaining(endsAt, Date.now()))
     setRestDuration((current) => current + 10)
-    void haptic('increment')
+    void haptics.selection()
     startRestAlarm(endsAt)
   }
 
   const triggerRestDone = () => {
-    void haptic('timer-finished')
+    void haptics.timerFinished()
     setRestPulse(true)
 
     if (pulseTimer.current !== null) {
@@ -2165,7 +2202,7 @@ function App() {
     const password = authDialog.password
     if (!email || !password) {
       setAuthDialog({ ...authDialog, error: 'Enter your email and password.', note: '' })
-      void haptic('error')
+      void haptics.reject()
       return
     }
 
@@ -2175,10 +2212,10 @@ function App() {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
         setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
-        void haptic('error')
+        void haptics.reject()
       } else {
         setAuthDialog(null)
-        void haptic('confirm')
+        void haptics.confirm()
       }
       return
     }
@@ -2186,17 +2223,17 @@ function App() {
     const { data: signUpData, error } = await supabase.auth.signUp({ email, password })
     if (error) {
       setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
-      void haptic('error')
+      void haptics.reject()
     } else if (signUpData.session) {
       setAuthDialog(null)
-      void haptic('confirm')
+      void haptics.confirm()
     } else {
       setAuthDialog((current) =>
         current
           ? { ...current, mode: 'in', password: '', busy: false, error: '', note: 'Check your email to confirm the account, then sign in.' }
           : current,
       )
-      void haptic('confirm')
+      void haptics.confirm()
     }
   }
 
@@ -2210,7 +2247,7 @@ function App() {
     const email = authDialog.email.trim()
     if (!email) {
       setAuthDialog({ ...authDialog, error: 'Enter your email first.', note: '' })
-      void haptic('error')
+      void haptics.reject()
       return
     }
 
@@ -2218,14 +2255,14 @@ function App() {
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: PUBLIC_APP_URL })
     if (error) {
       setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
-      void haptic('error')
+      void haptics.reject()
     } else {
       setAuthDialog((current) =>
         current
           ? { ...current, busy: false, error: '', note: `Reset link sent to ${email}. Use it to set a new password.` }
           : current,
       )
-      void haptic('confirm')
+      void haptics.confirm()
     }
   }
 
@@ -2236,7 +2273,7 @@ function App() {
 
     if (passwordDialog.value.length < 6) {
       setPasswordDialog({ ...passwordDialog, error: 'Password must be at least 6 characters.' })
-      void haptic('error')
+      void haptics.reject()
       return
     }
 
@@ -2244,15 +2281,16 @@ function App() {
     const { error } = await supabase.auth.updateUser({ password: passwordDialog.value })
     if (error) {
       setPasswordDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
-      void haptic('error')
+      void haptics.reject()
     } else {
       setPasswordDialog(null)
-      void haptic('confirm')
+      void haptics.confirm()
     }
   }
 
   const retryCloudSync = () => {
     setCloudActionError('')
+    manualSyncPendingRef.current = true
     if (syncReadyRef.current) {
       queueCloudPushRef.current()
     } else {
@@ -2271,7 +2309,7 @@ function App() {
     if (error) {
       setCloudActionBusy(false)
       setCloudActionError(`Sign out failed. ${error.message}`)
-      void haptic('error')
+      void haptics.reject()
       return
     }
 
@@ -2280,10 +2318,11 @@ function App() {
     // logging out and consciously decide, on re-login, whether to keep those local changes or the
     // account's data — instead of silently last-write-wins overwriting one of them.
     setStored(SYNCED_ACCOUNT_KEY, '')
+    manualSyncPendingRef.current = false
     setCloudActionBusy(false)
     setCloudUser(null)
     setAccountDialogOpen(false)
-    void haptic('confirm')
+    void haptics.confirm()
   }
 
   const renderSettings = () => (
@@ -2374,7 +2413,7 @@ function App() {
             onClick={() => {
               if (editMode) {
                 if (editDirty) {
-                  void haptic('confirm')
+                  void haptics.confirm()
                 }
                 setEditMode(false)
               } else {
@@ -2400,7 +2439,7 @@ function App() {
             <DndContext
               sensors={dragSensors}
               collisionDetection={closestCenter}
-              onDragStart={() => void haptic('drag-start')}
+              onDragStart={() => void haptics.dragStart()}
               onDragEnd={(event) => reorderGroups(workout.id, event)}
             >
               <SortableContext items={workout.groups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
@@ -2442,7 +2481,7 @@ function App() {
               type="button"
               onClick={() => {
                 addExercise(workout.id, session.id)
-                void haptic('selection')
+                void haptics.confirm()
               }}
             >
               <Icon name="plus" size={18} />
@@ -2547,7 +2586,7 @@ function App() {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           if (adjustIncrease(session.id, group.id, variant.id, -1)) {
-                            void haptic('increment')
+                            void haptics.selection()
                           }
                         }
                       }}
@@ -2589,7 +2628,7 @@ function App() {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           if (adjustIncrease(session.id, group.id, variant.id, 1)) {
-                            void haptic('increment')
+                            void haptics.selection()
                           }
                         }
                       }}
@@ -2634,7 +2673,7 @@ function App() {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           if (adjustWeight(session.id, group.id, variant.id, -1.25)) {
-                            void haptic('increment')
+                            void haptics.selection()
                           }
                         }
                       }}
@@ -2663,7 +2702,7 @@ function App() {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           if (adjustWeight(session.id, group.id, variant.id, 1.25)) {
-                            void haptic('increment')
+                            void haptics.selection()
                           }
                         }
                       }}
@@ -2735,7 +2774,6 @@ function App() {
               setRestSeconds(activeRest)
               setRestNotificationMessage('')
               void cancelRestNotification()
-              void haptic('toggle-off')
             }}
           >
             Stop
@@ -2751,7 +2789,6 @@ function App() {
             setRestDuration(activeRest)
             setRestEndsAt(endsAt)
             setRestRunning(true)
-            void haptic('toggle-on')
             startRestAlarm(endsAt)
           }}
         >
@@ -2785,6 +2822,7 @@ function App() {
           },
     )
     setEditMode(false)
+    void haptics.confirm()
     navigate({ name: 'session', workoutId, sessionId })
   }
 
@@ -2804,7 +2842,7 @@ function App() {
       },
     }))
     setEditMode(false)
-    void haptic('confirm')
+    void haptics.confirm()
     navigate({ name: 'session', workoutId, sessionId })
   }
 
@@ -2819,7 +2857,6 @@ function App() {
       message: 'This removes it from the workout.',
       confirmLabel: 'Delete',
       danger: true,
-      haptic: 'destructive',
       onConfirm: () => {
         setEditDirty(true)
         setData((current) => ({
@@ -2872,7 +2909,6 @@ function App() {
       message: 'This removes it from History.',
       confirmLabel: 'Delete',
       danger: true,
-      haptic: 'destructive',
       onConfirm: () => {
         setData((current) => ({
           ...current,
@@ -2940,7 +2976,10 @@ function App() {
   // Hide/show an exercise. For a linked pair exactly one member is visible, so toggling one flips its
   // partner the other way; for a standalone exercise it's a plain hide (removed from the workout).
   const toggleHidden = (workoutId: WorkoutId, groupId: string) => {
-    void haptic('selection')
+    const target = data.templates.find((template) => template.id === workoutId)?.groups.find((group) => group.id === groupId)
+    if (!target) {
+      return
+    }
     setEditDirty(true)
     setData((current) => ({
       ...current,
@@ -2968,10 +3007,15 @@ function App() {
         }
       }),
     }))
+    void haptics.confirm()
   }
 
   // Link the given exercise to another as a swap pair. The one higher in the list stays visible.
   const linkExercise = (workoutId: WorkoutId, groupId: string, targetId: string) => {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    if (!workout?.groups.some((group) => group.id === groupId) || !workout.groups.some((group) => group.id === targetId)) {
+      return
+    }
     setLinkDialog(null)
     setEditDirty(true)
     setData((current) => ({
@@ -2996,11 +3040,15 @@ function App() {
         }
       }),
     }))
-    void haptic('selection')
+    void haptics.confirm()
   }
 
   // Unlink an exercise from its pair: both become standalone and visible again.
   const unlinkExercise = (workoutId: WorkoutId, groupId: string) => {
+    const target = data.templates.find((template) => template.id === workoutId)?.groups.find((group) => group.id === groupId)
+    if (!target?.linkId) {
+      return
+    }
     setEditDirty(true)
     setData((current) => ({
       ...current,
@@ -3021,13 +3069,12 @@ function App() {
         }
       }),
     }))
-    void haptic('selection')
+    void haptics.confirm()
   }
 
   // Swap which member of a linked pair is visible (used on the workout screen). Move the expanded
   // state to the newly-visible partner so the slot the user was on stays open.
   const swapLinked = (sessionId: string, workoutId: WorkoutId, currentId: string, partnerId: string) => {
-    void haptic('selection')
     setData((current) => ({
       ...current,
       templates: current.templates.map((template) =>
@@ -3048,6 +3095,7 @@ function App() {
       ),
       expandedBySession: { ...current.expandedBySession, [sessionId]: partnerId },
     }))
+    void haptics.selection()
   }
 
   // Returns whether the weight actually changed, so callers only give haptic feedback for a real
@@ -3088,7 +3136,7 @@ function App() {
       increaseDelta: undefined,
       increaseResolved: true,
     }))
-    void haptic('confirm')
+    void haptics.confirm()
   }
 
   // Cancel: ignore any entered amount and keep the carried weight, but still mark the stage resolved
@@ -3099,7 +3147,6 @@ function App() {
       increaseDelta: undefined,
       increaseResolved: true,
     }))
-    void haptic('confirm')
   }
 
   // Press-and-hold to repeat (weight steppers). A quick tap applies once on release; a deliberate
@@ -3112,11 +3159,11 @@ function App() {
     holdRef.current.timeout = window.setTimeout(() => {
       holdRef.current.started = true
       if (action()) {
-        void haptic('increment')
+        void haptics.selection()
       }
       holdRef.current.interval = window.setInterval(() => {
         if (action()) {
-          void haptic('increment')
+          void haptics.selection()
         }
       }, 110)
     }, 380)
@@ -3125,7 +3172,7 @@ function App() {
   const finishHold = () => {
     const { action, started } = holdRef.current
     if (action && !started && action()) {
-      void haptic('increment')
+      void haptics.selection()
     }
     stopHold()
   }
@@ -3177,7 +3224,7 @@ function App() {
         },
       }
     })
-    void haptic('confirm')
+    void haptics.confirm()
   }
 
   const updateExerciseEntry = (
@@ -3214,23 +3261,55 @@ function App() {
 
     const parsed = Number(weightDialog.value)
     if (!Number.isFinite(parsed) || parsed < 0) {
-      void haptic('error')
+      void haptics.reject()
       return
     }
 
-    updateExerciseEntry(weightDialog.sessionId, weightDialog.groupId, weightDialog.variantId, (entry) =>
-      weightDialog.increase
-        ? { ...entry, increaseDelta: roundWeight(parsed) }
-        : { ...entry, weight: roundWeight(parsed) },
-    )
+    const nextWeight = roundWeight(parsed)
+    const session = data.sessions.find((candidate) => candidate.id === weightDialog.sessionId)
+    const currentEntry = session
+      ? getEntry(session, weightDialog.groupId, weightDialog.variantId)
+      : undefined
+    const unchanged = weightDialog.increase
+      ? currentEntry?.increaseDelta === nextWeight
+      : currentEntry?.weight === nextWeight
+    if (!unchanged) {
+      updateExerciseEntry(weightDialog.sessionId, weightDialog.groupId, weightDialog.variantId, (entry) =>
+        weightDialog.increase
+          ? { ...entry, increaseDelta: nextWeight }
+          : { ...entry, weight: nextWeight },
+      )
+    }
     setWeightDialog(null)
-    void haptic('confirm')
+    if (!unchanged) {
+      void haptics.confirm()
+    }
   }
 
   const setPreviousResult = (status: PreviousResult) => {
     if (!previousDialog) {
       return
     }
+
+    const currentSession = data.sessions.find((candidate) => candidate.id === previousDialog.sessionId)
+    if (!currentSession) {
+      setPreviousDialog(null)
+      return
+    }
+    const currentTarget = findPreviousTarget(
+      data,
+      previousDialog.workoutId,
+      currentSession,
+      previousDialog.groupId,
+      previousDialog.variantId,
+    )
+    const currentResult = currentTarget.sessionId
+      ? data.sessions.find((candidate) => candidate.id === currentTarget.sessionId)
+          ?.groupEntries[previousDialog.groupId]?.entries[previousDialog.variantId]?.result ?? 'missing'
+      : data.baselineResults[previousDialog.variantId] ?? 'missing'
+    const currentEntry = currentSession.groupEntries[previousDialog.groupId]?.entries[previousDialog.variantId]
+    const reopensIncrease = Boolean(currentEntry?.increaseResolved || currentEntry?.increaseDelta !== undefined)
+    const changed = currentResult !== status || reopensIncrease
 
     setData((current) => {
       const session = current.sessions.find((candidate) => candidate.id === previousDialog.sessionId)
@@ -3281,7 +3360,9 @@ function App() {
     })
 
     setPreviousDialog(null)
-    void haptic('selection')
+    if (changed) {
+      void haptics.confirm()
+    }
   }
 
   // Store the gym's entry QR code: read the picked image, downscale it to a phone-screen-friendly
@@ -3296,7 +3377,7 @@ function App() {
 
     const fail = () => {
       setPassError('Could not read the image. Try a screenshot or photo of the QR code.')
-      void haptic('error')
+      void haptics.reject()
     }
 
     const reader = new FileReader()
@@ -3319,7 +3400,7 @@ function App() {
         }
         setPassError('')
         setData((current) => ({ ...current, gymPass: dataUrl }))
-        void haptic('confirm')
+        void haptics.confirm()
       }
       image.onerror = fail
       image.src = String(reader.result)
@@ -3334,7 +3415,6 @@ function App() {
       message: 'Deletes the saved QR code.',
       confirmLabel: 'Delete',
       danger: true,
-      haptic: 'destructive',
       onConfirm: () => {
         setData((current) => ({ ...current, gymPass: undefined }))
         setConfirmDialog(null)
@@ -3351,10 +3431,10 @@ function App() {
       anchor.href = url
       anchor.download = `fitness-hub-${new Date().toISOString().slice(0, 10)}.json`
       anchor.click()
-      void haptic('confirm')
+      void haptics.confirm()
       setBackupMessage({ target: 'export', text: 'Backup downloaded.' })
     } catch {
-      void haptic('error')
+      void haptics.reject()
       setBackupMessage({ target: 'export', text: 'Backup download failed.', error: true })
     } finally {
       if (url) {
@@ -3381,15 +3461,15 @@ function App() {
           throw new Error('Invalid Fitness Hub backup')
         }
         setData(normalizeData(parsed))
-        void haptic('confirm')
+        void haptics.confirm()
         setBackupMessage({ target: 'import', text: 'Backup imported.' })
       } catch {
-        void haptic('error')
+        void haptics.reject()
         setBackupMessage({ target: 'import', text: 'Invalid backup file.', error: true })
       }
     }
     reader.onerror = () => {
-      void haptic('error')
+      void haptics.reject()
       setBackupMessage({ target: 'import', text: 'Could not read the backup file.', error: true })
     }
     reader.readAsText(file)
@@ -3401,7 +3481,6 @@ function App() {
       message: 'Deletes workout history, gym pass, and workout changes.',
       confirmLabel: 'Reset',
       danger: true,
-      haptic: 'destructive',
       onConfirm: () => {
         setData(buildInitialData())
         setConfirmDialog(null)
@@ -3410,7 +3489,7 @@ function App() {
   }
 
   const testVibration = () => {
-    void haptic('destructive').then((performed) => {
+    void haptics.timerFinished(true).then((performed) => {
       setVibrationMessage(performed ? 'Test vibration played.' : 'Vibration is off or unavailable.')
     })
   }
@@ -3552,7 +3631,10 @@ function App() {
             <button
               className="auth-switch"
               type="button"
-              onClick={() => setAuthDialog({ ...authDialog, mode: authDialog.mode === 'in' ? 'up' : 'in', error: '', note: '' })}
+              onClick={() => {
+                setAuthDialog({ ...authDialog, mode: authDialog.mode === 'in' ? 'up' : 'in', error: '', note: '' })
+                void haptics.selection()
+              }}
             >
               {authDialog.mode === 'in' ? 'Create account' : 'Sign in instead'}
             </button>
@@ -3643,7 +3725,13 @@ function App() {
                 </small>
               </div>
               <div className="choice-list">
-                <a className="choice" href={APK_DOWNLOAD_URL} target="_blank" rel="noreferrer noopener">
+                <a
+                  className="choice"
+                  href={APK_DOWNLOAD_URL}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  onClick={() => void haptics.confirm()}
+                >
                   <Icon name="download" size={18} />
                   <span>{updateAvailable && build !== null ? `Download build ${build}` : 'Download'}</span>
                 </a>
@@ -3749,9 +3837,7 @@ function App() {
               type="button"
               onClick={() => {
                 confirmDialog.onConfirm()
-                if (confirmDialog.haptic) {
-                  void haptic(confirmDialog.haptic)
-                }
+                void haptics.confirm()
               }}
             >
               {confirmDialog.confirmLabel}

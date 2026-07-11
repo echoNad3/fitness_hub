@@ -46,23 +46,11 @@ public class AppHapticsPlugin extends Plugin {
                 return Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                         ? HapticFeedbackConstants.SEGMENT_TICK
                         : HapticFeedbackConstants.CLOCK_TICK;
-            case "increment":
-                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-                        ? HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
-                        : HapticFeedbackConstants.CLOCK_TICK;
-            case "toggle-on":
-                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-                        ? HapticFeedbackConstants.TOGGLE_ON
-                        : HapticFeedbackConstants.CONTEXT_CLICK;
-            case "toggle-off":
-                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-                        ? HapticFeedbackConstants.TOGGLE_OFF
-                        : HapticFeedbackConstants.CONTEXT_CLICK;
             case "drag-start":
                 return Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                         ? HapticFeedbackConstants.DRAG_START
                         : HapticFeedbackConstants.LONG_PRESS;
-            case "drag-end":
+            case "drag-drop":
                 return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                         ? HapticFeedbackConstants.GESTURE_END
                         : HapticFeedbackConstants.CONTEXT_CLICK;
@@ -70,12 +58,10 @@ public class AppHapticsPlugin extends Plugin {
                 return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                         ? HapticFeedbackConstants.CONFIRM
                         : HapticFeedbackConstants.VIRTUAL_KEY;
-            case "error":
+            case "reject":
                 return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                         ? HapticFeedbackConstants.REJECT
                         : HapticFeedbackConstants.LONG_PRESS;
-            case "destructive":
-                return HapticFeedbackConstants.LONG_PRESS;
             default:
                 return null;
         }

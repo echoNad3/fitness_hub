@@ -1,59 +1,66 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { RestAlarm } from './restAlarm'
 
-// The app has one semantic haptic vocabulary. Callers describe what happened; Android chooses the
-// device-tuned effect and respects the system Touch feedback setting through performHapticFeedback.
-// Ordinary navigation, opening/closing UI, typing, scrolling, and generic presses never call here.
-export type HapticEvent =
-  | 'selection'
-  | 'increment'
-  | 'toggle-on'
-  | 'toggle-off'
-  | 'drag-start'
-  | 'drag-end'
-  | 'confirm'
-  | 'error'
-  | 'destructive'
-  | 'timer-finished'
-
-type NativeHapticEvent = Exclude<HapticEvent, 'timer-finished'>
+// One semantic haptic service for the whole app. Callers report the completed interaction; this
+// module owns the platform effect. Navigation, opening/closing UI, typing, scrolling, and generic
+// presses never call it.
+type InteractionHaptic = 'selection' | 'confirm' | 'reject' | 'drag-start' | 'drag-drop'
 
 interface AppHapticsPlugin {
-  perform(options: { type: NativeHapticEvent }): Promise<{ performed: boolean }>
+  perform(options: { type: InteractionHaptic }): Promise<{ performed: boolean }>
 }
 
 const AppHaptics = registerPlugin<AppHapticsPlugin>('AppHaptics')
 const native = Capacitor.isNativePlatform()
 
-const WEB_PATTERNS: Record<HapticEvent, number | number[]> = {
+const WEB_PATTERNS: Record<InteractionHaptic, number | number[]> = {
   selection: 10,
-  increment: 8,
-  'toggle-on': 12,
-  'toggle-off': 10,
-  'drag-start': 18,
-  'drag-end': 12,
   confirm: 28,
-  error: [25, 45, 45],
-  destructive: 60,
-  'timer-finished': 3000,
+  reject: [25, 45, 45],
+  'drag-start': 18,
+  'drag-drop': 12,
 }
 
-export async function haptic(type: HapticEvent): Promise<boolean> {
-  // The native exact alarm owns timer completion so it can fire while the phone is locked. Avoid a
-  // second vibration when the foreground countdown notices the same completion.
-  if (native && type === 'timer-finished') {
-    return true
-  }
+// This deliberate, non-repeating pattern is reserved for a completed rest timer. Keep it in sync
+// with RestVibrationReceiver so Settings previews the same alert used by the real timer.
+const WEB_TIMER_PATTERN = [400, 150, 400, 150, 1000, 200, 1000]
 
+async function interaction(type: InteractionHaptic): Promise<boolean> {
   if (native) {
     try {
-      const result = await AppHaptics.perform({ type: type as NativeHapticEvent })
+      const result = await AppHaptics.perform({ type })
       return result.performed
     } catch {
       // A web deploy can briefly reach an older installed APK without this native plugin. Silence is
-      // preferable to bypassing the user's Android haptic setting with a raw vibrator fallback.
+      // preferable to bypassing the user's Android Touch feedback setting with raw vibration.
       return false
     }
   }
 
   return navigator.vibrate?.(WEB_PATTERNS[type]) ?? false
+}
+
+export const haptics = {
+  selection: () => interaction('selection'),
+  confirm: () => interaction('confirm'),
+  reject: () => interaction('reject'),
+  dragStart: () => interaction('drag-start'),
+  dragDrop: () => interaction('drag-drop'),
+  timerFinished: async (preview = false): Promise<boolean> => {
+    // The native exact alarm owns real completion so it can fire once while the phone is locked.
+    // Settings explicitly asks the native plugin to play that exact waveform immediately.
+    if (native) {
+      if (!preview) {
+        return true
+      }
+      try {
+        const result = await RestAlarm.preview()
+        return result.performed
+      } catch {
+        return false
+      }
+    }
+
+    return navigator.vibrate?.(WEB_TIMER_PATTERN) ?? false
+  },
 }

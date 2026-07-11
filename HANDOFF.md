@@ -180,13 +180,13 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest **vibration** via the custom `RestAlarm` plugin; no-op on web. |
-| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact-alarm + maximum-amplitude 3s vibration for the locked-screen rest alert. |
-| `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps app events to Android `SEGMENT_*`, `TOGGLE_*`, `DRAG_START`, `GESTURE_END`, `CONFIRM`, `REJECT`, or `LONG_PRESS` with older-Android fallbacks. This path respects the system Touch feedback setting. |
+| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact alarm plus the strong, one-shot three-pulse rest pattern. `preview()` plays this exact waveform for the Settings test. |
+| `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
-| `src/haptics.ts` | **The one central semantic haptic helper.** Callers report `selection`, `increment`, `toggle-on/off`, `drag-start/end`, `confirm`, `error`, `destructive`, or `timer-finished`; there is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Native calls `AppHapticsPlugin`; web uses short Vibration API fallbacks. If an auto-updated web bundle runs inside an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's haptic setting. |
+| `src/haptics.ts` | **The one central semantic haptic service.** It exposes only `selection()`, `confirm()`, `reject()`, `dragStart()`, `dragDrop()`, and `timerFinished()`. There is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Normal native interactions call `AppHapticsPlugin`; the timer alone uses the deliberate custom waveform. If an auto-updated web bundle reaches an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's setting. |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
@@ -428,8 +428,8 @@ lint + strict build + reuse of previously verified components; give the live app
   finds the most recent session where that exercise had a logged result, so history is per-exercise.
 - **"Increase weight?" stage** — for an exercise whose last result was a success, the freshly-opened
   card first asks "Increase weight by?" (−/+ seed 0 / 1.25 then step ±1.25; tap the box to type the
-  add amount) with Accept/Cancel in place of Done/Failed. Accept adds the amount on top of the carried
-  weight; Cancel keeps it; both set `increaseResolved` on the session entry so it doesn't reappear.
+  add amount) with Apply/Keep weight in place of Done/Failed. Apply adds the amount on top of the carried
+  weight; Keep weight leaves it unchanged; both set `increaseResolved` so the prompt does not reappear.
   Failed/no-record exercises skip straight to the normal controls.
 - **Per-exercise rest** — each `ExerciseGroup` has its own `restSeconds` (migrated in for older
   saves via `normalizeTemplates`, validated as optional). The rest dock starts and labels from the
@@ -484,6 +484,19 @@ lint + strict build + reuse of previously verified components; give the live app
   terminology were removed. Destructive prompts still state the consequence, sync errors still protect
   and describe local data, and action labels now use direct verbs such as Save, Delete, Sync, Download,
   Apply, and Stop. A second codebase search confirmed the retired copy is gone from user-facing code.
+- **App-wide haptic audit (2026-07-11)** — all screens, dialogs, prompts, failures, controls, file
+  actions, sync paths, drag events, and timer paths were classified. Equivalent interactions now use
+  one of five normal meanings: Selection, Confirm, Reject, Drag Start, or Drag Drop. Done and Failed
+  share Confirm. Steppers fire Selection only after a real value change. Confirmed deletion/reset,
+  workout start/resume, edit save, exercise updates, successful manual sync, auth, backup/import, and
+  download start use Confirm after success. Invalid input and failed sync/import/export/native alarm
+  use Reject. Navigation, Back/Close/Cancel, dialog open/dismiss, expansion, typing, scrolling, rest
+  start, and rest stop are silent. Background autosync is silent on success; a manual Sync is tracked
+  so it confirms once without a duplicate. Drag pickup and a valid changed drop each fire once.
+  `timerFinished()` is separate: native completion is owned by the exact alarm, web completion runs
+  the waveform directly, and Test vibration previews the exact same non-repeating three-pulse pattern.
+  A final repository search found no legacy haptic event names, raw UI vibration calls, generic button
+  hook, or custom timer vibration outside the central service/native timer receiver.
 - **Safety net** — real git repo (the original `.git` was empty/broken). "Undo everything" = ask
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
@@ -510,7 +523,7 @@ lint + strict build + reuse of previously verified components; give the live app
   **Bug found + fixed during review: the APK was building with the GitHub Pages subpath base
   (`/fitness_hub/`), which would have launched to a blank screen inside the Capacitor webview. The
   Android build now forces root base (`CAPACITOR_BUILD`). Re-build the APK from the latest `main`.**
-  The current semantic `AppHaptics` bridge and 3s rest-alarm waveform are native changes: they need
+  The current semantic `AppHaptics` bridge and three-pulse rest-alarm waveform are native changes: they need
   a newly built/reinstalled APK. Until then, an older APK receiving the auto-updated web bundle keeps
   interaction haptics silent rather than falling back to raw vibration that ignores system settings.
 
@@ -531,6 +544,12 @@ normally; 360px has no horizontal overflow; the 360×500 link dialog scrolls int
   Syncing to Synced, and Change password opened and canceled without changing the password. The browser's
   localhost policy blocked a second DOM pass after the copy-only rewrite; tests, lint, build, diff review,
   and the exhaustive stale-copy search cover the resulting bundle without claiming a post-rewrite click test.
+The 2026-07-11 haptic audit passes all 19 tests, lint, TypeScript/PWA production build, Capacitor Android
+sync, `git diff --check`, and exhaustive searches for semantic calls, raw vibration APIs, retired event
+names, duplicates, and generic button hooks. The current in-app browser session reached its internal
+localhost error page while the preview server was restarting, then the browser URL policy blocked a
+fresh DOM pass; no post-change phone click-through is claimed. The native Java changes still require the
+next GitHub Actions Android compile and a physical-device pattern check after installing that APK.
 Its authenticated upload path was verified locally with a reversible 90s → 105s → 90s change:
 both writes reached `Synced` with no console errors. Cross-device pull was then verified on the
 live phone app using a temporary 105s marker; the cloud value was restored to 90s afterward.
