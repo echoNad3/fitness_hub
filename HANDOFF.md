@@ -269,7 +269,19 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
-- Latest commit: **repository cleanup + Supabase keep-alive.** Removed dead `domain.ts` exports
+- Latest commit: **new logo, stable APK signing, tile swap.**
+  (1) `public/app-icon.svg` replaced with the user's final barbell mark (equal-thickness bars on
+  `#252730`); `resources/android-foreground.svg` redrawn to match; every generated asset rebuilt
+  via `npm run generate-pwa-assets` + `npm run generate-android-assets` (favicon, PWA/apple icons,
+  Android launchers, splash screens — splash composes the mark on `#252730`, no black flash).
+  (2) **Stable debug signing:** `android/app/debug-signing.p12` (PKCS12, alias `fitnesshub`,
+  password `android`, committed on purpose — debug-only key) is wired into
+  `build.gradle signingConfigs.debug`. Before this, every CI run signed with a random key, so
+  sideloaded updates always failed with "app not installed" and forced an uninstall. The user must
+  uninstall/reinstall **one final time** (old random signature → this stable one); afterwards new
+  APKs install over the old ones.
+  (3) Home grid: Gym pass and Settings swapped places (Gym pass now sits next to History).
+- Previous commit: **repository cleanup + Supabase keep-alive.** Removed dead `domain.ts` exports
   (`moveItem`, `clampRestSeconds`, `selectActiveVariantId`) and their tests, deleted the residual
   `PRODUCT.md`, rewrote `README.md` to match the current app, tightened this file (stale plan
   sections, duplicate status text), and added `.github/workflows/keepalive.yml` — a twice-weekly

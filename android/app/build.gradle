@@ -19,7 +19,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // A committed, stable debug key. Without it every CI run signs with a freshly generated
+        // key, so Android rejects each new APK as an update ("app not installed") and the user
+        // must uninstall first. This key only ever signs the sideloaded debug build; committing
+        // it is deliberate.
+        debug {
+            storeFile file('debug-signing.p12')
+            storeType 'pkcs12'
+            storePassword 'android'
+            keyAlias 'fitnesshub'
+            keyPassword 'android'
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

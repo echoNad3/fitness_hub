@@ -2031,11 +2031,18 @@ function App() {
               <small>{sessionCount} {sessionCount === 1 ? 'workout' : 'workouts'}</small>
             </span>
           </button>
-          <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
-            <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
+          <button
+            className="home-tile"
+            type="button"
+            onClick={() => {
+              setPassError('')
+              setPassDialogOpen(true)
+            }}
+          >
+            <span className="home-tile-icon"><Icon name="qr" size={22} /></span>
             <span className="home-tile-text">
-              <span>Settings</span>
-              <small>Backups and reset</small>
+              <span>Gym pass</span>
+              <small>{data.gymPass ? 'Show QR code' : 'Add QR code'}</small>
             </span>
           </button>
 
@@ -2069,18 +2076,11 @@ function App() {
 
           {renderApkTile()}
 
-          <button
-            className="home-tile"
-            type="button"
-            onClick={() => {
-              setPassError('')
-              setPassDialogOpen(true)
-            }}
-          >
-            <span className="home-tile-icon"><Icon name="qr" size={22} /></span>
+          <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
+            <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
             <span className="home-tile-text">
-              <span>Gym pass</span>
-              <small>{data.gymPass ? 'Show QR code' : 'Add QR code'}</small>
+              <span>Settings</span>
+              <small>Backups and reset</small>
             </span>
           </button>
 

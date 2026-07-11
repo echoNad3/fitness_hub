@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#252730" />
-  <rect x="32" y="32" width="448" height="448" rx="112" fill="#30323d" />
-  <circle cx="392" cy="120" r="72" fill="#363844" />
-  <rect x="160" y="220" width="192" height="72" rx="36" fill="#6074f3" />
-  <rect x="104" y="218" width="48" height="76" rx="24" fill="#6074f3" />
-  <rect x="360" y="218" width="48" height="76" rx="24" fill="#6074f3" />
-  <rect x="142" y="166" width="52" height="180" rx="26" fill="#f4f5f8" />
-  <rect x="318" y="166" width="52" height="180" rx="26" fill="#f4f5f8" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Fitness Hub app icon</title>
+  <desc id="desc">A compact barbell mark on the app background color.</desc>
+  <rect width="1024" height="1024" fill="#252730"/>
+  <rect x="116" y="388" width="112" height="248" rx="32" fill="#F4F5F8"/>
+  <rect x="246" y="322" width="112" height="380" rx="32" fill="#F4F5F8"/>
+  <rect x="376" y="456" width="272" height="112" rx="32" fill="#6074F3"/>
+  <rect x="666" y="322" width="112" height="380" rx="32" fill="#F4F5F8"/>
+  <rect x="796" y="388" width="112" height="248" rx="32" fill="#F4F5F8"/>
 </svg>
