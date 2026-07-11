@@ -319,52 +319,6 @@ label.choice:focus-within {
   outline-offset: 1px;
 }
 
-.duration-fields {
-  display: grid;
-  gap: 10px;
-}
-
-.duration-field {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-}
-
-.duration-field > span:first-child {
-  color: var(--muted);
-  font-size: var(--fs-label);
-  font-weight: var(--fw-semibold);
-}
-
-.duration-control {
-  display: grid;
-  grid-template-columns: var(--tap) minmax(0, 1fr) var(--tap);
-  gap: 7px;
-}
-
-.duration-control button {
-  min-width: var(--tap);
-  min-height: var(--tap);
-  display: grid;
-  place-items: center;
-  color: var(--accent-text);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-}
-
-.duration-control button:active {
-  transform: scale(0.95);
-}
-
-.duration-control .number-input {
-  min-width: 0;
-  padding: 0 6px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
 .text-input {
   font-size: var(--fs-body);
 }

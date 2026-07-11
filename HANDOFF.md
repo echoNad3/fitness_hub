@@ -274,8 +274,10 @@ Git history (newest first); each commit is a clean restore point. Entries are su
 live in the commit messages and the feature list below.
 - **History workout options + duration repair:** each History card is now one full-width target;
   tapping it opens `Workout options` with Edit workout, Edit duration (finished sessions only),
-  Delete workout, and Cancel. Duration uses manual hours/minutes fields plus the shared hold-stepper
-  behavior, validates 1 minute–23h 59m, updates `finishedAt` while preserving `createdAt`, and
+  Delete workout, and Cancel. Duration reuses the existing rest-time editor layout exactly: one
+  shared minus button, manual hours/minutes fields, and one shared plus button with hold-stepper
+  behavior. Edit workout opens the normal workout screen; its own pencil remains the only entry to
+  structural edit mode. Duration validates 1 minute–23h 59m, updates `finishedAt` while preserving `createdAt`, and
   immediately recalculates the card and average. Finished/Unfinished chips share an exact 92px ×
   48px footprint. The old separate trash column was removed.
 - Latest commit: **default workout seed refresh.** `defaultWorkouts` updated to match the user's

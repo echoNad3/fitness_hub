@@ -724,53 +724,58 @@ function DurationEditor({
   minutesRef.current = dialog.minutes
   const holdStepper = useHoldStepper()
 
-  const step = (field: 'hours' | 'minutes', delta: number) => {
-    const source = field === 'hours' ? hoursRef.current : minutesRef.current
-    const current = Number.parseInt(source, 10)
-    const maximum = field === 'hours' ? 999 : 59
-    const next = Math.min(maximum, Math.max(0, (Number.isFinite(current) ? current : 0) + delta))
-    if (String(next) === source) return false
-    if (field === 'hours') hoursRef.current = String(next)
-    else minutesRef.current = String(next)
-    onChange({ ...dialog, [field]: String(next), error: '' })
+  const step = (delta: number) => {
+    const hours = Number.parseInt(hoursRef.current, 10)
+    const minutes = Number.parseInt(minutesRef.current, 10)
+    const current =
+      (Number.isFinite(hours) ? Math.max(0, hours) : 0) * 60 +
+      (Number.isFinite(minutes) ? Math.max(0, minutes) : 0)
+    const next = Math.min(23 * 60 + 59, Math.max(1, current + delta))
+    if (next === current) return false
+    const nextHours = String(Math.floor(next / 60))
+    const nextMinutes = String(next % 60)
+    hoursRef.current = nextHours
+    minutesRef.current = nextMinutes
+    onChange({ ...dialog, hours: nextHours, minutes: nextMinutes, error: '' })
     return true
   }
 
   return (
     <Dialog title="Edit duration">
-      <div className="duration-fields">
-        {(['hours', 'minutes'] as const).map((field) => (
-          <label className="duration-field" key={field}>
-            <span>{field === 'hours' ? 'Hours' : 'Minutes'}</span>
-            <span className="duration-control">
-              <button
-                type="button"
-                aria-label={`Decrease ${field}`}
-                {...holdStepper.bind(() => step(field, -1))}
-              >
-                <Icon name="minus" size={18} />
-              </button>
-              <input
-                className="number-input"
-                type="number"
-                inputMode="numeric"
-                min="0"
-                max={field === 'hours' ? undefined : 59}
-                step="1"
-                value={dialog[field]}
-                aria-label={field === 'hours' ? 'Hours' : 'Minutes'}
-                onChange={(event) => onChange({ ...dialog, [field]: event.target.value, error: '' })}
-              />
-              <button
-                type="button"
-                aria-label={`Increase ${field}`}
-                {...holdStepper.bind(() => step(field, 1))}
-              >
-                <Icon name="plus" size={18} />
-              </button>
-            </span>
+      <div className="set-stepper rest-stepper">
+        <button type="button" aria-label="Decrease duration" {...holdStepper.bind(() => step(-1))}>
+          <Icon name="minus" size={18} />
+        </button>
+        <div className="rest-mmss">
+          <label className="set-rest-field">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              step="1"
+              value={dialog.hours}
+              aria-label="Duration hours"
+              onChange={(event) => onChange({ ...dialog, hours: event.target.value, error: '' })}
+            />
+            <span>h</span>
           </label>
-        ))}
+          <label className="set-rest-field">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="59"
+              step="1"
+              value={dialog.minutes}
+              aria-label="Duration minutes"
+              onChange={(event) => onChange({ ...dialog, minutes: event.target.value, error: '' })}
+            />
+            <span>m</span>
+          </label>
+        </div>
+        <button type="button" aria-label="Increase duration" {...holdStepper.bind(() => step(1))}>
+          <Icon name="plus" size={18} />
+        </button>
       </div>
       {dialog.error && <p className="auth-error" role="alert">{dialog.error}</p>}
       <div className="dialog-actions">
@@ -3935,9 +3940,7 @@ function App() {
               type="button"
               onClick={() => {
                 setHistoryOptionsSessionId(null)
-                editSnapshotRef.current = { templates: data.templates, sessions: data.sessions }
                 openSession(historyOptionsSession.workoutId, historyOptionsSession.id, false)
-                setEditMode(true)
               }}
             >
               <Icon name="edit" size={18} />
