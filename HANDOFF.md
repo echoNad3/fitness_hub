@@ -605,6 +605,13 @@ npm run lint       # oxlint
 
 - **Always run `npm run build` before committing** — it type-checks (strict) and bundles. A green
   build + a visual check is the bar.
+- **Browser verification default:** after pushing, use the deployed app at
+  `https://echonad3.github.io/fitness_hub/` for the final 412×915 click-through. It is more reliable
+  across Codex turns than a background localhost process and tests the exact released bundle. Use
+  localhost only for pre-push checks; on this Windows machine launch it through the installed
+  `C:\Program Files\nodejs\npm.cmd`, never a temporary `codex-npm-bootstrap` path that can be cleaned
+  up between turns. The live origin has separate local storage, so sign into the test account when
+  existing History data is required and cancel or restore any temporary data edits.
 - To see a specific screen during dev, you can seed/route via the browser console using the
   localStorage keys in §6 (e.g. set `fitness-hub-v1-screen` to `{"name":"session",...}` and reload),
   but prefer driving the real UI (Start a workout, tap around).
