@@ -21,9 +21,9 @@ const WEB_PATTERNS: Record<InteractionHaptic, number | number[]> = {
   'drag-drop': 12,
 }
 
-// This deliberate, non-repeating pattern is reserved for a completed rest timer. Keep it in sync
-// with RestVibrationReceiver so Settings previews the same alert used by the real timer.
-const WEB_TIMER_PATTERN = [400, 150, 800, 200, 1400]
+// Four equal 500ms pulses, one per second at 3, 2, 1, and 0 seconds remaining. Keep this in sync
+// with RestVibrationReceiver so Settings previews the exact alert used by the real timer.
+const WEB_TIMER_PATTERN = [500, 500, 500, 500, 500, 500, 500]
 
 async function interaction(type: InteractionHaptic): Promise<boolean> {
   if (native) {
@@ -62,5 +62,10 @@ export const haptics = {
     }
 
     return navigator.vibrate?.(WEB_TIMER_PATTERN) ?? false
+  },
+  // Cancels an in-progress web waveform. Native cancellation is owned by cancelRestNotification(),
+  // which also removes the exact alarm before it fires.
+  cancelTimerAlert: () => {
+    if (!native) navigator.vibrate?.(0)
   },
 }

@@ -13,8 +13,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
- * Schedules an exact alarm that triggers RestVibrationReceiver at the rest-end time, so the phone
- * vibrates strongly even when locked. This is the native side of the "locked-screen rest alert".
+ * Schedules an exact alarm that triggers RestVibrationReceiver three seconds before rest ends, so
+ * its four equal pulses land at 3, 2, 1, and 0 even while the phone is locked.
  */
 @CapacitorPlugin(name = "RestAlarm")
 public class RestAlarmPlugin extends Plugin {
@@ -97,6 +97,7 @@ public class RestAlarmPlugin extends Plugin {
         if (alarmManager != null) {
             alarmManager.cancel(buildPendingIntent());
         }
+        RestVibrationReceiver.cancel(context);
         call.resolve();
     }
 

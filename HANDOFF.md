@@ -157,8 +157,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
   `public/app-icon.svg` via `@vite-pwa/assets-generator`.
 - **Capacitor 8 + Android** for the native wrapper. A **custom `RestAlarm` plugin** schedules an
-  exact AlarmManager alarm that fires a maximum-amplitude 3s vibration (RestVibrationReceiver) when the rest
-  timer ends — felt while locked. (Earlier used Local Notifications, but a notification only gives a
+  exact AlarmManager alarm three seconds before the timer ends; `RestVibrationReceiver` then plays
+  four equal maximum-amplitude pulses at 3, 2, 1, and 0 seconds remaining — felt while locked.
+  (Earlier used Local Notifications, but a notification only gives a
   brief light buzz; the user needs a heavy multi-second vibration, hence the native alarm.)
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
 - **Single-component app.** Almost everything is in `src/App.tsx` (one big `App()` component with
@@ -177,13 +178,13 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest **vibration** via the custom `RestAlarm` plugin; no-op on web. |
-| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact alarm plus the strong, one-shot three-pulse rest pattern. `preview()` plays this exact waveform for the Settings test. |
+| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact alarm plus four equal strong pulses at 3, 2, 1, and 0 seconds remaining. `preview()` plays this exact waveform for the Settings test. |
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout logic: result toggling, auto-advance, rest clamping, countdown math. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
-| `src/haptics.ts` | **The one central semantic haptic service.** It exposes only `selection()`, `confirm()`, `reject()`, `dragStart()`, `dragDrop()`, and `timerFinished()`. There is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Normal native interactions call `AppHapticsPlugin`; the timer alone uses the deliberate custom waveform. If an auto-updated web bundle reaches an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's setting. |
+| `src/haptics.ts` | **The one central semantic haptic service.** It exposes `selection()`, `confirm()`, `reject()`, `dragStart()`, `dragDrop()`, `timerFinished()`, and the non-vibrating `cancelTimerAlert()` cleanup. There is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Normal native interactions call `AppHapticsPlugin`; the timer alone uses the deliberate custom waveform. If an auto-updated web bundle reaches an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's setting. |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
@@ -256,9 +257,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
   a suspended/locked app from resuming with a stale countdown. The locked-screen alert is a **native
   heavy vibration**, NOT a notification: `RestAlarmPlugin` (Java) schedules an exact alarm
-  (`USE_EXACT_ALARM`, `setExactAndAllowWhileIdle`) → `RestVibrationReceiver` plays one
-  maximum-amplitude 3s waveform via Vibrator/VibratorManager (manifest also needs `VIBRATE` +
-  `WAKE_LOCK`).
+  (`USE_EXACT_ALARM`, `setExactAndAllowWhileIdle`) three seconds before zero →
+  `RestVibrationReceiver` plays four equal 500ms maximum-amplitude pulses at 3, 2, 1, and 0 via
+  Vibrator/VibratorManager (manifest also needs `VIBRATE` + `WAKE_LOCK`).
   `src/restNotifications.ts` calls it through the `RestAlarm` plugin (`src/restAlarm.ts`); no-op on
   web. Changing the vibration needs a native APK rebuild, not just a web deploy.
 
@@ -444,10 +445,11 @@ live in the commit messages and the feature list below.
   selections, discrete value changes, toggles, and drag start/drop; medium feedback covers logged
   Done/Failed results (the same effect), saved edits, successful backup/auth actions, invalid input,
   and failures; destructive confirmations use a strong effect. Android uses system-aware semantic
-  constants, while the locked-screen rest alarm remains the separate maximum-amplitude 3s alert.
+  constants, while the locked-screen rest alarm remains a separate four-pulse maximum-amplitude alert.
   The old raw `@capacitor/haptics` dependency was removed so there is only one interaction path.
-  The session weight hold-stepper applies a quick tap on release and delays repeat until 380ms, so a
-  touch that becomes scrolling is cancelled before either the weight or haptic can change.
+  Every numeric −/+ stepper (sets, reps, rest, weight, and increase amount) applies a quick tap on
+  release and delays repeat until 380ms, so a touch that becomes scrolling is cancelled before either
+  the value or haptic can change. Deliberate holds repeat every 110ms with one Selection per real step.
   **Grouping rules (2026-07-02 audit):** segmented controls (Load Total/Per hand) and muscle chips
   use `selection` on both/all options — never `toggle-on/off`, whose Android TOGGLE_OFF effect is
   near-imperceptible; all lineup edits (hide/show, link/unlink, swap, add; reorder via drag) share
@@ -497,7 +499,7 @@ live in the commit messages and the feature list below.
   start, and rest stop are silent. Background autosync is silent on success; a manual Sync is tracked
   so it confirms once without a duplicate. Drag pickup and a valid changed drop each fire once.
   `timerFinished()` is separate: native completion is owned by the exact alarm, web completion runs
-  the waveform directly, and Test vibration previews the exact same non-repeating three-pulse pattern.
+  the waveform directly, and Test vibration previews the exact same four-pulse pattern.
   A final repository search found no legacy haptic event names, raw UI vibration calls, generic button
   hook, or custom timer vibration outside the central service/native timer receiver. Post-release
   verification passed at 412×915: manual sync moved from Syncing to Synced; Done and Failed were each
@@ -505,6 +507,11 @@ live in the commit messages and the feature list below.
   data change. The browser console stayed clean. The live Pages site returned HTTP 200, its deployed
   bundle contained the final semantic haptic service and timer waveform, and both Deploy and Android
   workflow badges were passing.
+  Follow-up polish replaced that waveform with four equal 500ms strong pulses at 3, 2, 1, and 0
+  seconds remaining. The native exact alarm now starts three seconds before the end, while the web
+  timer starts the same waveform when its wall-clock countdown reaches 3. Sets, reps, rest time,
+  session weight, and increase amount now all share one hold-stepper implementation (380ms delay,
+  110ms repeat, one Selection per real step, silent at bounds).
 - **Safety net** — real git repo (the original `.git` was empty/broken). "Undo everything" = ask
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
@@ -520,7 +527,7 @@ live in the commit messages and the feature list below.
   branded launcher/splash icons, CI-built APK on every push. This machine has no Java/Android SDK,
   so APKs come from GitHub Actions only. Native (Java/config) changes reach the phone only via a
   reinstalled APK; web changes auto-update through the live site. The pending physical-device check:
-  confirm the three-pulse timer waveform on the next installed APK.
+  confirm the four equal timer pulses on the next installed APK.
 
 Every phase shipped green (tests, lint, strict build) and was click-verified in a phone-sized
 browser preview at the time it landed; the 2026-07-11 audit passes additionally verified dialog

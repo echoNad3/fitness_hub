@@ -16,9 +16,10 @@ import android.os.VibratorManager;
  */
 public class RestVibrationReceiver extends BroadcastReceiver {
 
-    // Three unmistakable pulses, played once. This custom waveform is reserved for rest completion.
-    private static final long[] PATTERN = {0, 400, 150, 800, 200, 1400};
-    private static final int[] AMPLITUDES = {0, 255, 0, 255, 0, 255};
+    // Four equal strong pulses, starting at 3 seconds remaining and then matching 2, 1, and 0.
+    // The exact alarm schedules this waveform three seconds before the timer's end.
+    private static final long[] PATTERN = {0, 500, 500, 500, 500, 500, 500, 500};
+    private static final int[] AMPLITUDES = {0, 255, 0, 255, 0, 255, 0, 255};
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -51,6 +52,13 @@ public class RestVibrationReceiver extends BroadcastReceiver {
             vibrator.vibrate(PATTERN, -1);
         }
         return true;
+    }
+
+    public static void cancel(Context context) {
+        Vibrator vibrator = getVibrator(context);
+        if (vibrator != null) {
+            vibrator.cancel();
+        }
     }
 
     private static Vibrator getVibrator(Context context) {

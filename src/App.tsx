@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useId } from 'react'
-import type { ChangeEvent, CSSProperties, ReactNode } from 'react'
+import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -650,6 +650,56 @@ function PasswordInput({
   )
 }
 
+type HoldAction = () => boolean
+
+// Every numeric −/+ control uses this exact interaction: a quick tap applies once on release;
+// holding for 380ms starts a 110ms repeat. Each real step gets one Selection haptic, bounds stay
+// silent, scrolling cancels the pending tap, and keyboard activation applies one step.
+function useHoldStepper() {
+  const holdRef = useRef<{ timeout?: number; interval?: number; action?: HoldAction; started?: boolean }>({})
+
+  const stop = () => {
+    if (holdRef.current.timeout !== undefined) window.clearTimeout(holdRef.current.timeout)
+    if (holdRef.current.interval !== undefined) window.clearInterval(holdRef.current.interval)
+    holdRef.current = {}
+  }
+
+  const start = (action: HoldAction) => {
+    stop()
+    holdRef.current.action = action
+    holdRef.current.timeout = window.setTimeout(() => {
+      holdRef.current.started = true
+      if (action()) void haptics.selection()
+      holdRef.current.interval = window.setInterval(() => {
+        if (action()) void haptics.selection()
+      }, 110)
+    }, 380)
+  }
+
+  const finish = () => {
+    const { action, started } = holdRef.current
+    if (action && !started && action()) void haptics.selection()
+    stop()
+  }
+
+  const bind = (action: HoldAction) => ({
+    onPointerDown: () => start(action),
+    onPointerUp: finish,
+    onPointerLeave: stop,
+    onPointerCancel: stop,
+    onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        if (action()) void haptics.selection()
+      }
+    },
+  })
+
+  useEffect(() => stop, [])
+
+  return { bind, stop }
+}
+
 // The editable fields for a single exercise. Swap alternatives are equal siblings, so every one shows
 // the full set of fields including its own muscle picker. Drafts are held locally and committed on
 // blur so typing never fights the persisted value.
@@ -665,6 +715,27 @@ function VariantFields({
   const [setupDraft, setSetupDraft] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [weightDraft, setWeightDraft] = useState<string | null>(null)
+  const setsRef = useRef(sets)
+  const repsRef = useRef(reps)
+  setsRef.current = sets
+  repsRef.current = reps
+  const holdStepper = useHoldStepper()
+
+  const adjustSets = (delta: number) => {
+    const next = Math.max(1, setsRef.current + delta)
+    if (next === setsRef.current) return false
+    setsRef.current = next
+    onPatch({ sets: next })
+    return true
+  }
+
+  const adjustReps = (delta: number) => {
+    const next = Math.max(1, repsRef.current + delta)
+    if (next === repsRef.current) return false
+    repsRef.current = next
+    onPatch({ reps: next })
+    return true
+  }
 
   // Commit on blur. Read the draft from state and call the parent update OUTSIDE any setState updater
   // (calling a parent setState inside an updater runs it during render → React warns/misbehaves).
@@ -763,12 +834,7 @@ function VariantFields({
             <button
               type="button"
               aria-label="Decrease sets"
-              onClick={() => {
-                if (sets > 1) {
-                  onPatch({ sets: sets - 1 })
-                  void haptics.selection()
-                }
-              }}
+              {...holdStepper.bind(() => adjustSets(-1))}
             >
               <Icon name="minus" size={18} />
             </button>
@@ -776,10 +842,7 @@ function VariantFields({
             <button
               type="button"
               aria-label="Increase sets"
-              onClick={() => {
-                onPatch({ sets: sets + 1 })
-                void haptics.selection()
-              }}
+              {...holdStepper.bind(() => adjustSets(1))}
             >
               <Icon name="plus" size={18} />
             </button>
@@ -791,12 +854,7 @@ function VariantFields({
             <button
               type="button"
               aria-label="Decrease reps"
-              onClick={() => {
-                if (reps > 1) {
-                  onPatch({ reps: reps - 1 })
-                  void haptics.selection()
-                }
-              }}
+              {...holdStepper.bind(() => adjustReps(-1))}
             >
               <Icon name="minus" size={18} />
             </button>
@@ -804,10 +862,7 @@ function VariantFields({
             <button
               type="button"
               aria-label="Increase reps"
-              onClick={() => {
-                onPatch({ reps: reps + 1 })
-                void haptics.selection()
-              }}
+              {...holdStepper.bind(() => adjustReps(1))}
             >
               <Icon name="plus" size={18} />
             </button>
@@ -921,6 +976,17 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
   const restSecondsPart = restSeconds % 60
   const [minDraft, setMinDraft] = useState<string | null>(null)
   const [secDraft, setSecDraft] = useState<string | null>(null)
+  const restSecondsRef = useRef(restSeconds)
+  restSecondsRef.current = restSeconds
+  const holdStepper = useHoldStepper()
+
+  const adjustRest = (delta: number) => {
+    const next = Math.min(MAX_REST_SECONDS, Math.max(MIN_REST_SECONDS, restSecondsRef.current + delta))
+    if (next === restSecondsRef.current) return false
+    restSecondsRef.current = next
+    props.onRest(next)
+    return true
+  }
 
   const muscle = muscleColor(variant.category)
 
@@ -991,12 +1057,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                 <button
                   type="button"
                   aria-label="Decrease rest time"
-                  onClick={() => {
-                    if (restSeconds > MIN_REST_SECONDS) {
-                      props.onRest(restSeconds - 10)
-                      void haptics.selection()
-                    }
-                  }}
+                  {...holdStepper.bind(() => adjustRest(-10))}
                 >
                   <Icon name="minus" size={18} />
                 </button>
@@ -1035,12 +1096,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                 <button
                   type="button"
                   aria-label="Increase rest time"
-                  onClick={() => {
-                    if (restSeconds < MAX_REST_SECONDS) {
-                      props.onRest(restSeconds + 10)
-                      void haptics.selection()
-                    }
-                  }}
+                  {...holdStepper.bind(() => adjustRest(10))}
                 >
                   <Icon name="plus" size={18} />
                 </button>
@@ -1139,12 +1195,13 @@ function App() {
   const [highlightSession, setHighlightSession] = useState<string | null>(null)
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
+  const restAlertStartedRef = useRef(false)
   const syncTimer = useRef<number | null>(null)
   const manualSyncPendingRef = useRef(false)
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
   const expandedRef = useRef<string | null>(null)
-  const holdRef = useRef<{ timeout?: number; interval?: number; action?: () => boolean; started?: boolean }>({})
+  const holdStepper = useHoldStepper()
   // Mirror the current screen into a ref so the (mount-only) popstate handler can read it.
   const screenRef = useRef(screen)
   screenRef.current = screen
@@ -1599,6 +1656,10 @@ function App() {
 
     const updateTimer = () => {
       const remaining = restSecondsRemaining(restEndsAt, Date.now())
+      if (remaining <= 3 && !restAlertStartedRef.current) {
+        restAlertStartedRef.current = true
+        void haptics.timerFinished()
+      }
       if (remaining === 0) {
         setRestRunning(false)
         setRestEndsAt(null)
@@ -1681,7 +1742,6 @@ function App() {
       if (syncTimer.current !== null) {
         window.clearTimeout(syncTimer.current)
       }
-      stopHold()
     }
   }, [])
 
@@ -1849,6 +1909,8 @@ function App() {
       return
     }
     const endsAt = restEndsAt + 10_000
+    restAlertStartedRef.current = false
+    haptics.cancelTimerAlert()
     setRestEndsAt(endsAt)
     setRestSeconds(restSecondsRemaining(endsAt, Date.now()))
     setRestDuration((current) => current + 10)
@@ -1857,7 +1919,6 @@ function App() {
   }
 
   const triggerRestDone = () => {
-    void haptics.timerFinished()
     setRestPulse(true)
 
     if (pulseTimer.current !== null) {
@@ -2578,18 +2639,7 @@ function App() {
                       className="ws-stepbtn"
                       type="button"
                       aria-label="Decrease amount"
-                      onPointerDown={() => startHold(() => adjustIncrease(session.id, group.id, variant.id, -1))}
-                      onPointerUp={finishHold}
-                      onPointerLeave={stopHold}
-                      onPointerCancel={stopHold}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          if (adjustIncrease(session.id, group.id, variant.id, -1)) {
-                            void haptics.selection()
-                          }
-                        }
-                      }}
+                      {...holdStepper.bind(() => adjustIncrease(session.id, group.id, variant.id, -1))}
                     >
                       <Icon name="minus" size={20} />
                     </button>
@@ -2620,18 +2670,7 @@ function App() {
                       className="ws-stepbtn"
                       type="button"
                       aria-label="Increase amount"
-                      onPointerDown={() => startHold(() => adjustIncrease(session.id, group.id, variant.id, 1))}
-                      onPointerUp={finishHold}
-                      onPointerLeave={stopHold}
-                      onPointerCancel={stopHold}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          if (adjustIncrease(session.id, group.id, variant.id, 1)) {
-                            void haptics.selection()
-                          }
-                        }
-                      }}
+                      {...holdStepper.bind(() => adjustIncrease(session.id, group.id, variant.id, 1))}
                     >
                       <Icon name="plus" size={20} />
                     </button>
@@ -2661,22 +2700,7 @@ function App() {
                       className="ws-stepbtn"
                       type="button"
                       aria-label="Decrease weight"
-                      onPointerDown={() => {
-                        if (entry.weight > 0) {
-                          startHold(() => adjustWeight(session.id, group.id, variant.id, -1.25))
-                        }
-                      }}
-                      onPointerUp={finishHold}
-                      onPointerLeave={stopHold}
-                      onPointerCancel={stopHold}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          if (adjustWeight(session.id, group.id, variant.id, -1.25)) {
-                            void haptics.selection()
-                          }
-                        }
-                      }}
+                      {...holdStepper.bind(() => adjustWeight(session.id, group.id, variant.id, -1.25))}
                     >
                       <Icon name="minus" size={20} />
                     </button>
@@ -2694,18 +2718,7 @@ function App() {
                       className="ws-stepbtn"
                       type="button"
                       aria-label="Increase weight"
-                      onPointerDown={() => startHold(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
-                      onPointerUp={finishHold}
-                      onPointerLeave={stopHold}
-                      onPointerCancel={stopHold}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          if (adjustWeight(session.id, group.id, variant.id, 1.25)) {
-                            void haptics.selection()
-                          }
-                        }
-                      }}
+                      {...holdStepper.bind(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
                     >
                       <Icon name="plus" size={20} />
                     </button>
@@ -2772,7 +2785,9 @@ function App() {
               setRestRunning(false)
               setRestEndsAt(null)
               setRestSeconds(activeRest)
+              restAlertStartedRef.current = false
               setRestNotificationMessage('')
+              haptics.cancelTimerAlert()
               void cancelRestNotification()
             }}
           >
@@ -2785,6 +2800,7 @@ function App() {
           type="button"
           onClick={() => {
             const endsAt = Date.now() + activeRest * 1000
+            restAlertStartedRef.current = false
             setRestSeconds(activeRest)
             setRestDuration(activeRest)
             setRestEndsAt(endsAt)
@@ -3147,44 +3163,6 @@ function App() {
       increaseDelta: undefined,
       increaseResolved: true,
     }))
-  }
-
-  // Press-and-hold to repeat (weight steppers). A quick tap applies once on release; a deliberate
-  // hold starts after 380ms and then repeats, ticking once per real step so the amount can be counted
-  // by feel without looking. Scrolling cancels the pointer before either path fires, so starting a
-  // scroll on the control cannot change weight or produce haptic feedback.
-  const startHold = (action: () => boolean) => {
-    stopHold()
-    holdRef.current.action = action
-    holdRef.current.timeout = window.setTimeout(() => {
-      holdRef.current.started = true
-      if (action()) {
-        void haptics.selection()
-      }
-      holdRef.current.interval = window.setInterval(() => {
-        if (action()) {
-          void haptics.selection()
-        }
-      }, 110)
-    }, 380)
-  }
-
-  const finishHold = () => {
-    const { action, started } = holdRef.current
-    if (action && !started && action()) {
-      void haptics.selection()
-    }
-    stopHold()
-  }
-
-  const stopHold = () => {
-    if (holdRef.current.timeout !== undefined) {
-      window.clearTimeout(holdRef.current.timeout)
-    }
-    if (holdRef.current.interval !== undefined) {
-      window.clearInterval(holdRef.current.interval)
-    }
-    holdRef.current = {}
   }
 
   const setExerciseResult = (sessionId: string, groupId: string, variantId: string, status: ResultStatus) => {
