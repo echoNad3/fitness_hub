@@ -157,8 +157,10 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
   `public/app-icon.svg` via `@vite-pwa/assets-generator`.
 - **Capacitor 8 + Android** for the native wrapper. A **custom `RestAlarm` plugin** schedules an
-  exact AlarmManager alarm three seconds before the timer ends; `RestVibrationReceiver` then plays
-  four equal maximum-amplitude pulses at 3, 2, 1, and 0 seconds remaining — felt while locked.
+  alarm-clock-grade exact AlarmManager alarm three seconds before the timer ends;
+  `RestVibrationReceiver` then plays four equal 800ms maximum-amplitude pulses at 3, 2, 1, and 0
+  seconds remaining — felt while locked. An ongoing Android notification shows the live countdown
+  while the timer runs, including on the lock screen and while another app is open.
   (Earlier used Local Notifications, but a notification only gives a
   brief light buzz; the user needs a heavy multi-second vibration, hence the native alarm.)
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
@@ -177,8 +179,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/edit.css` | Edit mode + exercise editor (`.ws-edit-*`, `.ws-add`, `.ex-*`). |
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
-| `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest **vibration** via the custom `RestAlarm` plugin; no-op on web. |
-| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact alarm plus four equal strong pulses at 3, 2, 1, and 0 seconds remaining. `preview()` plays this exact waveform for the Settings test. |
+| `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest vibration and countdown notification via the custom `RestAlarm` plugin; no-op on web. |
+| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` + `RestTimerNotification.java` | Alarm-clock-grade exact scheduling, four equal 800ms maximum-amplitude pulses at 3/2/1/0, and the ongoing system countdown. `preview()` plays the exact vibration waveform used by a real timer. |
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout logic: result toggling, auto-advance, rest clamping, countdown math. |
@@ -255,11 +257,12 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
     device), so neither side is silently overwritten. `resolveSyncConflict` then pulls or pushes and
     records the account. Continuations, empty devices, and brand-new accounts skip the prompt.
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
-  a suspended/locked app from resuming with a stale countdown. The locked-screen alert is a **native
-  heavy vibration**, NOT a notification: `RestAlarmPlugin` (Java) schedules an exact alarm
-  (`USE_EXACT_ALARM`, `setExactAndAllowWhileIdle`) three seconds before zero →
-  `RestVibrationReceiver` plays four equal 500ms maximum-amplitude pulses at 3, 2, 1, and 0 via
-  Vibrator/VibratorManager (manifest also needs `VIBRATE` + `WAKE_LOCK`).
+  a suspended/locked app from resuming with a stale countdown. `RestAlarmPlugin` (Java) uses
+  Android's alarm-clock-grade exact scheduling (`USE_EXACT_ALARM`, `setAlarmClock`) three seconds
+  before zero → `RestVibrationReceiver` plays four equal 800ms maximum-amplitude pulses at 3, 2,
+  1, and 0 via Vibrator/VibratorManager (manifest also needs `VIBRATE` + `WAKE_LOCK`).
+  `RestTimerNotification` shows a system-managed countdown while the timer is active, including on
+  the lock screen; Android 13+ asks for notification permission the first time a rest timer starts.
   `src/restNotifications.ts` calls it through the `RestAlarm` plugin (`src/restAlarm.ts`); no-op on
   web. Changing the vibration needs a native APK rebuild, not just a web deploy.
 
@@ -526,7 +529,7 @@ live in the commit messages and the feature list below.
   data change. The browser console stayed clean. The live Pages site returned HTTP 200, its deployed
   bundle contained the final semantic haptic service and timer waveform, and both Deploy and Android
   workflow badges were passing.
-  Follow-up polish replaced that waveform with four equal 500ms strong pulses at 3, 2, 1, and 0
+  Follow-up polish replaced that waveform with four equal strong pulses at 3, 2, 1, and 0
   seconds remaining. The native exact alarm now starts three seconds before the end, while the web
   timer starts the same waveform when its wall-clock countdown reaches 3. Sets, reps, rest time,
   session weight, and increase amount now all share one hold-stepper implementation (380ms delay,
@@ -546,7 +549,8 @@ live in the commit messages and the feature list below.
   branded launcher/splash icons, CI-built APK on every push. This machine has no Java/Android SDK,
   so APKs come from GitHub Actions only. Native (Java/config) changes reach the phone only via a
   reinstalled APK; web changes auto-update through the live site. The pending physical-device check:
-  confirm the four equal timer pulses on the next installed APK.
+  confirm the four equal 800ms timer pulses begin at 3 seconds remaining and that the notification
+  countdown plus vibration both continue with the screen locked and another app foregrounded.
 
 Every phase shipped green (tests, lint, strict build) and was click-verified in a phone-sized
 browser preview at the time it landed; the 2026-07-11 audit passes additionally verified dialog

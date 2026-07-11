@@ -18,7 +18,9 @@ public class RestVibrationReceiver extends BroadcastReceiver {
 
     // Four equal strong pulses, starting at 3 seconds remaining and then matching 2, 1, and 0.
     // The exact alarm schedules this waveform three seconds before the timer's end.
-    private static final long[] PATTERN = {0, 500, 500, 500, 500, 500, 500, 500};
+    // Maximum amplitude is already the hardware ceiling. Longer 800ms pulses make the alert much
+    // easier to feel while retaining one pulse start per second.
+    private static final long[] PATTERN = {0, 800, 200, 800, 200, 800, 200, 800};
     private static final int[] AMPLITUDES = {0, 255, 0, 255, 0, 255, 0, 255};
 
     @Override

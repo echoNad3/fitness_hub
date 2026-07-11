@@ -31,6 +31,12 @@ export async function scheduleRestNotification(endsAt: number): Promise<RestNoti
     // as a Double; the native side truncates the fraction with longValue(), so the time is exact.
     // The four-pulse waveform begins with 3 seconds left, then pulses at 2, 1, and 0.
     const result = await RestAlarm.schedule({ at: endsAt - REST_ALERT_LEAD_MS + 0.5 })
+    if (!result.exact) {
+      return { status: 'failed', detail: 'Allow Alarms and reminders for Fitness Hub.' }
+    }
+    if (!result.notification) {
+      return { status: 'failed', detail: 'Allow notifications to see the rest countdown.' }
+    }
     if (result.scheduled) {
       return { status: 'scheduled' }
     }

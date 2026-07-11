@@ -1,5 +1,6 @@
 package com.echonad3.fitnesshub;
 
+import android.Manifest;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -7,16 +8,22 @@ import android.content.Intent;
 import android.os.Build;
 
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 /**
  * Schedules an exact alarm that triggers RestVibrationReceiver three seconds before rest ends, so
  * its four equal pulses land at 3, 2, 1, and 0 even while the phone is locked.
  */
-@CapacitorPlugin(name = "RestAlarm")
+@CapacitorPlugin(
+        name = "RestAlarm",
+        permissions = @Permission(strings = {Manifest.permission.POST_NOTIFICATIONS}, alias = "notifications")
+)
 public class RestAlarmPlugin extends Plugin {
 
     private static final int REQUEST_CODE = 9101;
@@ -60,6 +67,27 @@ public class RestAlarmPlugin extends Plugin {
             return;
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                getPermissionState("notifications") != PermissionState.GRANTED) {
+            requestPermissionForAlias("notifications", call, "schedulePermissionCallback");
+            return;
+        }
+
+        scheduleAlarm(call, triggerAtValue);
+    }
+
+    @PermissionCallback
+    private void schedulePermissionCallback(PluginCall call) {
+        Long triggerAtValue = readTimestamp(call);
+        if (triggerAtValue == null) {
+            call.reject("Missing or invalid 'at' timestamp.");
+            return;
+        }
+        scheduleAlarm(call, triggerAtValue);
+    }
+
+    private void scheduleAlarm(PluginCall call, long triggerAt) {
+
         Context context = getContext();
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (alarmManager == null) {
@@ -67,7 +95,6 @@ public class RestAlarmPlugin extends Plugin {
             return;
         }
 
-        long triggerAt = triggerAtValue;
         PendingIntent pendingIntent = buildPendingIntent();
         boolean exact = true;
         try {
@@ -75,7 +102,13 @@ public class RestAlarmPlugin extends Plugin {
                 exact = false;
             }
             if (exact) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
+                // Alarm-clock alarms are Android's strongest exact scheduling tier. They wake the
+                // device from idle and are not deferred when the app is backgrounded or locked.
+                AlarmManager.AlarmClockInfo alarmInfo = new AlarmManager.AlarmClockInfo(
+                        triggerAt,
+                        RestTimerNotification.buildContentIntent(context)
+                );
+                alarmManager.setAlarmClock(alarmInfo, pendingIntent);
             } else {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
             }
@@ -87,6 +120,7 @@ public class RestAlarmPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("scheduled", true);
         result.put("exact", exact);
+        result.put("notification", RestTimerNotification.show(context, triggerAt + 3000L));
         call.resolve(result);
     }
 
@@ -98,6 +132,7 @@ public class RestAlarmPlugin extends Plugin {
             alarmManager.cancel(buildPendingIntent());
         }
         RestVibrationReceiver.cancel(context);
+        RestTimerNotification.cancel(context);
         call.resolve();
     }
 
