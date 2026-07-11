@@ -499,7 +499,12 @@ live in the commit messages and the feature list below.
   `timerFinished()` is separate: native completion is owned by the exact alarm, web completion runs
   the waveform directly, and Test vibration previews the exact same non-repeating three-pulse pattern.
   A final repository search found no legacy haptic event names, raw UI vibration calls, generic button
-  hook, or custom timer vibration outside the central service/native timer receiver.
+  hook, or custom timer vibration outside the central service/native timer receiver. Post-release
+  verification passed at 412×915: manual sync moved from Syncing to Synced; Done and Failed were each
+  logged and restored; rest start/stop worked; and the delete confirmation was cancelled without a
+  data change. The browser console stayed clean. The live Pages site returned HTTP 200, its deployed
+  bundle contained the final semantic haptic service and timer waveform, and both Deploy and Android
+  workflow badges were passing.
 - **Safety net** — real git repo (the original `.git` was empty/broken). "Undo everything" = ask
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
