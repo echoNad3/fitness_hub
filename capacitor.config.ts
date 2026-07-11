@@ -1,4 +1,5 @@
 /// <reference types="@capacitor/local-notifications" />
+/// <reference types="@capacitor/splash-screen" />
 
 import type { CapacitorConfig } from '@capacitor/cli'
 
@@ -25,6 +26,13 @@ const config: CapacitorConfig = {
     LocalNotifications: {
       smallIcon: 'ic_stat_fitness',
       iconColor: '#6074f3',
+    },
+    // Keep the native splash (logo on the app background) up until the web UI has actually
+    // mounted — App calls SplashScreen.hide() on mount — so launch never flashes a blank frame.
+    SplashScreen: {
+      launchAutoHide: false,
+      backgroundColor: '#252730',
+      androidScaleType: 'CENTER_CROP',
     },
   },
 }

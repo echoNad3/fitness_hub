@@ -272,6 +272,14 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **Seamless launch (splash fix):** Android 12+ ignores the legacy `@drawable/splash` image and
+  draws the app icon on `windowSplashScreenBackground`, which defaulted to black — now set to
+  `#FF252730` in `styles.xml`. Added `@capacitor/splash-screen` with `launchAutoHide: false`
+  (`capacitor.config.ts`): the native splash stays up until `App` mounts and calls
+  `SplashScreen.hide()` (ErrorBoundary also hides it on a crash so the reload screen shows). The
+  `index.html` boot screen shows the barbell logo (gentle pulse, reduced-motion aware) instead of
+  a spinner, so launch is logo-on-`#252730` from tap to menu. Native change → needs an APK
+  reinstall; old APKs without the plugin reject the hide call harmlessly.
 - **History workout options + duration repair:** each History card is now one full-width target;
   tapping it opens `Workout options` with Edit workout, Edit duration (finished sessions only),
   Delete workout, and Cancel. Duration reuses the existing rest-time editor layout exactly: one

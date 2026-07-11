@@ -36,6 +36,7 @@ import { MAX_REST_SECONDS, MIN_REST_SECONDS, clampRestValue, nextPendingId, rest
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
+import { SplashScreen } from '@capacitor/splash-screen'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApk, type LatestApk } from './apkVersion'
 import { getStored, setStored } from './storage'
@@ -1421,6 +1422,14 @@ function App() {
     const id = window.setTimeout(() => setBackupMessage(null), 5000)
     return () => window.clearTimeout(id)
   }, [backupMessage])
+
+  // The native splash stays up (launchAutoHide: false) until the real UI has mounted, so launch is
+  // logo-on-background the whole way. Old APKs without the plugin reject the call — ignored.
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      void SplashScreen.hide({ fadeOutDuration: 150 }).catch(() => undefined)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
