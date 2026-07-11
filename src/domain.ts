@@ -1,22 +1,11 @@
 export type WorkoutResult = 'success' | 'failure'
 
+// Tapping the already-selected result clears it; tapping the other one switches.
 export function toggleResult(current: WorkoutResult | undefined, requested: WorkoutResult) {
   return current === requested ? undefined : requested
 }
 
-export function moveItem<T extends { id: string }>(items: T[], itemId: string, direction: -1 | 1) {
-  const index = items.findIndex((item) => item.id === itemId)
-  const target = index + direction
-  if (index < 0 || target < 0 || target >= items.length) {
-    return items
-  }
-
-  const movedItems = [...items]
-  const [moved] = movedItems.splice(index, 1)
-  movedItems.splice(target, 0, moved)
-  return movedItems
-}
-
+// The next unfinished item after the current one, in display order (used by auto-advance).
 export function nextPendingId(
   itemIds: string[],
   currentItemId: string,
@@ -26,14 +15,10 @@ export function nextPendingId(
   return itemIds.slice(currentIndex + 1).find((itemId) => !isComplete(itemId))
 }
 
-export function clampRestSeconds(current: number, delta: number) {
-  return clampRestValue(current + delta)
-}
-
 export const MIN_REST_SECONDS = 5
 export const MAX_REST_SECONDS = 600
 
-// Clamp a directly-entered rest length to the supported range.
+// Clamp a rest length to the supported range.
 export function clampRestValue(value: number) {
   if (!Number.isFinite(value)) {
     return MIN_REST_SECONDS
@@ -41,14 +26,7 @@ export function clampRestValue(value: number) {
   return Math.min(MAX_REST_SECONDS, Math.max(MIN_REST_SECONDS, Math.round(value)))
 }
 
+// Remaining whole seconds until the wall-clock end time (never negative).
 export function restSecondsRemaining(endsAt: number, now: number) {
   return Math.max(0, Math.ceil((endsAt - now) / 1000))
-}
-
-export function selectActiveVariantId(
-  sessionVariantId: string | undefined,
-  preferredVariantId: string | undefined,
-  defaultVariantId: string,
-) {
-  return sessionVariantId ?? preferredVariantId ?? defaultVariantId
 }

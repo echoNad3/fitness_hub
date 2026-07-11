@@ -1,13 +1,10 @@
 # Fitness Hub — Project Handoff
 
-> **Purpose of this file:** This is the single source of truth for continuing this project in any
-> new chat or AI tool. Read it top to bottom before doing anything. It contains the vision,
-> the user, the requirements, the hard constraints, the design language, the architecture, what
-> is already built, what is left, and the traps to avoid. You should be able to continue the work
-> with zero additional context from the user.
+> The single source of truth for continuing this project in any new chat or AI tool: vision, user,
+> requirements, hard constraints, design language, architecture, status, and traps. Read it before
+> doing anything.
 >
-> **⚠️ MANDATORY (see the last section):** After *any* change, decision, or brainstorm, you MUST
-> update this file so it always reflects reality.
+> **Mandatory:** update this file after any change or decision (see §11).
 
 ---
 
@@ -183,7 +180,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` | Native exact alarm plus the strong, one-shot three-pulse rest pattern. `preview()` plays this exact waveform for the Settings test. |
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
-| `src/domain.ts` | Pure, tested workout operations: result toggling, reordering, auto-advance, rest clamping, active-variant selection. |
+| `src/domain.ts` | Pure, tested workout logic: result toggling, auto-advance, rest clamping, countdown math. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
 | `src/haptics.ts` | **The one central semantic haptic service.** It exposes only `selection()`, `confirm()`, `reject()`, `dragStart()`, `dragDrop()`, and `timerFinished()`. There is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Normal native interactions call `AppHapticsPlugin`; the timer alone uses the deliberate custom waveform. If an auto-updated web bundle reaches an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's setting. |
@@ -191,7 +188,8 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
 | `.github/workflows/deploy.yml` | GitHub Pages pipeline: install, test, lint, build, upload artifact, deploy. |
-| `.github/workflows/android.yml` | Android CI: test, Capacitor sync, compile a debug APK, upload it as an artifact. |
+| `.github/workflows/android.yml` | Android CI: test, Capacitor sync, compile a debug APK, publish it to a release. |
+| `.github/workflows/keepalive.yml` | Twice-weekly Supabase REST query so the free-tier project never idles 7 days and gets paused. |
 | `capacitor.config.ts` / `android/` | Capacitor app identity/config plus the generated and customized Android Studio project. |
 | `scripts/generate-android-assets.mjs` / `resources/` | Rebuild branded Android launcher icons and splash screens from the Fitness Hub SVG sources. |
 | `vite.config.ts` | Vite base path plus PWA manifest and Workbox precache configuration. |
@@ -269,15 +267,20 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 ## 7. What is currently implemented (DONE)
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
-live in the commit messages and the feature list below. **Verification note for the latest
-commit:** the browser-preview tool was unavailable that session, so it shipped on tests (19) +
-lint + strict build + reuse of previously verified components; give the live app a quick look.
-- Latest commit: **menu polish round.** Gym pass became a square tile and a new **About** tile
-  (short app summary dialog) fills the grid — six tiles, 3×2; the full-width `.home-pass` row and
-  its CSS were removed. The gym-pass dialog offers **Remove or Upload, never both** (replace =
-  remove, then upload). Dialog copy tightened app-wide (Android app, gym pass, link-a-swap, sync
-  conflict, password recovery — short and direct, no filler). The rest dock's `+10s` and `Cancel`
-  share one class with `min-width: 88px`, so they are equal-sized. New `info` icon.
+live in the commit messages and the feature list below.
+- Latest commit: **repository cleanup + Supabase keep-alive.** Removed dead `domain.ts` exports
+  (`moveItem`, `clampRestSeconds`, `selectActiveVariantId`) and their tests, deleted the residual
+  `PRODUCT.md`, rewrote `README.md` to match the current app, tightened this file (stale plan
+  sections, duplicate status text), and added `.github/workflows/keepalive.yml` — a twice-weekly
+  REST query that stops Supabase's free tier from pausing the project after 7 idle days.
+- `566dcf9` / `bc6cc54` / `bcf1216` / `d7b4318` Four polish commits: the Test-vibration preview
+  matches the real timer waveform; app-wide haptics standardized to five meanings (see the haptic
+  audit bullet below); every user-facing string rewritten short and direct (copy audit below);
+  dialog focus trapping, keyboard access, tap-target, and overflow hardening (interaction audit
+  below).
+- `a31a1a9` Menu polish: Gym pass became a grid tile plus a new **About** tile (six tiles, 3×2);
+  the gym-pass dialog offers Remove or Upload, never both; dialog copy tightened; the rest dock's
+  `+10s` and `Cancel` are equal-sized.
 - `62114c5` **Five QoL features + backup check:** workout duration on History cards
   (`WorkoutSession.finishedAt`, stamped when the last displayed exercise gets a result); green
   "Workout complete" header state (`.ws-head-title span.complete`); rest **+10s** re-arms the
@@ -457,10 +460,10 @@ lint + strict build + reuse of previously verified components; give the live app
 - **Release hardening** — edit mode now edits the variant active in that session, full-editor
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.
-- **Automated safety net** — `npm test` runs nineteen Node-native unit tests covering result toggles,
-  ordering, auto-advance, rest bounds, active-variant selection, legacy migration acceptance,
-  template/session validation, timestamp parsing, first-sync direction, migration safety, and
-  strictly monotonic local sync timestamps, and wall-clock rest countdown calculations.
+- **Automated safety net** — `npm test` runs Node-native unit tests covering result toggles,
+  auto-advance, rest bounds, wall-clock countdown math, backup/template/session validation
+  (including swap flags, increase fields, notes, `finishedAt`, `gymPass`), cloud timestamp parsing,
+  sync direction, migration safety, monotonic timestamps, and the meaningful-change rule.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
@@ -503,130 +506,47 @@ lint + strict build + reuse of previously verified components; give the live app
   lines of dead CSS, unused images. Project went 122 → ~20 tracked files.
 - **LIVE** — deployed to GitHub Pages at **https://echonad3.github.io/fitness_hub/** via the
   Actions workflow; auto-deploys on every push to `main`.
-- **Cloud sync step 3** — on sign-in the app pulls newer validated cloud data or pushes the local
-  cache; later changes debounce-upsert the whole `AppData` row. Settings shows Checking, Syncing,
-  Synced, or a safe error state. Existing local installs receive a one-time migration timestamp;
-  fresh devices do not overwrite an existing cloud row with defaults.
-- **Cloud sync step 4a** — a paused sync now exposes an explicit **Retry** action, cloud errors are
-  separated from the short status label, sign-out shows a busy state and reports failures instead
-  of silently ignoring them, and local change timestamps always advance even when multiple changes
-  happen within one millisecond.
-- **PWA** — installable manifest, dark Fitness Hub install icon set, standalone/portrait app mode,
-  GitHub Pages-safe scope/start paths, and a Workbox service worker that precaches the full app shell.
-  The service worker uses `registerType: 'autoUpdate'`, so a new deploy applies automatically on the
-  next load (no manual close needed). Expected, not a bug: a previously-cached client can still serve
-  the old version for a single load while the new SW activates in the background — reopen once.
-- **Native Android step 1** — Capacitor 8 wrapper, synced Local Notifications plugin, exact-alarm
-  permission, branded launcher/splash/status icons, native permission/error fallback messaging, and
-  a CI workflow that builds a downloadable debug APK. Local Android compilation is unavailable
-  because this Windows machine has no Java or Android SDK; GitHub Actions compilation is pending.
-  **Bug found + fixed during review: the APK was building with the GitHub Pages subpath base
-  (`/fitness_hub/`), which would have launched to a blank screen inside the Capacitor webview. The
-  Android build now forces root base (`CAPACITOR_BUILD`). Re-build the APK from the latest `main`.**
-  The current semantic `AppHaptics` bridge and three-pulse rest-alarm waveform are native changes: they need
-  a newly built/reinstalled APK. Until then, an older APK receiving the auto-updated web bundle keeps
-  interaction haptics silent rather than falling back to raw vibration that ignores system settings.
+- **Cloud sync** — complete and verified cross-device (details in §6). Paused syncs expose a Retry
+  action; sign-out shows a busy state and reports failures; timestamps stay strictly monotonic.
+- **PWA** — installable manifest, dark install icons, standalone/portrait mode, Workbox service
+  worker with `autoUpdate` (a previously cached client can serve the old version for one load while
+  the new worker activates — reopen once; expected, not a bug).
+- **Native Android** — Capacitor 8 wrapper, exact-alarm rest vibration, semantic haptics bridge,
+  branded launcher/splash icons, CI-built APK on every push. This machine has no Java/Android SDK,
+  so APKs come from GitHub Actions only. Native (Java/config) changes reach the phone only via a
+  reinstalled APK; web changes auto-update through the live site. The pending physical-device check:
+  confirm the three-pulse timer waveform on the next installed APK.
 
-The release/UI phases were verified live (build, lint, tests, browser DOM checks, console checks,
-and phone browser-preview screenshots). The latest workout viewport fix was verified at 412×915:
-default Workout A/B has zero document overflow and the full dock remains visible; at 412×800 the
-document regains genuine overflow and the dock stays pinned while scrolling. Tests (19), lint, and
-production build pass.
-Cloud sync steps 3 and 4a pass build, lint, and unit tests.
-The 2026-07-11 interaction-hardening and copy-audit passes separately pass all 19 tests, lint, TypeScript production
-build, PWA generation, and `git diff --check`. It was then click-tested in the in-app browser across
-Home, every signed-out launcher/dialog, History, Settings, Workout A, Workout B, result/weight/rest
-interactions, edit mode, link/discard dialogs, and scrolling at 412×915, 412×800, 360×800, and a
-360×500 short dialog viewport. The default 412×915 workouts have zero overflow; 412×800 scrolls
-normally; 360px has no horizontal overflow; the 360×500 link dialog scrolls internally with the
-  background locked. Browser console finished with zero warnings/errors. The signed-in Account dialog
-  was later tested with the dedicated test account: it showed the account state, manual Sync moved from
-  Syncing to Synced, and Change password opened and canceled without changing the password. The browser's
-  localhost policy blocked a second DOM pass after the copy-only rewrite; tests, lint, build, diff review,
-  and the exhaustive stale-copy search cover the resulting bundle without claiming a post-rewrite click test.
-The 2026-07-11 haptic audit passes all 19 tests, lint, TypeScript/PWA production build, Capacitor Android
-sync, `git diff --check`, and exhaustive searches for semantic calls, raw vibration APIs, retired event
-names, duplicates, and generic button hooks. The current in-app browser session reached its internal
-localhost error page while the preview server was restarting, then the browser URL policy blocked a
-fresh DOM pass; no post-change phone click-through is claimed. The native Java changes still require the
-next GitHub Actions Android compile and a physical-device pattern check after installing that APK.
-Its authenticated upload path was verified locally with a reversible 90s → 105s → 90s change:
-both writes reached `Synced` with no console errors. Cross-device pull was then verified on the
-live phone app using a temporary 105s marker; the cloud value was restored to 90s afterward.
+Every phase shipped green (tests, lint, strict build) and was click-verified in a phone-sized
+browser preview at the time it landed; the 2026-07-11 audit passes additionally verified dialog
+behavior and overflow at 412×915, 412×800, 360×800, and 360×500. Where a preview tool was
+unavailable, the entry above says so.
 
 ---
 
-## 8. What is left (the plan ahead)
+## 8. Status and what's next
 
-**✅ Phase 4: Hosting — DONE.** The app is **LIVE at https://echonad3.github.io/fitness_hub/**
-(verified HTTP 200; assets served correctly under `/fitness_hub/`). Repo `echoNad3/fitness_hub`,
-Pages **Source = GitHub Actions**, auto-deploys on every push to `main` via
-`.github/workflows/deploy.yml` (runs tests → lint → build → deploy). To ship a change: commit to
-`main` and `git push` — that's the whole release process now.
+Everything planned so far has shipped: hosting (GitHub Pages, auto-deploy on push to `main`), PWA,
+native Android wrapper, cloud sync with account management, and the QoL/audit rounds in §7. To
+release a change: commit and `git push`.
 
-**NEXT (deferred features, in priority order):**
+**Supabase operational notes:**
+- Project `jrsowjbxenkrmzzknnab.supabase.co`; one row per user in `public.app_state`
+  (`user_id uuid pk`, `data jsonb`, `updated_at timestamptz`), RLS restricts each row to its owner.
+  The URL + publishable key in `src/cloudConfig.ts` are public-safe.
+- The free tier pauses the project after 7 idle days. `.github/workflows/keepalive.yml` queries the
+  REST API twice a week to prevent that. A paused project must be resumed once by the user from the
+  Supabase dashboard. GitHub suspends cron workflows in repos with no commits for 60 days — it
+  emails a warning; one click (or any push) re-enables.
+- Sign-up requires email confirmation unless "Confirm email" is disabled in Supabase Auth settings.
+- Password-reset emails redirect to the live app URL, which must stay listed in Supabase Auth →
+  URL Configuration (done).
 
-1. **PWA — DONE and LIVE.** Production tests, lint, and build pass; the manifest
-   has the correct `/fitness_hub/` scope/start URL and Workbox precaches 12 entries. Offline behavior
-   was proven on 2026-06-28 by loading the production preview, confirming the server was down, then
-   reloading the full Fitness Hub home screen from cache with no console warnings/errors. Pages
-   workflow run `28315746883` succeeded; the live homepage, manifest, service worker, and PNG install
-   icon all returned HTTP 200, the manifest exposes four icons, and the deployed worker contains the
-   precache route.
-2. **Native wrap (Capacitor) — IN PROGRESS, current focus.** Android project and notification logic
-   are implemented and `cap sync android` passes. Starting a rest timer schedules an exact local
-   notification with `allowWhileIdle`; canceling rest cancels it; permission denial is shown without
-   breaking the visible timer. The timer itself now derives from its end timestamp, so it catches up
-   correctly after suspension. Web regression check passed at 15s with no console errors.
-   **NEXT:** push and verify `.github/workflows/android.yml` compiles the debug APK, then install that
-   APK on the user's Android phone and run the decisive locked-screen notification test. The local
-   machine has no Java/Android SDK/adb, so device installation cannot be completed here.
-3. **Cloud sync + login (COMPLETE).** Approach: **Supabase** (free tier, works
-   from a static site; the Project URL + anon key are public-safe, protected by Row Level Security).
-   Simple **email/password** auth, and **optional** — the app still works fully offline without
-   login; signing in just enables cross-device sync. localStorage stays the local cache (offline-first).
-   - **Data model:** one row per user in `public.app_state` — `user_id uuid pk → auth.users`,
-     `data jsonb`, `updated_at timestamptz`. RLS restricts each row to its owner (own-row
-     select/insert/update policies). Sync = the whole `AppData` blob, **last-write-wins** by
-     `updated_at` (fine for one user): on login pull remote if newer; on change debounce-upsert.
-   - **Incremental steps (each its own commit, so usage limits don't lose progress):**
-     **(1)** user creates a Supabase project, runs the table+RLS SQL, and provides Project URL +
-     anon key. **(2)** add `@supabase/supabase-js`, a `src/cloud.ts` client, and a sign-in entry in
-     Settings (login UI). **(3)** wire pull-on-login + debounced push-on-change + a "synced" status.
-     **(4)** polish: errors, sign-out, conflict edge cases.
-   - **Config:** Supabase URL + **publishable** key (`sb_publishable_…`, the modern browser-safe
-     key — note Supabase replaced the old `anon` JWT) live in `src/cloudConfig.ts` (committed;
-     public-safe with RLS). Project: `jrsowjbxenkrmzzknnab.supabase.co`.
-   - **STATUS: Steps 1, 2 & 3 IMPLEMENTED.** Backend is live (`app_state` table + RLS verified via REST).
-     `@supabase/supabase-js` added; `src/cloud.ts` exposes the client; Settings has an optional
-     email/password auth UI (sign-in/sign-up dialog) — verified that sign-in round-trips to Supabase
-     ("Invalid login credentials" returned for a bogus account). Step 3 now implements pull-newer,
-     debounced push, validation, migration safety, and visible sync status. Real-account upload was
-     verified locally on 2026-06-27. Commit `27ab282` then deployed successfully through Pages
-     workflow run `28300067832`, and the live URL returned HTTP 200. A phone signed into the same
-     account successfully pulled the 105s test marker; the value was then restored and synced at
-     90s. **Step 4a is deployed in `30cab0f` + `1320ae2`**: paused-sync retry UX, clearer
-     sign-out/error handling, and monotonic timestamp conflict hardening. Tests, lint, build, and a
-     390×844 Settings audit pass. Pages workflow run `28300808013` succeeded and the live URL
-     returned HTTP 200. The real-phone recovery test was confirmed on 2026-06-27: changing data
-     offline showed **Sync paused** + **Retry**, restoring the network and retrying returned to
-     **Synced**. Cloud sync is complete; only fix new issues if continued use exposes one.
-   - **NOTE:** the user may need to disable "Confirm email" in Supabase Auth settings for instant
-     login; otherwise sign-up requires email confirmation before the first sign-in works.
-
-4. **Selectable workout splits (FUTURE IDEA — not built yet).** Today the only split is the fixed
-   two-workout rotation (Workout A / Workout B). The longer-term goal is to let the end user pick a
-   **split type** (e.g. **Push / Pull / Legs**, upper/lower, full-body, custom) — chosen once in
-   **Settings** — so the app is usable by the public, not just one person. Design rules to preserve
-   when this is built:
-   - The main menu already reads from a generic rotation: "up next" is "the workout after your last
-     session" in whatever ordered list the active split defines, and the **Start new workout** prompt
-     lists every *other* workout in that split under "Or pick another". Adding PPL is mostly a matter
-     of letting the split define more than two workouts — the menu UI does not need to change.
-   - **Never mix splits.** A/B sessions and PPL sessions must not appear in the same rotation; the
-     active split owns the whole list. Switching split type in Settings swaps the rotation wholesale.
-   - History, the 14-day tracker, and resume all key off sessions generically, so they already work
-     for any number of workouts per split.
+**Future idea — selectable workout splits (not built).** Let a user pick a split type (Push/Pull/
+Legs, upper/lower, custom) in Settings instead of the fixed A/B pair. Design rules when built:
+the menu already treats "up next" generically, so a split just defines more workouts; never mix
+splits in one rotation — the active split owns the whole list; History, the tracker, and Resume
+already work for any number of workouts.
 
 ---
 
