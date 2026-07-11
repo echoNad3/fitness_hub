@@ -1,33 +1,50 @@
 # Fitness Hub
 
-A phone-first gym companion for a fixed Workout A / Workout B rotation. One screen runs the whole
-session: exercise setup, target sets × reps, current weight, guidance from last time, Done/Failed
-marking with auto-advance, and a per-exercise rest timer that vibrates through a locked screen on
-Android.
+**A fast, phone-first gym companion that runs your whole workout from one screen.**
 
-Live app: **https://echonad3.github.io/fitness_hub/** (installable PWA; Android APK on the
-[latest release](https://github.com/echoNad3/fitness_hub/releases/latest)).
+Fitness Hub replaces messy notes-app workout logs with a single, glanceable panel built for use
+while you're tired and mid-set. It shows the next exercise, how to set it up, your target reps, the
+weight you lifted last time, whether to go heavier, and a rest timer — with as few taps as possible.
 
-## Features
+### ▶ Try it now: **[echonad3.github.io/fitness_hub](https://echonad3.github.io/fitness_hub/)**
 
-- Editable workouts: exercises, muscle groups, targets, setup notes, per-exercise rest, notes,
-  drag-to-reorder, and swap pairs (two exercises sharing one slot).
-- Result-driven guidance: finish an exercise and the next session asks how much weight to add.
-- History with a 28-day tracker, completion stats, and per-session duration.
-- Offline-first: everything autosaves to `localStorage`; JSON export/import for backups.
-- Optional account (Supabase email/password) for cross-device sync — the app is fully usable
-  without one.
-- Gym pass: store your gym's entry QR code and show it from the home screen.
-- Native Android wrapper (Capacitor) with an exact-alarm rest vibration and semantic haptics.
+Runs in any browser, installs to your home screen like a real app, and works offline. On Android
+there's also a [native app](https://github.com/echoNad3/fitness_hub/releases/latest) whose rest
+timer buzzes even through a locked screen.
 
-## Development
+---
+
+## What it does
+
+- **One screen per session.** Setup notes, target sets × reps, current weight, and last time's
+  result are all in front of you. Mark each exercise **Done** or **Failed** and it advances to the
+  next one automatically.
+- **Tells you when to push.** Did well last time? The next session asks how much weight to add, so
+  progression is a decision you make on purpose, not one you forget.
+- **Your routine, your rules.** Edit every exercise in the app — names, muscle groups, targets, rest
+  length, notes, order, and swap pairs (two exercises that share one slot). No code, ever.
+- **Progress you can see.** History with a 28-day activity grid, completion rate, weekly average,
+  and how long each workout took.
+- **Never lose your data.** Everything saves on your phone automatically and works with no account
+  and no internet. Sign in (optional) to sync across devices. Export a backup file anytime.
+- **Gym pass built in.** Save a photo of your gym's entry QR code and pull it up from the home
+  screen instead of hunting through the gym's own app.
+
+The best way to understand it is to open the live link above and tap around — no sign-up needed.
+
+## Built with
+
+React 19 · TypeScript · Vite · plain CSS · Supabase (optional sync) · Capacitor (Android) — a
+deliberately small, dependency-light stack for a fast personal app.
+
+## Run it locally
 
 ```sh
 npm install
 npm run dev     # http://localhost:5173
-npm test        # Node-native unit tests
+npm test        # unit tests
 npm run lint    # oxlint
-npm run build   # strict type-check + production bundle
+npm run build   # strict type-check + production build
 ```
 
 ## Android
@@ -37,14 +54,16 @@ npm run android:sync   # build the web app and sync it into the Capacitor projec
 npm run android:open   # open in Android Studio
 ```
 
-CI builds a debug APK on every push and publishes it to a GitHub release. The installed app loads
-the live site, so web changes reach it without reinstalling; only native changes need a new APK.
+GitHub Actions builds a debug APK on every push and publishes it to a
+[release](https://github.com/echoNad3/fitness_hub/releases/latest). The installed app loads the live
+site, so web updates arrive automatically; only native changes need a fresh APK.
 
-## Repository notes
+## Project layout
 
-- `src/App.tsx` holds the whole app by design (types, data, screens, dialogs); pure logic lives in
-  small modules (`domain.ts`, `cloudSync.ts`, `dataValidation.ts`) covered by the tests.
-- `HANDOFF.md` is the project's source of truth: vision, constraints, design tokens, architecture,
-  and current status.
-- `.github/workflows/`: Pages deploy, Android APK build, and a twice-weekly Supabase keep-alive
-  ping (free-tier projects pause after 7 idle days).
+- `src/App.tsx` — the app itself (screens, dialogs, state). Kept in one file on purpose for a
+  single-screen app; the pure logic lives in small, tested modules (`domain.ts`, `cloudSync.ts`,
+  `dataValidation.ts`).
+- `src/*.css` — one stylesheet per screen, driven by shared design tokens in `App.css`.
+- `android/` — the Capacitor Android wrapper and native rest-alarm / haptics plugins.
+- `.github/workflows/` — GitHub Pages deploy, Android APK build, and a keep-alive ping.
+- `HANDOFF.md` — the full project brief: vision, constraints, design system, and architecture.
