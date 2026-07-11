@@ -269,7 +269,14 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
-- Latest commit: **new logo, stable APK signing, tile swap.**
+- Latest commit: **default workout seed refresh.** `defaultWorkouts` updated to match the user's
+  revised spreadsheet: several exercises renamed (e.g. Chest-Supported Machine Row → Machine Row,
+  Seated/Reverse Cable/Machine Chest/Rear-Delt Fly → Cable Fly/Machine Fly/Reverse Cable
+  Fly/Reverse Machine Fly), a few setup notes shortened, Weighted Dip and Machine Lat Pulldown
+  weights adjusted, and most rest times moved to 90–120s. IDs, categories, order, and the two
+  `linkId` swap pairs are unchanged. Only affects a brand-new local store or confirmed reset —
+  existing saved templates are untouched (see `normalizeTemplates`).
+- Previous commit: **new logo, stable APK signing, tile swap.**
   (1) `public/app-icon.svg` replaced with the user's final barbell mark (equal-thickness bars on
   `#252730`); `resources/android-foreground.svg` redrawn to match; every generated asset rebuilt
   via `npm run generate-pwa-assets` + `npm run generate-android-assets` (favicon, PWA/apple icons,
