@@ -102,13 +102,10 @@ public class RestAlarmPlugin extends Plugin {
                 exact = false;
             }
             if (exact) {
-                // Alarm-clock alarms are Android's strongest exact scheduling tier. They wake the
-                // device from idle and are not deferred when the app is backgrounded or locked.
-                AlarmManager.AlarmClockInfo alarmInfo = new AlarmManager.AlarmClockInfo(
-                        triggerAt,
-                        RestTimerNotification.buildContentIntent(context)
-                );
-                alarmManager.setAlarmClock(alarmInfo, pendingIntent);
+                // Exact + allowWhileIdle wakes the device from doze at the precise time without
+                // registering a system alarm clock — setAlarmClock made Android advertise the ring
+                // time (an alarm icon and clock on the lock screen), which the user doesn't want.
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
             } else {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
             }

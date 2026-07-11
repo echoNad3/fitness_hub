@@ -157,10 +157,11 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
   `public/app-icon.svg` via `@vite-pwa/assets-generator`.
 - **Capacitor 8 + Android** for the native wrapper. A **custom `RestAlarm` plugin** schedules an
-  alarm-clock-grade exact AlarmManager alarm three seconds before the timer ends;
-  `RestVibrationReceiver` then plays four equal 800ms maximum-amplitude pulses at 3, 2, 1, and 0
-  seconds remaining — felt while locked. An ongoing Android notification shows the live countdown
-  while the timer runs, including on the lock screen and while another app is open.
+  exact AlarmManager alarm (`setExactAndAllowWhileIdle`) three seconds before the timer ends;
+  `RestVibrationReceiver` then plays four distinct maximum-amplitude pulses (550ms on / 450ms off,
+  final 900ms) at 3, 2, 1, and 0 seconds remaining — felt while locked. An ongoing Android
+  notification shows a big live countdown (custom Chronometer view) while the timer runs, including
+  on the lock screen.
   (Earlier used Local Notifications, but a notification only gives a
   brief light buzz; the user needs a heavy multi-second vibration, hence the native alarm.)
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
@@ -180,7 +181,7 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest vibration and countdown notification via the custom `RestAlarm` plugin; no-op on web. |
-| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` + `RestTimerNotification.java` | Alarm-clock-grade exact scheduling, four equal 800ms maximum-amplitude pulses at 3/2/1/0, and the ongoing system countdown. `preview()` plays the exact vibration waveform used by a real timer. |
+| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` + `RestTimerNotification.java` | Exact alarm scheduling, four distinct max-amplitude pulses at 3/2/1/0 (550on/450off, final 900ms), and the ongoing countdown notification (custom Chronometer view). `preview()` plays the exact vibration waveform used by a real timer. |
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout logic: result toggling, auto-advance, rest clamping, countdown math. |
@@ -258,11 +259,13 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
     records the account. Continuations, empty devices, and brand-new accounts skip the prompt.
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
   a suspended/locked app from resuming with a stale countdown. `RestAlarmPlugin` (Java) uses
-  Android's alarm-clock-grade exact scheduling (`USE_EXACT_ALARM`, `setAlarmClock`) three seconds
-  before zero → `RestVibrationReceiver` plays four equal 800ms maximum-amplitude pulses at 3, 2,
-  1, and 0 via Vibrator/VibratorManager (manifest also needs `VIBRATE` + `WAKE_LOCK`).
-  `RestTimerNotification` shows a system-managed countdown while the timer is active, including on
-  the lock screen; Android 13+ asks for notification permission the first time a rest timer starts.
+  `setExactAndAllowWhileIdle` (`USE_EXACT_ALARM`) three seconds before zero — NOT `setAlarmClock`,
+  which made Android show the ring time and an alarm icon on the lock screen. `RestVibrationReceiver`
+  plays four distinct maximum-amplitude pulses (550ms on / 450ms off, final 900ms) at 3, 2, 1, and 0
+  via Vibrator/VibratorManager (manifest also needs `VIBRATE` + `WAKE_LOCK`).
+  `RestTimerNotification` shows the countdown as its main content — a custom `Chronometer` view
+  (`notification_rest_timer.xml`, `DecoratedCustomViewStyle`, header time hidden) that auto-removes
+  ~1s after zero; Android 13+ asks for notification permission the first time a rest timer starts.
   `src/restNotifications.ts` calls it through the `RestAlarm` plugin (`src/restAlarm.ts`); no-op on
   web. Changing the vibration needs a native APK rebuild, not just a web deploy.
 
@@ -272,6 +275,11 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **Rest alert feel + countdown notification fix:** the four alarm pulses are now distinct
+  (550ms on / 450ms off, final 900ms — 800/200 blurred into one long buzz); scheduling went back to
+  `setExactAndAllowWhileIdle` because `setAlarmClock` put a system alarm icon + ring time on the
+  lock screen; the notification's countdown moved from the tiny header clock to a big custom
+  `Chronometer` content view (static "Time remaining" text removed). Native change → new APK.
 - **Seamless launch (splash fix):** Android 12+ ignores the legacy `@drawable/splash` image and
   draws the app icon on `windowSplashScreenBackground`, which defaulted to black — now set to
   `#FF252730` in `styles.xml`. Added `@capacitor/splash-screen` with `launchAutoHide: false`
@@ -567,8 +575,9 @@ live in the commit messages and the feature list below.
   branded launcher/splash icons, CI-built APK on every push. This machine has no Java/Android SDK,
   so APKs come from GitHub Actions only. Native (Java/config) changes reach the phone only via a
   reinstalled APK; web changes auto-update through the live site. The pending physical-device check:
-  confirm the four equal 800ms timer pulses begin at 3 seconds remaining and that the notification
-  countdown plus vibration both continue with the screen locked and another app foregrounded.
+  confirm the four timer pulses feel distinct (550on/450off) starting at 3 seconds remaining, the
+  notification shows a big countdown with no header time, no alarm icon/ring time appears on the
+  lock screen, and countdown plus vibration survive a locked screen and a foregrounded other app.
 
 Every phase shipped green (tests, lint, strict build) and was click-verified in a phone-sized
 browser preview at the time it landed; the 2026-07-11 audit passes additionally verified dialog
