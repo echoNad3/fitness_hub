@@ -3,8 +3,10 @@ package com.echonad3.fitnesshub;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.AssetFileDescriptor;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Build;
@@ -18,14 +20,17 @@ import android.os.VibratorManager;
 /**
  * Fires exactly when the rest timer ends. Plays one continuous maximum-amplitude vibration for
  * three seconds, and — only when headphones or a Bluetooth audio device are connected — an alarm
- * tone through them for the same three seconds. Nothing ever plays on the speaker: the tone uses
- * media routing (which follows the headset) and is not started at all without an external device.
+ * tone through them (350ms silent lead-in + 3s of beeps; the lead-in lets a sleeping Bluetooth
+ * link wake before the first beep). Nothing ever plays on the speaker: the tone uses media
+ * routing (which follows the headset) and is not started at all without an external device.
  */
 public class RestVibrationReceiver extends BroadcastReceiver {
 
-    private static final long ALERT_MS = 3000L;
+    private static final long VIBRATE_MS = 3000L;
+    private static final long SOUND_MS = 3350L;
 
     private static volatile MediaPlayer activePlayer;
+    private static volatile Object activeFocusRequest;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -34,7 +39,7 @@ public class RestVibrationReceiver extends BroadcastReceiver {
         if (powerManager != null) {
             PowerManager.WakeLock wakeLock =
                     powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "fitnesshub:restVibration");
-            wakeLock.acquire(ALERT_MS + 2000L);
+            wakeLock.acquire(SOUND_MS + 3000L);
         }
 
         // The countdown notification's job ends here.
@@ -46,9 +51,9 @@ public class RestVibrationReceiver extends BroadcastReceiver {
         if (playHeadphoneAlarm(context)) {
             PendingResult asyncResult = goAsync();
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                stopSound();
+                stopSound(context);
                 asyncResult.finish();
-            }, ALERT_MS + 500L);
+            }, SOUND_MS + 1500L);
         }
     }
 
@@ -66,9 +71,9 @@ public class RestVibrationReceiver extends BroadcastReceiver {
                     .setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build();
-            vibrator.vibrate(VibrationEffect.createOneShot(ALERT_MS, 255), attributes);
+            vibrator.vibrate(VibrationEffect.createOneShot(VIBRATE_MS, 255), attributes);
         } else {
-            vibrator.vibrate(ALERT_MS);
+            vibrator.vibrate(VIBRATE_MS);
         }
         return true;
     }
@@ -77,29 +82,45 @@ public class RestVibrationReceiver extends BroadcastReceiver {
      * Plays the bundled alarm tone, but only when an external audio output (wired, USB, or
      * Bluetooth headset) is connected. Media routing follows the headset exclusively, and without
      * one nothing is started, so the speaker stays silent in every case. Plays at media volume.
+     * The player holds its own partial wake lock and takes transient audio focus (ducking any
+     * music) so playback doesn't stall while the screen is locked.
      */
     public static boolean playHeadphoneAlarm(Context context) {
-        if (!hasExternalAudioOutput(context)) {
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager == null || !hasExternalAudioOutput(audioManager)) {
             return false;
         }
 
-        stopSound();
+        stopSound(context);
+        MediaPlayer player = new MediaPlayer();
         try {
-            MediaPlayer player = MediaPlayer.create(context, R.raw.rest_alarm);
-            if (player == null) {
-                return false;
+            AudioAttributes attributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+
+            // setWakeMode must precede prepare(): the player then keeps the CPU awake itself for
+            // the whole playback, independent of the receiver's shorter wake lock.
+            player.setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK);
+            player.setAudioAttributes(attributes);
+            try (AssetFileDescriptor source = context.getResources().openRawResourceFd(R.raw.rest_alarm)) {
+                player.setDataSource(source.getFileDescriptor(), source.getStartOffset(), source.getLength());
             }
+            player.prepare();
+
+            requestFocus(audioManager, attributes);
             activePlayer = player;
-            player.setOnCompletionListener(completed -> stopSound());
+            player.setOnCompletionListener(completed -> stopSound(context));
             player.start();
             return true;
         } catch (Exception e) {
-            stopSound();
+            player.release();
+            stopSound(context);
             return false;
         }
     }
 
-    public static void stopSound() {
+    public static void stopSound(Context context) {
         MediaPlayer player = activePlayer;
         activePlayer = null;
         if (player != null) {
@@ -110,6 +131,13 @@ public class RestVibrationReceiver extends BroadcastReceiver {
             }
             player.release();
         }
+
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        Object focus = activeFocusRequest;
+        activeFocusRequest = null;
+        if (audioManager != null && focus != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioManager.abandonAudioFocusRequest((AudioFocusRequest) focus);
+        }
     }
 
     public static void cancel(Context context) {
@@ -117,14 +145,22 @@ public class RestVibrationReceiver extends BroadcastReceiver {
         if (vibrator != null) {
             vibrator.cancel();
         }
-        stopSound();
+        stopSound(context);
     }
 
-    private static boolean hasExternalAudioOutput(Context context) {
-        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        if (audioManager == null) {
-            return false;
+    // Transient may-duck focus: music dips under the beeps and recovers, and some Bluetooth stacks
+    // only route new audio promptly once focus is granted.
+    private static void requestFocus(AudioManager audioManager, AudioAttributes attributes) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioFocusRequest request = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(attributes)
+                    .build();
+            audioManager.requestAudioFocus(request);
+            activeFocusRequest = request;
         }
+    }
+
+    private static boolean hasExternalAudioOutput(AudioManager audioManager) {
         for (AudioDeviceInfo device : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
             switch (device.getType()) {
                 case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:

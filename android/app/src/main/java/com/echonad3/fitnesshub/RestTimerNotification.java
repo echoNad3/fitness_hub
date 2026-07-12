@@ -16,8 +16,18 @@ import androidx.core.content.ContextCompat;
 /** Owns the single ongoing Android notification shown while a rest timer is running. */
 public final class RestTimerNotification {
 
-    private static final String CHANNEL_ID = "rest_timer";
+    // v2: default importance. The original low-importance channel kept the countdown off the lock
+    // screen on phones that hide silent notifications there; a channel's importance can't be
+    // raised in place, so this is a new id and the old channel is deleted.
+    private static final String CHANNEL_ID = "rest_timer_v2";
+    private static final String LEGACY_CHANNEL_ID = "rest_timer";
     private static final int NOTIFICATION_ID = 9102;
+
+    // The in-app timer rounds remaining time UP (0.4s left reads "1"); Android's Chronometer
+    // truncates DOWN (0.4s left reads "0"), which made the notification sit one second behind the
+    // app and dip to -0:01. Biasing the chronometer target by just under a second makes both
+    // clocks show the same digit all the way to zero.
+    private static final long CHRONOMETER_ROUNDING_MS = 999L;
 
     private RestTimerNotification() {}
 
@@ -58,7 +68,7 @@ public final class RestTimerNotification {
                 .setOnlyAlertOnce(true)
                 .setSilent(true)
                 .setShowWhen(true)
-                .setWhen(endsAt)
+                .setWhen(endsAt + CHRONOMETER_ROUNDING_MS)
                 .setUsesChronometer(true)
                 .setChronometerCountDown(true)
                 .setTimeoutAfter(timeoutAfter)
@@ -78,17 +88,24 @@ public final class RestTimerNotification {
         }
         NotificationManager manager =
                 (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null || manager.getNotificationChannel(CHANNEL_ID) != null) {
+        if (manager == null) {
             return;
         }
+        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID);
+        if (manager.getNotificationChannel(CHANNEL_ID) != null) {
+            return;
+        }
+        // Default importance so lock screens show the countdown; the notification itself is
+        // silent (setSilent above) and the channel carries no sound or vibration.
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "Rest timer",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
         );
         channel.setDescription("Shows the time left on an active rest timer.");
         channel.setSound(null, null);
         channel.enableVibration(false);
+        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
         manager.createNotificationChannel(channel);
     }
 }
