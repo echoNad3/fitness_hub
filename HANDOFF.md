@@ -158,8 +158,8 @@ a paired component look smaller. Audit both states whenever one is changed.
 lines together: 4px (`--space-1`) between a label and its directly related value; 8px (`--space-2`)
 between supporting lines in one text group; 12px (`--space-3`) between distinct rows/groups; and
 16px (`--space-4`) between major sections. Body/meta copy uses at least 1.35 line-height. A divider
-does not replace spacing — keep the 12px inset on both sides of a divider. Audit the narrowest phone
-layout whenever a text group changes.
+is not the default way to separate text groups: use spacing alone unless that component family
+already establishes dividers elsewhere. Audit the narrowest phone layout whenever a text group changes.
 
 **Time displays use at most two adjacent units app-wide.** Historic workout lengths and their
 analytics use minutes or hours+minutes; unusually long legacy values use days+hours. Active timers
@@ -318,9 +318,9 @@ live in the commit messages and the feature list below.
 - **Updater progress/text-spacing + notification assessment (2026-07-12):** native download status
   polling is 150ms instead of 750ms; the displayed percentage follows real DownloadManager samples
   in four-point steps and a completed small download remains visible for 1.2 seconds so the bar reaches
-  100 before Install replaces it. Installed and Latest are now separate stacked text groups divided
-  with 12px insets, following the new measurable app-wide text-spacing rule. The rest notification
-  was audited against the phone screenshot and Android guidance: its small header countdown is not
+  100 before Install replaces it. Installed and Latest are separate stacked text groups with 12px
+  between them and no decorative dividers, following the measurable app-wide text-spacing rule. The
+  rest notification was audited against the phone screenshot and Android guidance: its small header countdown is not
   the ideal visual hierarchy, but the standard system template remains deliberate because the earlier
   large custom Chronometer was unreliable on OEM lock screens. Do not trade away the now-confirmed
   lock-screen visibility merely to enlarge the digits; revisit only if Android exposes a reliable

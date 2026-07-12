@@ -370,8 +370,6 @@ label.choice:focus-within {
 .app-build-list {
   display: grid;
   gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--line);
 }
 
 .app-build-row {
@@ -380,11 +378,6 @@ label.choice:focus-within {
   color: var(--quiet);
   font-size: var(--fs-meta);
   line-height: 1.35;
-}
-
-.app-build-row + .app-build-row {
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--line-soft);
 }
 
 .app-build-row strong {
