@@ -181,7 +181,9 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest vibration and countdown notification via the custom `RestAlarm` plugin; no-op on web. |
+| `src/appUpdater.ts` | Typed bridge to the native Android updater: start a download, poll progress, and open the installer. |
 | `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` + `RestTimerNotification.java` | Exact alarm at the end timestamp; continuous 3s max vibration + headphone-only alarm tone (`res/raw/rest_alarm.wav`); standard-template countdown notification. `preview()` plays the exact alert used by a real timer. |
+| `android/.../AppUpdaterPlugin.java` | Uses Android DownloadManager for a resumable app-private APK download, validates the package, requests per-source install access once, and opens the system installer through FileProvider. |
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout logic: result toggling, auto-advance, rest clamping, countdown math. |
@@ -237,9 +239,12 @@ success green, danger coral, warning amber). If adding/retheming a muscle, keep 
   site, so the installed APK loads the live app and **auto-updates with every web deploy** — rebuild
   the APK only for *native* changes (config/plugins/icons). `android.yml` also publishes each APK to
   a GitHub Release; the stable link
-  `https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk` is surfaced in
-  Settings as "Get the Android app" (hidden when running inside the native app). Native offline now
-  relies on the cached service worker after the first online launch.
+  `https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk` is the update
+  source. Inside Android, `AppUpdaterPlugin` downloads it through DownloadManager, exposes progress
+  in the Android app dialog, and opens the system installer from an app-private FileProvider URI.
+  Android requires the user to allow Fitness Hub as an install source once; the final system install
+  confirmation is never bypassed. Web/PWA and APKs older than the plugin retain the browser-download
+  fallback. Native offline relies on the cached service worker after the first online launch.
 - **UI bookkeeping is sync-silent:** `scrollBySession` / `expandedBySession` changes persist to
   localStorage but do not advance `fitness-hub-v1-updated-at` or trigger a cloud push
   (`isMeaningfulChange` in `cloudSync.ts`). Only real edits (sessions, templates, prefs, baselines,
@@ -586,12 +591,15 @@ live in the commit messages and the feature list below.
   worker with `autoUpdate` (a previously cached client can serve the old version for one load while
   the new worker activates — reopen once; expected, not a bug).
 - **Native Android** — Capacitor 8 wrapper, exact-alarm rest vibration, semantic haptics bridge,
-  branded launcher/splash icons, CI-built APK on every push. This machine has no Java/Android SDK,
+  native DownloadManager updater, branded launcher/splash icons, and a CI-built APK on every push.
+  This machine has no Java/Android SDK,
   so APKs come from GitHub Actions only. Native (Java/config) changes reach the phone only via a
   reinstalled APK; web changes auto-update through the live site. The pending physical-device check:
   vibration + notification countdown hit zero together; the tone plays through Bluetooth headphones
   and NEVER through the speaker (test both with and without headphones); the countdown survives a
-  locked screen and a foregrounded other app; no alarm icon/ring time on the lock screen.
+  locked screen and a foregrounded other app; no alarm icon/ring time on the lock screen. Also
+  confirm the first native update asks once for per-source install access, shows download progress,
+  then opens Android's installer; later updates should skip the permission step.
 
 Every phase shipped green (tests, lint, strict build) and was click-verified in a phone-sized
 browser preview at the time it landed; the 2026-07-11 audit passes additionally verified dialog

@@ -39,6 +39,7 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { SplashScreen } from '@capacitor/splash-screen'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApk, type LatestApk } from './apkVersion'
+import { AppUpdater, type AppUpdateState } from './appUpdater'
 import { getStored, setStored } from './storage'
 import { haptics } from './haptics'
 
@@ -185,6 +186,7 @@ type CloudUser = {
 }
 
 type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'conflict'
+type AppUpdateUiState = AppUpdateState | { status: 'checking' | 'unsupported'; progress: number; detail?: string }
 
 const STORAGE_KEY = 'fitness-hub-v1'
 const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
@@ -1277,6 +1279,7 @@ function App() {
   // the Test vibration row) — the app never uses browser alert/confirm popups.
   const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
   const [latestApk, setLatestApk] = useState<LatestApk | null>(null)
+  const [appUpdateState, setAppUpdateState] = useState<AppUpdateUiState>({ status: 'checking', progress: 0 })
   // The build number of the installed APK (native only; CI stamps it into versionCode). Null on the
   // web and on APKs older than the stamping change — those can't tell which build they are.
   const [installedBuild, setInstalledBuild] = useState<number | null>(null)
@@ -1454,6 +1457,30 @@ function App() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (!apkDialogOpen || !Capacitor.isNativePlatform()) {
+      return
+    }
+    let active = true
+    let unsupported = false
+    const poll = async () => {
+      if (unsupported) return
+      try {
+        const state = await AppUpdater.getStatus()
+        if (active) setAppUpdateState(state)
+      } catch {
+        unsupported = true
+        if (active) setAppUpdateState({ status: 'unsupported', progress: 0 })
+      }
+    }
+    void poll()
+    const intervalId = window.setInterval(() => void poll(), 750)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [apkDialogOpen])
 
   useEffect(() => {
     setStored(STORAGE_KEY, JSON.stringify(data))
@@ -2078,6 +2105,37 @@ function App() {
       released,
       updateAvailable: native && build !== null && installedBuild !== null && build > installedBuild,
       upToDate: native && build !== null && installedBuild !== null && build <= installedBuild,
+    }
+  }
+
+  const startAppUpdate = async () => {
+    setAppUpdateState({ status: 'downloading', progress: 0 })
+    try {
+      const state = await AppUpdater.download({ url: APK_DOWNLOAD_URL })
+      setAppUpdateState(state)
+      if (state.status === 'downloading' || state.status === 'ready') {
+        void haptics.confirm()
+      } else {
+        void haptics.reject()
+      }
+    } catch {
+      setAppUpdateState({ status: 'failed', progress: 0, detail: 'Could not start the download.' })
+      void haptics.reject()
+    }
+  }
+
+  const installAppUpdate = async () => {
+    try {
+      const state = await AppUpdater.install()
+      setAppUpdateState(state)
+      if (state.status === 'installing') {
+        void haptics.confirm()
+      } else if (state.status === 'failed' || state.status === 'permission-required') {
+        void haptics.reject()
+      }
+    } catch {
+      setAppUpdateState({ status: 'failed', progress: 100, detail: 'Could not open the installer.' })
+      void haptics.reject()
     }
   }
 
@@ -3807,9 +3865,14 @@ function App() {
       {apkDialogOpen &&
         (() => {
           const { native, build, released, updateAvailable, upToDate } = apkStatus()
+          const nativeUpdater = native && appUpdateState.status !== 'unsupported'
+          const updateBusy = appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'
+          const updateReady = appUpdateState.status === 'ready' || appUpdateState.status === 'permission-required'
           return (
             <Dialog title="Android app">
-              <p className="dialog-help">Download the Android app for rest alerts when the screen is locked.</p>
+              <p className="dialog-help">
+                {nativeUpdater ? 'Download and install the latest build.' : 'Download the Android app.'}
+              </p>
               <div className="account-status">
                 {updateAvailable ? (
                   <span className="sync-status update">
@@ -3837,17 +3900,59 @@ function App() {
                   {build !== null ? `Latest: Build ${build}${released ? `, released ${released}` : ''}` : 'Latest version unavailable'}
                 </small>
               </div>
+              {nativeUpdater && appUpdateState.status === 'downloading' && (
+                <div className="update-progress" role="status" aria-label={`Downloading ${appUpdateState.progress}%`}>
+                  <span>Downloading <strong>{appUpdateState.progress}%</strong></span>
+                  <progress max="100" value={appUpdateState.progress} />
+                </div>
+              )}
+              {nativeUpdater && appUpdateState.status === 'ready' && (
+                <p className="dialog-help">Download complete. Install when ready.</p>
+              )}
+              {nativeUpdater && appUpdateState.status === 'installing' && (
+                <p className="dialog-help">Installer opened.</p>
+              )}
+              {nativeUpdater && appUpdateState.detail && (
+                <p className={appUpdateState.status === 'failed' ? 'auth-error' : 'dialog-help'} role={appUpdateState.status === 'failed' ? 'alert' : 'status'}>
+                  {appUpdateState.detail}
+                </p>
+              )}
               <div className="choice-list">
-                <a
-                  className="choice"
-                  href={APK_DOWNLOAD_URL}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  onClick={() => void haptics.confirm()}
-                >
-                  <Icon name="download" size={18} />
-                  <span>{updateAvailable && build !== null ? `Download build ${build}` : 'Download'}</span>
-                </a>
+                {nativeUpdater ? (
+                  <button
+                    className="choice"
+                    type="button"
+                    disabled={updateBusy || appUpdateState.status === 'installing'}
+                    aria-busy={updateBusy}
+                    onClick={() => void (updateReady ? installAppUpdate() : startAppUpdate())}
+                  >
+                    <Icon name={updateReady ? 'forward' : 'download'} size={18} />
+                    <span>
+                      {appUpdateState.status === 'checking'
+                        ? 'Checking…'
+                        : appUpdateState.status === 'downloading'
+                          ? 'Downloading…'
+                          : appUpdateState.status === 'installing'
+                            ? 'Installer opened'
+                            : updateReady
+                              ? 'Install update'
+                              : build !== null
+                                ? `Download build ${build}`
+                                : 'Download update'}
+                    </span>
+                  </button>
+                ) : (
+                  <a
+                    className="choice"
+                    href={APK_DOWNLOAD_URL}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    onClick={() => void haptics.confirm()}
+                  >
+                    <Icon name="download" size={18} />
+                    <span>{native ? 'Download in browser' : build !== null ? `Download build ${build}` : 'Download'}</span>
+                  </a>
+                )}
               </div>
               <button className="choice-cancel" type="button" onClick={() => setApkDialogOpen(false)}>
                 Close

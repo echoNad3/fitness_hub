@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(RestAlarmPlugin.class);
         registerPlugin(AppHapticsPlugin.class);
+        registerPlugin(AppUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Draw edge-to-edge: let the WebView extend behind the status and navigation bars,
