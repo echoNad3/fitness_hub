@@ -3824,13 +3824,28 @@ function App() {
           const nativeUpdater = native && appUpdateState.status !== 'unsupported'
           const updateBusy = appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'
           const updateReady = isDownloadedBuildInstallable(appUpdateState, build, installedBuild)
+          const downloadedBuild = appUpdateState.build ?? null
+          const reinstallReady =
+            updateReady && downloadedBuild !== null && installedBuild !== null && downloadedBuild === installedBuild
+          const readyAction = reinstallReady
+            ? `Reinstall build ${downloadedBuild}`
+            : updateReady
+              ? `Install build ${downloadedBuild}`
+              : null
+          const downloadAction = upToDate
+            ? `Download build ${build} again`
+            : build !== null
+              ? `Download build ${build}`
+              : 'Download latest build'
           return (
             <Dialog title="Android app">
               <p className="dialog-help">
                 {nativeUpdater
                   ? upToDate
                     ? 'The latest build is installed. Reinstall only if needed.'
-                    : 'Download and install the latest build.'
+                    : updateAvailable
+                      ? 'A newer build is ready to download.'
+                      : 'The installed build is shown below. The latest-build check is temporarily unavailable.'
                   : 'Download the Android app.'}
               </p>
               <div className="account-status">
@@ -3866,8 +3881,15 @@ function App() {
                   <progress max="100" value={appUpdateState.progress} />
                 </div>
               )}
-              {nativeUpdater && appUpdateState.status === 'ready' && (
-                <p className="dialog-help">Download complete. Install when ready.</p>
+              {nativeUpdater && appUpdateState.status === 'ready' && updateReady && (
+                <p className="dialog-help">
+                  {reinstallReady
+                    ? `Build ${downloadedBuild} is already installed. Reinstall only if needed.`
+                    : `Build ${downloadedBuild} is downloaded and ready to install.`}
+                </p>
+              )}
+              {nativeUpdater && appUpdateState.status === 'ready' && !updateReady && (
+                <p className="dialog-help">The saved download is outdated. Download the latest build again.</p>
               )}
               {nativeUpdater && appUpdateState.status === 'installing' && (
                 <p className="dialog-help">Installer opened.</p>
@@ -3894,15 +3916,7 @@ function App() {
                           ? 'Downloading…'
                           : appUpdateState.status === 'installing'
                             ? 'Installer opened'
-                            : updateReady
-                              ? upToDate
-                                ? `Reinstall${build !== null ? ` build ${build}` : ''}`
-                                : 'Install update'
-                              : upToDate
-                                ? `Reinstall${build !== null ? ` build ${build}` : ''}`
-                              : build !== null
-                                ? `Download build ${build}`
-                                : 'Download update'}
+                            : readyAction ?? downloadAction}
                     </span>
                   </button>
                 ) : (

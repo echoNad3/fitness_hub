@@ -10,10 +10,10 @@ const LATEST_RELEASE_API = 'https://api.github.com/repos/echoNad3/fitness_hub/re
 const LATEST_RELEASE_CACHE_KEY = 'fitness-hub-latest-apk'
 
 export type LatestApk = {
-  // Release build number (the CI run number), or null when it can't be parsed.
-  build: number | null
-  // When the release was published (epoch ms), or null when unavailable.
-  publishedAt: number | null
+  // Release build number (the CI run number).
+  build: number
+  // When the release was published (epoch ms).
+  publishedAt: number
 }
 
 export function readCachedLatestApk(): LatestApk | null {
@@ -26,19 +26,19 @@ export function parseCachedLatestApk(cached: string | null): LatestApk | null {
   }
 
   try {
-    const value = JSON.parse(cached) as Partial<LatestApk>
-    const build = value.build === null || (typeof value.build === 'number' && value.build > 0) ? value.build : undefined
-    const publishedAt =
-      value.publishedAt === null || (typeof value.publishedAt === 'number' && Number.isFinite(value.publishedAt))
-        ? value.publishedAt
-        : undefined
-    return build !== undefined && publishedAt !== undefined ? { build, publishedAt } : null
+    return parseLatestApk(JSON.parse(cached))
   } catch {
     return null
   }
 }
 
 export async function fetchLatestApk(): Promise<LatestApk | null> {
+  const manifest = await fetchLatestManifest()
+  if (manifest) {
+    setStored(LATEST_RELEASE_CACHE_KEY, JSON.stringify(manifest))
+    return manifest
+  }
+
   try {
     const response = await fetch(LATEST_RELEASE_API, {
       headers: { Accept: 'application/vnd.github+json' },
@@ -49,15 +49,47 @@ export async function fetchLatestApk(): Promise<LatestApk | null> {
     }
     const release = (await response.json()) as { tag_name?: unknown; name?: unknown; published_at?: unknown }
     const publishedAt = typeof release.published_at === 'string' ? Date.parse(release.published_at) : NaN
-    const latest = {
+    const latest = parseLatestApk({
       build: parseBuild(release.tag_name) ?? parseBuild(release.name),
-      publishedAt: Number.isFinite(publishedAt) ? publishedAt : null,
+      publishedAt,
+    })
+    if (!latest) {
+      return readCachedLatestApk()
     }
     setStored(LATEST_RELEASE_CACHE_KEY, JSON.stringify(latest))
     return latest
   } catch {
     return readCachedLatestApk()
   }
+}
+
+async function fetchLatestManifest(): Promise<LatestApk | null> {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  try {
+    const url = new URL('android-release.json', document.baseURI)
+    url.searchParams.set('t', String(Date.now()))
+    const response = await fetch(url, { cache: 'no-store' })
+    return response.ok ? parseLatestApk(await response.json()) : null
+  } catch {
+    return null
+  }
+}
+
+export function parseLatestApk(value: unknown): LatestApk | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const candidate = value as Partial<LatestApk>
+  return typeof candidate.build === 'number' &&
+    Number.isInteger(candidate.build) &&
+    candidate.build > 0 &&
+    typeof candidate.publishedAt === 'number' &&
+    Number.isFinite(candidate.publishedAt)
+    ? { build: candidate.build, publishedAt: candidate.publishedAt }
+    : null
 }
 
 // Pull the trailing build number out of e.g. "android-v42" or "Android APK build 42".

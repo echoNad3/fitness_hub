@@ -15,6 +15,7 @@ on:
       - '.github/workflows/android.yml'
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -72,3 +73,8 @@ jobs:
           name: Android APK build ${{ github.run_number }}
           make_latest: true
           files: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Refresh the deployed Android version metadata
+        run: gh workflow run deploy.yml --ref main -f android_build=${{ github.run_number }}
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -21,10 +21,15 @@ export function isDownloadedBuildInstallable(
     return true
   }
 
-  return (
-    latestBuild !== null &&
-    installedBuild !== null &&
-    latestBuild <= installedBuild &&
-    downloadedBuild === installedBuild
-  )
+  if (installedBuild === null) {
+    return false
+  }
+
+  if (latestBuild === null) {
+    // The APK itself is still package-validated by the native plugin. When release metadata is
+    // temporarily unavailable, permit a same/newer downloaded build but never a downgrade.
+    return downloadedBuild >= installedBuild
+  }
+
+  return latestBuild <= installedBuild && downloadedBuild === installedBuild
 }

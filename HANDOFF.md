@@ -187,7 +187,7 @@ a paired component look smaller. Audit both states whenever one is changed.
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest vibration and countdown notification via the custom `RestAlarm` plugin; no-op on web. |
 | `src/appUpdater.ts` | Typed bridge to the native Android updater: start a download, poll progress, and open the installer. |
-| `src/appUpdateLogic.ts` | Pure tested guard that permits installation only when the downloaded APK build matches the latest/current build. |
+| `src/appUpdateLogic.ts` | Pure tested guard that permits the latest/current downloaded APK and, when release metadata is offline, allows only a package-validated same/newer build — never a downgrade. |
 | `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` + `RestTimerNotification.java` | Exact alarm at the end timestamp; one continuous 5s max vibration (no sound); standard-template countdown notification. `preview()` plays the exact alert used by a real timer. |
 | `android/.../AppUpdaterPlugin.java` | Uses Android DownloadManager for a resumable app-private APK download, validates package/build identity, reports the downloaded build to the web UI, requests per-source install access once, and opens the system installer through FileProvider. |
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
@@ -197,14 +197,14 @@ a paired component look smaller. Audit both states whenever one is changed.
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
 | `src/haptics.ts` | **The one central semantic haptic service.** It exposes `selection()`, `confirm()`, `reject()`, `dragStart()`, `dragDrop()`, `timerFinished()`, and the non-vibrating `cancelTimerAlert()` cleanup. There is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Normal native interactions call `AppHapticsPlugin`; the timer alone uses the deliberate custom waveform. If an auto-updated web bundle reaches an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's setting. |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
-| `src/apkVersion.ts` | Fetches and caches the latest released APK build number from GitHub for the home tile and download dialog. |
+| `src/apkVersion.ts` | Reads and caches deployed `android-release.json` metadata for the home tile/dialog, with the GitHub API only as a fallback. |
 | `src/pwaUpdates.ts` | Registers the Workbox service worker, actively checks for a new UI bundle on startup/focus/visibility/online plus every five minutes, and lets `autoUpdate` activate it and reload the client. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
-| `.github/workflows/deploy.yml` | GitHub Pages pipeline: install, test, lint, build, upload artifact, deploy. |
-| `.github/workflows/android.yml` | Android CI: test, Capacitor sync, compile a debug APK, publish it to a release. |
+| `.github/workflows/deploy.yml` | GitHub Pages pipeline: writes authenticated Android release metadata, then tests, lints, builds, uploads, and deploys. |
+| `.github/workflows/android.yml` | Android CI: test, Capacitor sync, compile/publish a debug APK, then trigger Pages to refresh release metadata. |
 | `.github/workflows/keepalive.yml` | Twice-weekly Supabase REST query so the free-tier project never idles 7 days and gets paused. |
 | `capacitor.config.ts` / `android/` | Capacitor app identity/config plus the generated and customized Android Studio project. |
-| `scripts/generate-android-assets.mjs` / `resources/` | Rebuild branded Android launcher icons and splash screens from the Fitness Hub SVG sources. |
+| `scripts/generate-android-assets.mjs` / `resources/` | Rebuild branded Android launcher icons and legacy splash images from the Fitness Hub SVG sources. Android 12+ uses `drawable/splash_logo.xml`, a true vector derived from `public/app-icon.svg`, not a launcher PNG. |
 | `vite.config.ts` | Vite base path plus PWA manifest and Workbox precache configuration. |
 | `pwa-assets.config.ts` | Deterministic generation settings for Android, Windows, and Apple install icons. |
 | `public/app-icon.svg` + generated icon files | Fitness Hub favicon, home-screen, Apple touch, and maskable install assets. |
@@ -249,15 +249,19 @@ a paired component look smaller. Audit both states whenever one is changed.
   `https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk` is the update
   source. Inside Android, `AppUpdaterPlugin` downloads it through DownloadManager, exposes progress
   plus the downloaded APK build in the Android app dialog, and opens the system installer from an
-  app-private FileProvider URI. A ready file is installable only when its build matches the latest
-  release; once that build is already installed the action is explicitly **Reinstall build N**.
+  app-private FileProvider URI. A ready file is installable when its build matches the latest
+  release; if metadata is temporarily unavailable, the native package/build validation permits only
+  the installed build or a newer one, never a downgrade. Once a downloaded build is already installed
+  the action is explicitly **Reinstall build N**; otherwise it says **Install build N**.
   Android requires the user to allow Fitness Hub as an install source once; the final system install
   confirmation is never bypassed. Web/PWA and APKs older than the plugin retain the browser-download
   fallback. Native offline relies on the cached service worker after the first online launch.
   `src/pwaUpdates.ts` explicitly checks the worker on startup, app/tab return, reconnect, and every
   five minutes; a changed bundle activates and reloads automatically instead of waiting for a force
-  reload. The Android release lookup keeps the last successful GitHub result and refreshes on resume,
-  so a transient lookup failure cannot erase the known build status.
+  reload. Pages publishes `android-release.json` from an authenticated build-time GitHub lookup, and
+  Android CI triggers a second Pages run after publishing each APK. The phone reads that static file
+  instead of depending on the anonymous, rate-limited GitHub API; the last successful result remains
+  cached for offline use.
 - **UI bookkeeping is sync-silent:** `scrollBySession` / `expandedBySession` changes persist to
   localStorage but do not advance `fitness-hub-v1-updated-at` or trigger a cloud push
   (`isMeaningfulChange` in `cloudSync.ts`). Only real edits (sessions, templates, prefs, baselines,
@@ -299,6 +303,15 @@ a paired component look smaller. Audit both states whenever one is changed.
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **Splash quality + updater recovery (2026-07-12):** replaced the density-specific launcher PNG
+  used by the Android system splash with `drawable/splash_logo.xml`, a 288dp vector derived from the
+  user's canonical 1024×1024 SVG and kept inside Android's safe icon area. Release/build detection now
+  comes from a static `android-release.json` generated during Pages deployment with authenticated CI;
+  Android CI refreshes Pages after publishing each APK. The dialog distinguishes Download, Install,
+  and Reinstall, uses the downloaded APK's actual build number, never calls a stale file “ready,” and
+  no longer claims an update exists when metadata is unavailable. Same/newer package-validated files
+  remain usable during a metadata outage; downgrades remain blocked. Web dialog verified at 412×915;
+  native vector rendering and installed-current status require the newly compiled APK/phone check.
 - **Updater/splash/history/rest hardening (2026-07-12):** downloaded APK state now carries its own
   build number so a stale successful download cannot masquerade as a later update; matching installed
   builds say **Reinstall build N**. The Android launch theme now declares the branded animated icon,
@@ -323,7 +336,8 @@ live in the commit messages and the feature list below.
   lock screen; the notification's countdown moved from the tiny header clock to a big custom
   `Chronometer` content view (static "Time remaining" text removed). Native change → new APK.
 - **Seamless launch (splash fix):** Android 12+ ignores the legacy `@drawable/splash` image. The
-  launch theme explicitly sets `windowSplashScreenBackground`, `windowSplashScreenAnimatedIcon`,
+  launch theme explicitly sets `windowSplashScreenBackground`, `windowSplashScreenAnimatedIcon`
+  to the resolution-independent `@drawable/splash_logo` vector (never a mipmap PNG),
   Android 13+ `windowSplashScreenBehavior=icon_preferred`, and `postSplashScreenTheme`; `MainActivity`
   calls `SplashScreen.installSplashScreen(this)` before `super.onCreate()`. Added
   `@capacitor/splash-screen` with `launchAutoHide: false`
@@ -565,9 +579,9 @@ live in the commit messages and the feature list below.
   the guidance when the next workout is created. Skipped swap variants do not break their own run.
 - **Release freshness + four-tile home (2026-07-12)** — the app actively checks `sw.js` on startup,
   foreground return, reconnect, and every five minutes; Workbox activates a changed bundle and
-  reloads automatically. Android release metadata is cached after a successful lookup and refreshed
-  on native resume, while the installed build remains visible even when GitHub is temporarily
-  unavailable. The home grid is now Account/Android above History/Settings, with the bottom pair
+  reloads automatically. Android release metadata comes from the deployed static manifest, is cached
+  after a successful lookup, and refreshes on native resume; the installed build remains visible even
+  when the network is temporarily unavailable. The home grid is now Account/Android above History/Settings, with the bottom pair
   structurally locked to one row. Verified at 412×915: four equal 187×132 tiles, no overflow, clean
   console; production preview had `sw.js` active and controlling the page.
 - **Frontend interaction hardening (2026-07-11 audit)** — the existing visual system and information
