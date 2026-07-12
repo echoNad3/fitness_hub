@@ -44,6 +44,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Verify Supabase row security
+        run: npm run security:rls
+
       - name: Run lint
         run: npm run lint
 

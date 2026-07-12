@@ -98,6 +98,26 @@ h2 {
   background: var(--surface);
 }
 
+.storage-warning {
+  position: fixed;
+  z-index: 30;
+  top: calc(var(--space-3) + env(safe-area-inset-top));
+  left: 50%;
+  width: min(calc(100% - 28px), 432px);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+  line-height: 1.35;
+  text-align: center;
+  background: var(--surface-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
 /* Dialogs — weight / name / setup / target / previous result */
 
 /* Shared motion. The reduced-motion media query below neutralizes all of these. */

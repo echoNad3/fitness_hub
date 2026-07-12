@@ -1,6 +1,10 @@
 const WORKOUT_IDS = new Set(['workout-a', 'workout-b'])
 const CATEGORIES = new Set(['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS'])
 const PREVIOUS_RESULTS = new Set(['success', 'failure', 'missing'])
+const MAX_EXERCISE_NAME_LENGTH = 80
+const MAX_SETUP_LENGTH = 120
+const MAX_NOTE_LENGTH = 240
+const MAX_COUNT = 999
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -10,12 +14,24 @@ function isNonEmptyString(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function isStringWithin(value: unknown, maxLength: number, allowEmpty = true) {
+  return (
+    typeof value === 'string' &&
+    value.length <= maxLength &&
+    (allowEmpty || value.trim().length > 0)
+  )
+}
+
 function isFiniteNonNegative(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
 function isPositiveInteger(value: unknown) {
   return typeof value === 'number' && Number.isInteger(value) && value > 0
+}
+
+function isValidCount(value: unknown) {
+  return typeof value === 'number' && isPositiveInteger(value) && value <= MAX_COUNT
 }
 
 function isOptionalString(value: unknown) {
@@ -33,17 +49,17 @@ function isVariant(value: unknown) {
 
   return (
     isNonEmptyString(value.id) &&
-    isNonEmptyString(value.name) &&
+    isStringWithin(value.name, MAX_EXERCISE_NAME_LENGTH, false) &&
     typeof value.category === 'string' &&
     CATEGORIES.has(value.category) &&
-    typeof value.setup === 'string' &&
-    isPositiveInteger(value.sets) &&
-    isPositiveInteger(value.reps) &&
+    isStringWithin(value.setup, MAX_SETUP_LENGTH) &&
+    isValidCount(value.sets) &&
+    isValidCount(value.reps) &&
     isFiniteNonNegative(value.weight) &&
     typeof value.perHand === 'boolean' &&
     typeof value.lastResult === 'string' &&
     PREVIOUS_RESULTS.has(value.lastResult) &&
-    isOptionalString(value.note)
+    (value.note === undefined || isStringWithin(value.note, MAX_NOTE_LENGTH))
   )
 }
 
@@ -81,7 +97,26 @@ function isWorkoutTemplate(value: unknown) {
     return false
   }
 
-  return Array.isArray(value.groups) && value.groups.length > 0 && value.groups.every(isExerciseGroup)
+  if (!Array.isArray(value.groups) || value.groups.length === 0 || !value.groups.every(isExerciseGroup)) {
+    return false
+  }
+
+  const groupIds = value.groups.map((group) => group.id as string)
+  if (new Set(groupIds).size !== groupIds.length) {
+    return false
+  }
+
+  const linkMembers = new Map<string, Array<{ hidden?: boolean }>>()
+  for (const group of value.groups) {
+    if (group.linkId) {
+      const members = linkMembers.get(group.linkId as string) ?? []
+      members.push(group)
+      linkMembers.set(group.linkId as string, members)
+    }
+  }
+  return [...linkMembers.values()].every(
+    (members) => members.length === 2 && members.filter((member) => Boolean(member.hidden)).length === 1,
+  )
 }
 
 function isVariantOverride(value: unknown) {
@@ -108,7 +143,57 @@ export function isValidTemplates(value: unknown): value is unknown[] {
   }
 
   const ids = new Set(value.map((template) => (isRecord(template) ? template.id : undefined)))
-  return [...WORKOUT_IDS].every((id) => ids.has(id))
+  if (![...WORKOUT_IDS].every((id) => ids.has(id))) {
+    return false
+  }
+
+  // Group and exercise ids are app-wide keys (variant preferences and editor updates are keyed by
+  // them), so duplicates across Workout A/B would make an edit affect the wrong exercise.
+  const groupIds: string[] = []
+  const variantIds: string[] = []
+  for (const template of value) {
+    for (const group of (template as { groups: Array<{ id: string; variants: Array<{ id: string }> }> }).groups) {
+      groupIds.push(group.id)
+      variantIds.push(...group.variants.map((variant) => variant.id))
+    }
+  }
+  return new Set(groupIds).size === groupIds.length && new Set(variantIds).size === variantIds.length
+}
+
+// Local saves created before the linked-delete fix can contain a one-sided pair that the editor can
+// no longer unlink. Repair only that known shape before strict validation; imported backups still
+// have to pass isValidTemplates unchanged.
+export function repairTemplateLinks(value: unknown): unknown {
+  if (!Array.isArray(value)) {
+    return value
+  }
+  const repaired = structuredClone(value)
+  for (const template of repaired) {
+    if (!isRecord(template) || !Array.isArray(template.groups)) {
+      continue
+    }
+    const links = new Map<string, Record<string, unknown>[]>()
+    for (const group of template.groups) {
+      if (!isRecord(group) || typeof group.linkId !== 'string') {
+        continue
+      }
+      const members = links.get(group.linkId) ?? []
+      members.push(group)
+      links.set(group.linkId, members)
+    }
+    for (const members of links.values()) {
+      if (members.length !== 2) {
+        for (const member of members) {
+          delete member.linkId
+          member.hidden = false
+        }
+      } else if (members.filter((member) => Boolean(member.hidden)).length !== 1) {
+        members[0].hidden = false
+        members[1].hidden = true
+      }
+    }
+  }
+  return repaired
 }
 
 function isSessionExercise(value: unknown) {
@@ -131,7 +216,7 @@ function isSessionGroup(value: unknown) {
     return false
   }
 
-  return Object.values(value.entries).every(isSessionExercise)
+  return String(value.activeVariantId) in value.entries && Object.values(value.entries).every(isSessionExercise)
 }
 
 function isWorkoutSession(value: unknown) {
@@ -143,14 +228,22 @@ function isWorkoutSession(value: unknown) {
     WORKOUT_IDS.has(value.workoutId) &&
     typeof value.createdAt === 'number' &&
     Number.isFinite(value.createdAt) &&
-    (value.finishedAt === undefined || (typeof value.finishedAt === 'number' && Number.isFinite(value.finishedAt))) &&
+    value.createdAt > 0 &&
+    (value.finishedAt === undefined ||
+      (typeof value.finishedAt === 'number' &&
+        Number.isFinite(value.finishedAt) &&
+        value.finishedAt > value.createdAt)) &&
     isRecord(value.groupEntries) &&
     Object.values(value.groupEntries).every(isSessionGroup)
   )
 }
 
 export function isValidSessions(value: unknown): value is unknown[] {
-  return Array.isArray(value) && value.every(isWorkoutSession)
+  if (!Array.isArray(value) || !value.every(isWorkoutSession)) {
+    return false
+  }
+  const ids = value.map((session) => (session as { id: string }).id)
+  return new Set(ids).size === ids.length
 }
 
 function isRecordOf(value: unknown, predicate: (entry: unknown) => boolean) {

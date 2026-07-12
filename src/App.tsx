@@ -46,7 +46,7 @@ import {
   WORKOUT_DURATION_STEP_SECONDS,
   workoutDurationSeconds,
 } from './domain'
-import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
+import { isRecord, isValidBackup, isValidSessions, isValidTemplates, repairTemplateLinks } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { SplashScreen } from '@capacitor/splash-screen'
@@ -55,9 +55,10 @@ import { fetchLatestApk, readCachedLatestApk, type LatestApk } from './apkVersio
 import { AppUpdater, type AppUpdateState } from './appUpdater'
 import { isDownloadedBuildInstallable, nextDisplayedDownloadProgress } from './appUpdateLogic'
 import { formatTimerDuration, formatWorkoutDuration } from './timeFormat'
-import { getStored, setStored } from './storage'
+import { getStored, removeStored, setStored } from './storage'
 import { haptics } from './haptics'
 import { checkForAppUpdate } from './pwaUpdates'
+import { parseStoredRestTimer } from './restTimerState'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -212,6 +213,9 @@ const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
 const SYNCED_ACCOUNT_KEY = 'fitness-hub-v1-synced-account'
 // When this device last completed a successful cloud sync (push or pull), for the account UI.
 const LAST_SYNCED_KEY = 'fitness-hub-v1-last-synced'
+const REST_TIMER_KEY = 'fitness-hub-rest-timer'
+const MAX_BACKUP_BYTES = 10 * 1024 * 1024
+const MAX_EXERCISE_COUNT = 999
 // Where password-reset emails send the user to set a new password (the live web app).
 const PUBLIC_APP_URL = 'https://echonad3.github.io/fitness_hub/'
 const APK_DOWNLOAD_URL = 'https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk'
@@ -809,7 +813,7 @@ function VariantFields({
   const holdStepper = useHoldStepper()
 
   const adjustSets = (delta: number) => {
-    const next = Math.max(1, setsRef.current + delta)
+    const next = Math.min(MAX_EXERCISE_COUNT, Math.max(1, setsRef.current + delta))
     if (next === setsRef.current) return false
     setsRef.current = next
     onPatch({ sets: next })
@@ -817,7 +821,7 @@ function VariantFields({
   }
 
   const adjustReps = (delta: number) => {
-    const next = Math.max(1, repsRef.current + delta)
+    const next = Math.min(MAX_EXERCISE_COUNT, Math.max(1, repsRef.current + delta))
     if (next === repsRef.current) return false
     repsRef.current = next
     onPatch({ reps: next })
@@ -881,6 +885,7 @@ function VariantFields({
         <input
           className="ws-editor-input"
           type="text"
+          maxLength={80}
           value={nameDraft ?? name}
           onFocus={() => setNameDraft(name)}
           onChange={(event) => setNameDraft(event.target.value)}
@@ -962,6 +967,7 @@ function VariantFields({
         <input
           className="ws-editor-input"
           type="text"
+          maxLength={120}
           placeholder="Seat 4, 20°"
           value={setupDraft ?? setup}
           onFocus={() => setSetupDraft(setup)}
@@ -976,6 +982,7 @@ function VariantFields({
         <input
           className="ws-editor-input"
           type="text"
+          maxLength={240}
           placeholder="Grip felt off; go slower"
           value={noteDraft ?? (variant.note ?? '')}
           onFocus={() => setNoteDraft(variant.note ?? '')}
@@ -1044,6 +1051,7 @@ type EditableExerciseItemProps = {
   isExpanded: boolean
   canRemove: boolean
   canLink: boolean
+  canToggleHidden: boolean
   onToggle: () => void
   onVariant: (patch: Partial<ExerciseVariant>) => void
   onRest: (value: number) => void
@@ -1057,7 +1065,7 @@ type EditableExerciseItemProps = {
 // Exercises are independent rows (reorderable on their own). Each can be hidden from the workout, and
 // linked to one other as a swap pair via the controls in its footer.
 function EditableExerciseItem(props: EditableExerciseItemProps) {
-  const { id, variant, restSeconds, hidden, linkedPartnerName, isExpanded, canRemove, canLink } = props
+  const { id, variant, restSeconds, hidden, linkedPartnerName, isExpanded, canRemove, canLink, canToggleHidden } = props
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const restMinutes = Math.floor(restSeconds / 60)
   const restSecondsPart = restSeconds % 60
@@ -1191,9 +1199,9 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
             </div>
 
             <div className="ex-controls">
-              <button className="ex-control-btn" type="button" onClick={props.onToggleHidden}>
+              <button className="ex-control-btn" type="button" disabled={!canToggleHidden} onClick={props.onToggleHidden}>
                 <Icon name={hidden ? 'eye' : 'eye-off'} size={16} />
-                {hidden ? 'Show on workout' : 'Hide from workout'}
+                {hidden ? 'Show in workout' : 'Hide from workout'}
               </button>
               {linkedPartnerName ? (
                 <div className="ex-linked">
@@ -1261,18 +1269,24 @@ function App() {
     const stored = Number(getStored(LAST_SYNCED_KEY))
     return Number.isFinite(stored) && stored > 0 ? stored : null
   })
-  const [restSeconds, setRestSeconds] = useState(DEFAULT_REST_SECONDS)
+  const [initialRestTimer] = useState(() => parseStoredRestTimer(getStored(REST_TIMER_KEY), Date.now()))
+  const [restSeconds, setRestSeconds] = useState(() =>
+    initialRestTimer
+      ? restSecondsRemaining(initialRestTimer.endsAt, Date.now())
+      : DEFAULT_REST_SECONDS,
+  )
   // Length the running countdown started from — drives the dock's drain bar. Kept separately from
   // the active exercise's rest so tapping another exercise mid-rest doesn't skew the bar.
-  const [restDuration, setRestDuration] = useState(DEFAULT_REST_SECONDS)
-  const [restRunning, setRestRunning] = useState(false)
-  const [restEndsAt, setRestEndsAt] = useState<number | null>(null)
+  const [restDuration, setRestDuration] = useState(initialRestTimer?.duration ?? DEFAULT_REST_SECONDS)
+  const [restRunning, setRestRunning] = useState(Boolean(initialRestTimer))
+  const [restEndsAt, setRestEndsAt] = useState<number | null>(initialRestTimer?.endsAt ?? null)
   const [restPulse, setRestPulse] = useState(false)
   const [restNotificationMessage, setRestNotificationMessage] = useState('')
   const [vibrationMessage, setVibrationMessage] = useState('')
   // Inline result note for the Export/Import backup rows (shown in place of the row subtitle, like
   // the Test vibration row) — the app never uses browser alert/confirm popups.
   const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
+  const [storageError, setStorageError] = useState(false)
   const [latestApk, setLatestApk] = useState<LatestApk | null>(readCachedLatestApk)
   const [appUpdateState, setAppUpdateState] = useState<AppUpdateUiState>({ status: 'checking', progress: 0 })
   const [displayedDownloadProgress, setDisplayedDownloadProgress] = useState(0)
@@ -1286,6 +1300,12 @@ function App() {
   const downloadStartedAtRef = useRef<number | null>(null)
   const downloadReadyTimerRef = useRef<number | null>(null)
   const restAlertStartedRef = useRef(false)
+  const restAlarmActionRef = useRef(0)
+  const restAlarmQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const restEndsAtRef = useRef(restEndsAt)
+  restEndsAtRef.current = restEndsAt
+  const restDurationRef = useRef(restDuration)
+  restDurationRef.current = restDuration
   const syncTimer = useRef<number | null>(null)
   const manualSyncPendingRef = useRef(false)
   const scrollPositionsRef = useRef(data.scrollBySession)
@@ -1527,7 +1547,7 @@ function App() {
   }, [appUpdateState.progress, appUpdateState.status])
 
   useEffect(() => {
-    setStored(STORAGE_KEY, JSON.stringify(data))
+    setStorageError(!setStored(STORAGE_KEY, JSON.stringify(data)))
 
     const previous = lastPersistedDataRef.current
     if (previous === data) {
@@ -1638,7 +1658,8 @@ function App() {
         }
 
         const localUpdatedAt = localUpdatedAtRef.current
-        if (remote && remoteUpdatedAt !== null && chooseSyncDirection(remoteUpdatedAt, localUpdatedAt) === 'pull') {
+        const syncDirection = chooseSyncDirection(remoteUpdatedAt, localUpdatedAt)
+        if (remote && remoteUpdatedAt !== null && syncDirection === 'pull') {
           if (!isValidBackup(remote.data)) {
             throw new Error('Cloud data is invalid. Local data was not changed.')
           }
@@ -1655,7 +1676,18 @@ function App() {
           return
         }
 
-        const pushedAt = Math.max(localUpdatedAt, Date.now())
+        if (syncDirection === 'none') {
+          setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
+          syncReadyRef.current = true
+          setSyncStatus('synced')
+          markSynced()
+          finishManualSync(true)
+          return
+        }
+
+        // Preserve the timestamp of the actual local edit. Bumping it merely because the app
+        // checked the cloud makes two idle devices repeatedly overwrite identical data.
+        const pushedAt = localUpdatedAt > 0 ? localUpdatedAt : Date.now()
         localUpdatedAtRef.current = pushedAt
         setStored(LOCAL_UPDATED_KEY, String(pushedAt))
         await saveCloudState(cloudUserId, dataRef.current, pushedAt)
@@ -1693,18 +1725,32 @@ function App() {
     if (!supabase) {
       return
     }
-    const handleOnline = () => {
-      if (!cloudUserRef.current) {
+
+    let lastCheck = Date.now()
+    const reconcile = (force = false) => {
+      if (!cloudUserRef.current || document.visibilityState !== 'visible') {
         return
       }
-      if (syncReadyRef.current) {
-        queueCloudPushRef.current()
-      } else {
-        setSyncAttempt((current) => current + 1)
+      const now = Date.now()
+      if (!force && now - lastCheck < 30_000) {
+        return
       }
+      lastCheck = now
+      setSyncAttempt((current) => current + 1)
     }
-    window.addEventListener('online', handleOnline)
-    return () => window.removeEventListener('online', handleOnline)
+    const reconcileWhenVisible = () => reconcile()
+    const reconcileWhenOnline = () => reconcile(true)
+
+    window.addEventListener('focus', reconcileWhenVisible)
+    window.addEventListener('online', reconcileWhenOnline)
+    document.addEventListener('visibilitychange', reconcileWhenVisible)
+    const intervalId = window.setInterval(reconcileWhenVisible, 5 * 60 * 1000)
+    return () => {
+      window.removeEventListener('focus', reconcileWhenVisible)
+      window.removeEventListener('online', reconcileWhenOnline)
+      document.removeEventListener('visibilitychange', reconcileWhenVisible)
+      window.clearInterval(intervalId)
+    }
   }, [])
 
   useEffect(() => {
@@ -1831,9 +1877,11 @@ function App() {
         void haptics.timerFinished()
       }
       if (remaining === 0) {
+        restEndsAtRef.current = null
         setRestRunning(false)
         setRestEndsAt(null)
         setRestSeconds(data.restSeconds)
+        removeStored(REST_TIMER_KEY)
         triggerRestDone()
         return
       }
@@ -2098,9 +2146,19 @@ function App() {
 
   // Schedule (or reschedule) the native locked-screen alarm for the given end time, surfacing the
   // outdated-APK / failure states under the dock. Shared by starting and extending the rest timer.
+  const enqueueRestAlarm = <T,>(operation: () => Promise<T>) => {
+    const result = restAlarmQueueRef.current.then(operation, operation)
+    restAlarmQueueRef.current = result.then(() => undefined, () => undefined)
+    return result
+  }
+
   const startRestAlarm = (endsAt: number) => {
+    const actionId = ++restAlarmActionRef.current
     setRestNotificationMessage('')
-    void scheduleRestNotification(endsAt).then((result) => {
+    void enqueueRestAlarm(() => scheduleRestNotification(endsAt)).then((result) => {
+      if (actionId !== restAlarmActionRef.current) {
+        return
+      }
       if (result.status === 'outdated') {
         setRestNotificationMessage(
           'Update the Android app for locked-screen rest alerts. The timer still works.',
@@ -2118,15 +2176,22 @@ function App() {
 
   // "+10s" while resting: push the end time out without restarting, and re-arm the native alarm.
   const extendRest = () => {
-    if (!restRunning || restEndsAt === null) {
+    const currentEndsAt = restEndsAtRef.current
+    if (!restRunning || currentEndsAt === null) {
       return
     }
-    const endsAt = restEndsAt + REST_STEP_SECONDS * 1000
+    const endsAt = currentEndsAt + REST_STEP_SECONDS * 1000
+    const duration = restDurationRef.current + REST_STEP_SECONDS
+    restEndsAtRef.current = endsAt
+    restDurationRef.current = duration
     restAlertStartedRef.current = false
     haptics.cancelTimerAlert()
     setRestEndsAt(endsAt)
     setRestSeconds(restSecondsRemaining(endsAt, Date.now()))
-    setRestDuration((current) => current + REST_STEP_SECONDS)
+    setRestDuration(duration)
+    if (!setStored(REST_TIMER_KEY, JSON.stringify({ endsAt, duration }))) {
+      setStorageError(true)
+    }
     void haptics.selection()
     startRestAlarm(endsAt)
   }
@@ -2223,7 +2288,7 @@ function App() {
       <button className={`home-tile${updateAvailable ? ' update' : ''}`} type="button" onClick={() => setApkDialogOpen(true)}>
         <span className="home-tile-icon"><Icon name="download" size={22} /></span>
         <span className="home-tile-text">
-          <span>Android app</span>
+          <span>Android</span>
           {updateAvailable ? (
             <small className="home-tile-status">
               <span className="sync-status update">
@@ -2345,7 +2410,7 @@ function App() {
               <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
               <span className="home-tile-text">
                 <span>Settings</span>
-                <small>Backups and reset</small>
+                <small>Timer and backups</small>
               </span>
             </button>
           </div>
@@ -2451,7 +2516,7 @@ function App() {
                 {tracker.map((day) => {
                   const latest = day.sessions[0]
                   const label = day.sessions.length
-                    ? `${day.label} · ${day.sessions.map((s) => (s.status === 'done' ? 'finished' : 'unfinished')).join(', ')}`
+                    ? `${day.label} · ${day.sessions.map((s) => (s.status === 'done' ? 'completed' : 'unfinished')).join(', ')}`
                     : `${day.label} · no workout`
                   return (
                     <button
@@ -2498,7 +2563,7 @@ function App() {
                         <small className="hist-ago">{formatRelative(session.createdAt)}</small>
                       </span>
                       <span className={`hist-chip ${finished ? 'done' : 'unfinished'}`}>
-                        {finished ? 'Finished' : 'Unfinished'}
+                        {finished ? 'Completed' : 'Unfinished'}
                         <em>{doneCount}/{total}</em>
                       </span>
                     </button>
@@ -2610,11 +2675,7 @@ function App() {
   const retryCloudSync = () => {
     setCloudActionError('')
     manualSyncPendingRef.current = true
-    if (syncReadyRef.current) {
-      queueCloudPushRef.current()
-    } else {
-      setSyncAttempt((current) => current + 1)
-    }
+    setSyncAttempt((current) => current + 1)
   }
 
   const signOut = async () => {
@@ -2651,7 +2712,7 @@ function App() {
           <span className="set-main">
             <strong>Download backup</strong>
             <small className={backupMessage?.target === 'export' && backupMessage.error ? 'set-note-error' : undefined} role="status">
-              {backupMessage?.target === 'export' ? backupMessage.text : 'Download a JSON backup'}
+              {backupMessage?.target === 'export' ? backupMessage.text : 'Save workouts as a JSON file'}
             </small>
           </span>
           <Icon name="download" />
@@ -2661,7 +2722,7 @@ function App() {
           <span className="set-main">
             <strong>Import backup</strong>
             <small className={backupMessage?.target === 'import' && backupMessage.error ? 'set-note-error' : undefined} role="status">
-              {backupMessage?.target === 'import' ? backupMessage.text : 'Replace current data from a JSON backup'}
+              {backupMessage?.target === 'import' ? backupMessage.text : 'Replace workouts from a JSON file'}
             </small>
           </span>
           <Icon name="upload" />
@@ -2775,8 +2836,12 @@ function App() {
                       hidden={Boolean(group.hidden)}
                       linkedPartnerName={partner ? soleVariant(partner).name : undefined}
                       isExpanded={expandedGroupId === group.id}
-                      canRemove={workout.groups.length > 1}
+                      canRemove={
+                        workout.groups.length > 1 &&
+                        displayedGroups(workout.groups.filter((candidate) => candidate.id !== group.id)).length > 0
+                      }
                       canLink={!group.linkId && workout.groups.some((other) => other.id !== group.id && !other.linkId)}
+                      canToggleHidden={Boolean(group.hidden) || Boolean(group.linkId) || slots.length > 1}
                       onToggle={() => toggleExpand(session.id, group.id)}
                       onVariant={(patch) => editVariant(session.id, group.id, group.activeVariantId, patch)}
                       onRest={(value) => editGroupRest(group.id, value)}
@@ -2800,7 +2865,7 @@ function App() {
               type="button"
               onClick={() => {
                 addExercise(workout.id, session.id)
-                void haptics.confirm()
+                void haptics.selection()
               }}
             >
               <Icon name="plus" size={18} />
@@ -3042,12 +3107,15 @@ function App() {
             type="button"
             onClick={() => {
               setRestRunning(false)
+              restEndsAtRef.current = null
               setRestEndsAt(null)
               setRestSeconds(activeRest)
               restAlertStartedRef.current = false
               setRestNotificationMessage('')
+              restAlarmActionRef.current += 1
+              removeStored(REST_TIMER_KEY)
               haptics.cancelTimerAlert()
-              void cancelRestNotification()
+              void enqueueRestAlarm(cancelRestNotification)
             }}
           >
             Stop
@@ -3059,11 +3127,16 @@ function App() {
           type="button"
           onClick={() => {
             const endsAt = Date.now() + activeRest * 1000
+            restEndsAtRef.current = endsAt
+            restDurationRef.current = activeRest
             restAlertStartedRef.current = false
             setRestSeconds(activeRest)
             setRestDuration(activeRest)
             setRestEndsAt(endsAt)
             setRestRunning(true)
+            if (!setStored(REST_TIMER_KEY, JSON.stringify({ endsAt, duration: activeRest }))) {
+              setStorageError(true)
+            }
             startRestAlarm(endsAt)
           }}
         >
@@ -3113,7 +3186,7 @@ function App() {
       },
       expandedBySession: {
         ...current.expandedBySession,
-        [sessionId]: getWorkout(workoutId).groups[0]?.id ?? '',
+        [sessionId]: displayedGroups(getWorkout(workoutId).groups)[0]?.group.id ?? '',
       },
     }))
     setEditMode(false)
@@ -3134,12 +3207,41 @@ function App() {
       danger: true,
       onConfirm: () => {
         setEditDirty(true)
-        setData((current) => ({
-          ...current,
-          templates: current.templates.map((template) =>
-            template.id === workoutId ? { ...template, groups: template.groups.filter((group) => group.id !== groupId) } : template,
-          ),
-        }))
+        setData((current) => {
+          const currentWorkout = current.templates.find((template) => template.id === workoutId)
+          const removed = currentWorkout?.groups.find((group) => group.id === groupId)
+          if (!removed || !currentWorkout || currentWorkout.groups.length <= 1) {
+            return current
+          }
+          const removedVariantIds = removed.variants.map((variant) => variant.id)
+          const nextBaselineResults = { ...current.baselineResults }
+          removedVariantIds.forEach((variantId) => delete nextBaselineResults[variantId])
+          return {
+            ...current,
+            templates: current.templates.map((template) =>
+              template.id === workoutId
+                ? {
+                    ...template,
+                    groups: template.groups
+                      .filter((group) => group.id !== groupId)
+                      .map((group) =>
+                        removed.linkId && group.linkId === removed.linkId
+                          ? { ...group, linkId: undefined, hidden: false }
+                          : group,
+                      ),
+                  }
+                : template,
+            ),
+            variantPrefs: removeKey(current.variantPrefs, groupId),
+            baselineResults: nextBaselineResults,
+            expandedBySession: Object.fromEntries(
+              Object.entries(current.expandedBySession).map(([sessionId, expanded]) => [
+                sessionId,
+                expanded === groupId ? '' : expanded,
+              ]),
+            ),
+          }
+        })
         setConfirmDialog(null)
       },
     })
@@ -3181,7 +3283,7 @@ function App() {
   const deleteSession = (sessionId: string) => {
     setConfirmDialog({
       title: 'Delete workout?',
-      message: 'This removes it from History.',
+      message: 'This removes it from history.',
       confirmLabel: 'Delete',
       danger: true,
       onConfirm: () => {
@@ -3251,8 +3353,12 @@ function App() {
   // Hide/show an exercise. For a linked pair exactly one member is visible, so toggling one flips its
   // partner the other way; for a standalone exercise it's a plain hide (removed from the workout).
   const toggleHidden = (workoutId: WorkoutId, groupId: string) => {
-    const target = data.templates.find((template) => template.id === workoutId)?.groups.find((group) => group.id === groupId)
-    if (!target) {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    const target = workout?.groups.find((group) => group.id === groupId)
+    if (
+      !target ||
+      (!target.hidden && !target.linkId && workout && displayedGroups(workout.groups).length <= 1)
+    ) {
       return
     }
     setEditDirty(true)
@@ -3282,7 +3388,7 @@ function App() {
         }
       }),
     }))
-    void haptics.confirm()
+    void haptics.selection()
   }
 
   // Link the given exercise to another as a swap pair. The one higher in the list stays visible.
@@ -3315,7 +3421,7 @@ function App() {
         }
       }),
     }))
-    void haptics.confirm()
+    void haptics.selection()
   }
 
   // Unlink an exercise from its pair: both become standalone and visible again.
@@ -3344,7 +3450,7 @@ function App() {
         }
       }),
     }))
-    void haptics.confirm()
+    void haptics.selection()
   }
 
   // Swap which member of a linked pair is visible (used on the workout screen). Move the expanded
@@ -3422,6 +3528,7 @@ function App() {
       increaseDelta: undefined,
       increaseResolved: true,
     }))
+    void haptics.confirm()
   }
 
   const setExerciseResult = (sessionId: string, groupId: string, variantId: string, status: ResultStatus) => {
@@ -3441,8 +3548,11 @@ function App() {
         })
         // Stamp the finish time when this result completes the session, so History can show how
         // long the workout took. Re-finishing after clearing a result re-stamps to the real end.
-        if (!wasFinished && isSessionFinished(updatedSession)) {
+        const nowFinished = isSessionFinished(updatedSession)
+        if (!wasFinished && nowFinished) {
           updatedSession = { ...updatedSession, finishedAt: Date.now() }
+        } else if (wasFinished && !nowFinished) {
+          updatedSession = { ...updatedSession, finishedAt: undefined }
         }
         return updatedSession
       })
@@ -3576,14 +3686,16 @@ function App() {
 
       let sessions = current.sessions
       if (target.sessionId) {
-        sessions = sessions.map((candidate) =>
-          candidate.id === target.sessionId
-            ? updateSessionEntry(candidate, previousDialog.groupId, previousDialog.variantId, {
-                ...getEntry(candidate, previousDialog.groupId, previousDialog.variantId),
-                result: status === 'missing' ? undefined : status,
-              })
-            : candidate,
-        )
+        sessions = sessions.map((candidate) => {
+          if (candidate.id !== target.sessionId) {
+            return candidate
+          }
+          const updated = updateSessionEntry(candidate, previousDialog.groupId, previousDialog.variantId, {
+            ...getEntry(candidate, previousDialog.groupId, previousDialog.variantId),
+            result: status === 'missing' ? undefined : status,
+          })
+          return isSessionFinished(updated) ? updated : { ...updated, finishedAt: undefined }
+        })
       }
       sessions = sessions.map(reopenIncrease)
 
@@ -3632,6 +3744,11 @@ function App() {
     if (!file) {
       return
     }
+    if (file.size > MAX_BACKUP_BYTES) {
+      void haptics.reject()
+      setBackupMessage({ target: 'import', text: 'Backup file is too large.', error: true })
+      return
+    }
 
     const reader = new FileReader()
     reader.onload = () => {
@@ -3658,7 +3775,7 @@ function App() {
   const resetData = () => {
     setConfirmDialog({
       title: 'Reset workout data?',
-      message: 'Deletes workout history and workout changes.',
+      message: 'This deletes workout history and routine changes.',
       confirmLabel: 'Reset',
       danger: true,
       onConfirm: () => {
@@ -3691,7 +3808,7 @@ function App() {
           renderSession(currentSession)
         ) : (
           <Page title="Workout unavailable" onBack={() => goBack({ name: 'main' })}>
-            <EmptyState text="This workout no longer exists." />
+            <EmptyState text="This workout was deleted or replaced." />
           </Page>
         )}
         {weightDialog && (
@@ -3786,6 +3903,11 @@ function App() {
   return (
     <>
       {renderScreen()}
+      {storageError && (
+        <p className="storage-warning" role="alert">
+          Changes are not being saved. Export a backup before closing the app.
+        </p>
+      )}
       {authDialog && (
         <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'}>
           <label className="ex-field">
@@ -3892,15 +4014,6 @@ function App() {
               : 'Download latest build'
           return (
             <Dialog title="Android app">
-              <p className="dialog-help">
-                {nativeUpdater
-                  ? upToDate
-                    ? 'The latest build is installed. Reinstall only if needed.'
-                    : updateAvailable
-                      ? 'A newer build is ready to download.'
-                      : 'The installed build is shown below. The latest-build check is temporarily unavailable.'
-                  : 'Download the Android app.'}
-              </p>
               <div className="account-status app-update-status">
                 {updateAvailable ? (
                   <span className="sync-status update">
@@ -4010,9 +4123,6 @@ function App() {
         })()}
       {passwordDialog && (
         <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
-          {passwordDialog.mode === 'recovery' && (
-            <p className="dialog-help">Enter a new account password.</p>
-          )}
           <label className="ex-field">
             <span>New password</span>
             <PasswordInput
@@ -4283,9 +4393,10 @@ function normalizeData(value: unknown): AppData {
 
 function normalizeTemplates(value: unknown, defaultRest: number): WorkoutTemplate[] {
   const legacy = value as { templates?: unknown; variantOverrides?: Record<string, Partial<ExerciseVariant>> }
+  const repairedTemplates = repairTemplateLinks(legacy.templates)
   let templates: WorkoutTemplate[]
-  if (isValidTemplates(legacy.templates)) {
-    templates = legacy.templates as WorkoutTemplate[]
+  if (isValidTemplates(repairedTemplates)) {
+    templates = repairedTemplates as WorkoutTemplate[]
   } else {
     templates = cloneWorkouts()
     const overrides = legacy.variantOverrides

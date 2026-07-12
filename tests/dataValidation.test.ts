@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { isValidBackup, isValidSessions, isValidTemplates } from '../src/dataValidation.ts'
+import { isValidBackup, isValidSessions, isValidTemplates, repairTemplateLinks } from '../src/dataValidation.ts'
 
 function variant(id: string) {
   return {
@@ -48,7 +48,13 @@ test('malformed template data cannot be imported', () => {
 test('swap-pair flags must be well-typed when present', () => {
   const templates = [template('workout-a'), template('workout-b')]
   const linked = structuredClone(templates)
+  const partner = structuredClone(linked[0].groups[0])
+  partner.id = 'pair-partner'
+  partner.activeVariantId = 'pair-partner'
+  partner.variants[0].id = 'pair-partner'
   Object.assign(linked[0].groups[0], { hidden: false, linkId: 'pair-1' })
+  Object.assign(partner, { hidden: true, linkId: 'pair-1' })
+  linked[0].groups.push(partner)
   assert.equal(isValidTemplates(linked), true)
 
   const badHidden = structuredClone(templates)
@@ -58,6 +64,14 @@ test('swap-pair flags must be well-typed when present', () => {
   const badLink = structuredClone(templates)
   Object.assign(badLink[0].groups[0], { linkId: 42 })
   assert.equal(isValidTemplates(badLink), false)
+
+  const orphaned = structuredClone(templates)
+  Object.assign(orphaned[0].groups[0], { linkId: 'orphan', hidden: true })
+  assert.equal(isValidTemplates(orphaned), false)
+
+  const bothVisible = structuredClone(linked)
+  bothVisible[0].groups[1].hidden = false
+  assert.equal(isValidTemplates(bothVisible), false)
 })
 
 test('increase-stage fields must be well-typed when present', () => {
@@ -114,4 +128,27 @@ test('session entries reject invalid weights and result values', () => {
 
   assert.equal(isValidSessions([validSession]), true)
   assert.equal(isValidSessions([{ ...validSession, groupEntries: { exercise: { activeVariantId: 'exercise', entries: { exercise: { weight: -1 } } } } }]), false)
+  assert.equal(isValidSessions([{ ...validSession, createdAt: -1 }]), false)
+  assert.equal(isValidSessions([{ ...validSession, finishedAt: validSession.createdAt - 1 }]), false)
+  assert.equal(isValidSessions([{ ...validSession, groupEntries: { exercise: { activeVariantId: 'missing', entries: { exercise: { weight: 20 } } } } }]), false)
+  assert.equal(isValidSessions([validSession, structuredClone(validSession)]), false)
+})
+
+test('app-wide ids must be unique across editable templates', () => {
+  const templates = [template('workout-a'), template('workout-b')]
+  templates[1].groups[0].id = templates[0].groups[0].id
+  assert.equal(isValidTemplates(templates), false)
+})
+
+test('orphaned local swap links are repaired without weakening backup validation', () => {
+  const templates = [template('workout-a'), template('workout-b')]
+  Object.assign(templates[0].groups[0], { linkId: 'orphan', hidden: true })
+  assert.equal(isValidTemplates(templates), false)
+
+  const repaired = repairTemplateLinks(templates)
+  assert.equal(isValidTemplates(repaired), true)
+  assert.deepEqual((repaired as typeof templates)[0].groups[0], {
+    ...template('workout-a').groups[0],
+    hidden: false,
+  })
 })

@@ -18,7 +18,7 @@ test('cloud timestamps parse safely', () => {
 test('the newest copy wins on sign-in', () => {
   assert.equal(chooseSyncDirection(200, 100), 'pull')
   assert.equal(chooseSyncDirection(100, 200), 'push')
-  assert.equal(chooseSyncDirection(200, 200), 'push')
+  assert.equal(chooseSyncDirection(200, 200), 'none')
   assert.equal(chooseSyncDirection(null, 100), 'push')
 })
 

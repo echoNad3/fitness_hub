@@ -1,69 +1,75 @@
 # Fitness Hub
 
-**A fast, phone-first gym companion that runs your whole workout from one screen.**
+Run your workout without managing a spreadsheet, note, or complicated fitness app.
 
-Fitness Hub replaces messy notes-app workout logs with a single, glanceable panel built for use
-while you're tired and mid-set. It shows the next exercise, how to set it up, your target reps, the
-weight you lifted last time, whether to go heavier, and a rest timer — with as few taps as possible.
+[Open Fitness Hub](https://echonad3.github.io/fitness_hub/) · [Download the Android APK](https://github.com/echoNad3/fitness_hub/releases/latest)
 
-### ▶ Try it now: **[echonad3.github.io/fitness_hub](https://echonad3.github.io/fitness_hub/)**
-
-Runs in any browser, installs to your home screen like a real app, and works offline. On Android
-there's also a [native app](https://github.com/echoNad3/fitness_hub/releases/latest) whose rest
-timer buzzes even through a locked screen.
-
----
+Fitness Hub is a phone-first workout runner. It shows the exercise, setup, target, weight, previous
+result, and rest timer in one place. The default routine is Workout A / Workout B, and every exercise
+can be changed inside the app.
 
 ## What it does
 
-- **One screen per session.** Setup notes, target sets × reps, current weight, and last time's
-  result are all in front of you. Mark each exercise **Done** or **Failed** and it advances to the
-  next one automatically.
-- **Tells you when to push.** Did well last time? The next session asks how much weight to add, so
-  progression is a decision you make on purpose, not one you forget.
-- **Your routine, your rules.** Edit every exercise in the app — names, muscle groups, targets, rest
-  length, notes, order, and swap pairs (two exercises that share one slot). No code, ever.
-- **Progress you can see.** History with a 28-day activity grid, completion rate, weekly average,
-  and how long each workout took.
-- **Never lose your data.** Everything saves on your phone automatically and works with no account
-  and no internet. Sign in (optional) to sync across devices. Export a backup file anytime.
+- Keeps the active exercise open in the workout list, so your place never moves.
+- Marks each exercise Done or Failed, then opens the next unfinished exercise.
+- Carries weights forward and tells you whether to increase or repeat.
+- Runs a per-exercise rest timer. The Android app can vibrate while the phone is locked.
+- Saves locally first and works offline. No account is required.
+- Optionally syncs across devices with Supabase.
+- Exports and imports a JSON backup.
 
-The best way to understand it is to open the live link above and tap around — no sign-up needed.
+## Use it
 
-## Built with
+1. Open the app and tap **Start workout**.
+2. Follow the exercise cards. Change the weight if needed, then tap **Done** or **Failed**.
+3. Leave when the workout is complete. Everything is already saved.
 
-React 19 · TypeScript · Vite · plain CSS · Supabase (optional sync) · Capacitor (Android) — a
-deliberately small, dependency-light stack for a fast personal app.
+Edit mode changes exercise names, setup notes, targets, weights, rest times, order, visibility, and
+swap pairs. History shows completion, frequency, and workout duration.
 
-## Run it locally
+## Your data
 
-```sh
-npm install
-npm run dev     # http://localhost:5173
-npm test        # unit tests
-npm run lint    # oxlint
-npm run build   # strict type-check + production build
-```
+Workout data stays in browser storage unless you sign in. Signed-in data is stored in one private
+Supabase row per account and protected by Row Level Security. Download a backup from Settings before
+clearing browser or app data.
 
 ## Android
 
+The installed Android app adds locked-screen rest alerts, native haptics, and an in-app APK updater.
+Web-interface updates activate in the background and are used on the next app load; they do not
+reload an open workout. Native Android changes still require a new APK.
+
+The current GitHub workflow publishes a debug APK for sideloaded testing. It needs private release
+signing before the APK is treated as a public production release.
+
+## Run locally
+
+Requires Node.js 24.
+
 ```sh
-npm run android:sync   # build the web app and sync it into the Capacitor project
-npm run android:open   # open in Android Studio
+npm install
+npm run dev
+npm test
+npm run lint
+npm run build
 ```
 
-GitHub Actions builds a debug APK on every push and publishes it to a
-[release](https://github.com/echoNad3/fitness_hub/releases/latest). The installed app loads the live
-site, so web updates arrive automatically; only native changes need a fresh APK.
-The app checks for a new web bundle whenever it opens, returns to the foreground, reconnects, and
-periodically while visible, then activates and reloads the new UI automatically.
+The development server runs at `http://localhost:5173`. Offline mode works without setup. The
+included cloud config points to the live Fitness Hub backend; use your own Supabase project before
+publishing a fork with account sync.
 
-## Project layout
+For Android development:
 
-- `src/App.tsx` — the app itself (screens, dialogs, state). Kept in one file on purpose for a
-  single-screen app; the pure logic lives in small, tested modules (`domain.ts`, `cloudSync.ts`,
-  `dataValidation.ts`).
-- `src/*.css` — one stylesheet per screen, driven by shared design tokens in `App.css`.
-- `android/` — the Capacitor Android wrapper and native rest-alarm / haptics plugins.
-- `.github/workflows/` — GitHub Pages deploy, Android APK build, and a keep-alive ping.
-- `HANDOFF.md` — the full project brief: vision, constraints, design system, and architecture.
+```sh
+npm run android:sync
+npm run android:open
+```
+
+## Project map
+
+- `src/App.tsx` — screens, state, and interactions.
+- `src/*.ts` — tested domain, sync, validation, storage, timer, and update logic.
+- `src/*.css` — the shared design system and screen styles.
+- `android/` — the Capacitor app and native Android plugins.
+- `tests/` — Node unit tests.
+- `HANDOFF.md` — product rules, architecture, decisions, and current status.

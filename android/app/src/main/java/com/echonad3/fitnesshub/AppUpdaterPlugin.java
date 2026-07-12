@@ -4,6 +4,8 @@ import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -30,12 +32,14 @@ public class AppUpdaterPlugin extends Plugin {
     private static final String DOWNLOAD_ID = "download_id";
     private static final String FILE_NAME = "fitness-hub-update.apk";
     private static final String APK_MIME = "application/vnd.android.package-archive";
+    private static final String UPDATE_URL =
+            "https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk";
 
     @PluginMethod
     public void download(PluginCall call) {
         String url = call.getString("url");
-        if (url == null || !url.startsWith("https://")) {
-            call.reject("A secure update URL is required.");
+        if (!UPDATE_URL.equals(url)) {
+            call.reject("The update URL is not trusted.");
             return;
         }
 
@@ -185,8 +189,65 @@ public class AppUpdaterPlugin extends Plugin {
         if (!file.isFile() || file.length() == 0) {
             return false;
         }
-        PackageInfo info = context.getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), 0);
-        return info != null && context.getPackageName().equals(info.packageName);
+        PackageManager packageManager = context.getPackageManager();
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? PackageManager.GET_SIGNING_CERTIFICATES
+                : PackageManager.GET_SIGNATURES;
+        PackageInfo archive = packageManager.getPackageArchiveInfo(file.getAbsolutePath(), flags);
+        if (archive == null || !context.getPackageName().equals(archive.packageName)) {
+            return false;
+        }
+
+        try {
+            PackageInfo installed = packageManager.getPackageInfo(context.getPackageName(), flags);
+            long installedBuild = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? installed.getLongVersionCode()
+                    : installed.versionCode;
+            long downloadedBuild = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? archive.getLongVersionCode()
+                    : archive.versionCode;
+            return downloadedBuild >= installedBuild && signaturesMatch(installed, archive);
+        } catch (PackageManager.NameNotFoundException error) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static boolean signaturesMatch(
+            PackageInfo installed,
+            PackageInfo archive
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            if (installed.signingInfo == null || archive.signingInfo == null) {
+                return false;
+            }
+            return sameSignatures(
+                    installed.signingInfo.getApkContentsSigners(),
+                    archive.signingInfo.getApkContentsSigners()
+            );
+        }
+
+        return sameSignatures(installed.signatures, archive.signatures);
+    }
+
+    private static boolean sameSignatures(Signature[] installedSigners, Signature[] archiveSigners) {
+        if (installedSigners == null || archiveSigners == null ||
+                installedSigners.length == 0 || installedSigners.length != archiveSigners.length) {
+            return false;
+        }
+        for (Signature installedSigner : installedSigners) {
+            boolean found = false;
+            for (Signature archiveSigner : archiveSigners) {
+                if (installedSigner.equals(archiveSigner)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @SuppressWarnings("deprecation")

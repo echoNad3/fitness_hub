@@ -253,8 +253,10 @@
 
 .home-tile-text small {
   overflow: hidden;
+  min-height: 1.35em;
   color: var(--muted);
   font-size: var(--fs-meta);
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -269,6 +271,7 @@
 .home-tile-status .sync-status {
   overflow: hidden;
   font-size: var(--fs-meta);
+  line-height: inherit;
   white-space: nowrap;
 }
 

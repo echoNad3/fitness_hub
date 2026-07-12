@@ -1,4 +1,4 @@
-export type SyncDirection = 'pull' | 'push'
+export type SyncDirection = 'pull' | 'push' | 'none'
 
 type ComparableAppData = {
   sessions: unknown[]
@@ -17,7 +17,13 @@ export function parseCloudTimestamp(value: unknown) {
 }
 
 export function chooseSyncDirection(remoteUpdatedAt: number | null, localUpdatedAt: number): SyncDirection {
-  return remoteUpdatedAt !== null && remoteUpdatedAt > localUpdatedAt ? 'pull' : 'push'
+  if (remoteUpdatedAt === null) {
+    return 'push'
+  }
+  if (remoteUpdatedAt > localUpdatedAt) {
+    return 'pull'
+  }
+  return remoteUpdatedAt < localUpdatedAt ? 'push' : 'none'
 }
 
 export function hasMeaningfulLocalData(current: ComparableAppData, initial: ComparableAppData) {

@@ -6,8 +6,9 @@ const MIN_UPDATE_CHECK_GAP_MS = 30 * 1000
 let registration: ServiceWorkerRegistration | undefined
 let lastUpdateCheck = 0
 
-// Ask the browser for a fresh service-worker script. With registerType=autoUpdate, a changed
-// worker activates immediately and reloads the page once it controls this client.
+// Ask the browser for a fresh service-worker script. A changed worker activates immediately, but
+// the visible app keeps running until the next real page load. Reloading the live React tree during
+// a workout or foreground resume causes an avoidable full-screen jump and can lose transient UI.
 export function checkForAppUpdate(force = false) {
   if (!registration || !navigator.onLine) {
     return
@@ -29,6 +30,12 @@ export function registerAppUpdates() {
 
   registerSW({
     immediate: true,
+    // `autoUpdate` normally reloads as soon as the new worker activates. Keep the current page
+    // intact instead: the new worker already controls future loads, so the next cold start/manual
+    // reload gets the update without interrupting the user or showing a fake loading screen.
+    onNeedReload() {
+      // Intentionally deferred until the next real page load.
+    },
     onRegisteredSW(_serviceWorkerUrl, activeRegistration) {
       registration = activeRegistration
       checkForAppUpdate(true)

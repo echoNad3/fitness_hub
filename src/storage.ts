@@ -1,6 +1,6 @@
 // localStorage wrappers that never throw. Storage can be blocked (private mode, disabled cookies)
-// or full (quota), and a thrown read/write must not crash the app — there is no error boundary.
-// On failure the app simply runs without persistence for that operation.
+// or full (quota), and a thrown read/write must not crash the app. Writes report whether they
+// succeeded so important data can surface a warning instead of silently pretending it was saved.
 
 export function getStored(key: string): string | null {
   try {
@@ -10,10 +10,20 @@ export function getStored(key: string): string | null {
   }
 }
 
-export function setStored(key: string, value: string): void {
+export function setStored(key: string, value: string): boolean {
   try {
     localStorage.setItem(key, value)
+    return true
   } catch {
-    // Storage unavailable or full — keep running without persisting.
+    return false
+  }
+}
+
+export function removeStored(key: string): boolean {
+  try {
+    localStorage.removeItem(key)
+    return true
+  } catch {
+    return false
   }
 }
