@@ -12,6 +12,7 @@ export interface AppUpdateState {
   status: AppUpdateStatus
   progress: number
   detail?: string
+  build?: number
 }
 
 interface AppUpdaterPlugin {

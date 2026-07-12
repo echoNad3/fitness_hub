@@ -4,12 +4,16 @@ import android.graphics.Color;
 import android.os.Bundle;
 
 import androidx.core.view.WindowCompat;
+import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Install the Android 12+ compatible splash before the Activity creates its first frame.
+        // The launch theme explicitly prefers the branded icon, including installer relaunches.
+        SplashScreen.installSplashScreen(this);
         registerPlugin(RestAlarmPlugin.class);
         registerPlugin(AppHapticsPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);

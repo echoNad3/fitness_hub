@@ -163,9 +163,9 @@ a paired component look smaller. Audit both states whenever one is changed.
   `public/app-icon.svg` via `@vite-pwa/assets-generator`.
 - **Capacitor 8 + Android** for the native wrapper. A **custom `RestAlarm` plugin** schedules an
   exact AlarmManager alarm (`setExactAndAllowWhileIdle`) at the moment the timer ends;
-  `RestVibrationReceiver` then plays one continuous 3s maximum-amplitude vibration plus an alarm
-  tone (`res/raw/rest_alarm.wav`) **through headphones only** — the tone uses media routing and is
-  never started without an external audio device, so the speaker stays silent. An ongoing Android
+  `RestVibrationReceiver` then plays **one continuous 5s maximum-amplitude vibration — vibration
+  only, always silent**. (A headphone-only alarm tone was built twice and removed at the user's
+  request: locked-phone Bluetooth playback stuttered. Do not reintroduce sound.) An ongoing Android
   notification (standard template, header chronometer) counts down while the timer runs.
   (Earlier used Local Notifications, but a notification only gives a
   brief light buzz; the user needs a heavy multi-second vibration, hence the native alarm.)
@@ -187,8 +187,9 @@ a paired component look smaller. Audit both states whenever one is changed.
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest vibration and countdown notification via the custom `RestAlarm` plugin; no-op on web. |
 | `src/appUpdater.ts` | Typed bridge to the native Android updater: start a download, poll progress, and open the installer. |
-| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` + `RestTimerNotification.java` | Exact alarm at the end timestamp; continuous 3s max vibration + headphone-only alarm tone (`res/raw/rest_alarm.wav`); standard-template countdown notification. `preview()` plays the exact alert used by a real timer. |
-| `android/.../AppUpdaterPlugin.java` | Uses Android DownloadManager for a resumable app-private APK download, validates the package, requests per-source install access once, and opens the system installer through FileProvider. |
+| `src/appUpdateLogic.ts` | Pure tested guard that permits installation only when the downloaded APK build matches the latest/current build. |
+| `android/.../RestAlarmPlugin.java` + `RestVibrationReceiver.java` + `RestTimerNotification.java` | Exact alarm at the end timestamp; one continuous 5s max vibration (no sound); standard-template countdown notification. `preview()` plays the exact alert used by a real timer. |
+| `android/.../AppUpdaterPlugin.java` | Uses Android DownloadManager for a resumable app-private APK download, validates package/build identity, reports the downloaded build to the web UI, requests per-source install access once, and opens the system installer through FileProvider. |
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout logic: result toggling, auto-advance, rest clamping, countdown math. |
@@ -196,7 +197,8 @@ a paired component look smaller. Audit both states whenever one is changed.
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
 | `src/haptics.ts` | **The one central semantic haptic service.** It exposes `selection()`, `confirm()`, `reject()`, `dragStart()`, `dragDrop()`, `timerFinished()`, and the non-vibrating `cancelTimerAlert()` cleanup. There is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Normal native interactions call `AppHapticsPlugin`; the timer alone uses the deliberate custom waveform. If an auto-updated web bundle reaches an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's setting. |
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
-| `src/apkVersion.ts` | Fetches the latest released APK build number (GitHub releases) for the Settings download row. |
+| `src/apkVersion.ts` | Fetches and caches the latest released APK build number from GitHub for the home tile and download dialog. |
+| `src/pwaUpdates.ts` | Registers the Workbox service worker, actively checks for a new UI bundle on startup/focus/visibility/online plus every five minutes, and lets `autoUpdate` activate it and reload the client. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior and backup/data validation (no extra test dependency). |
 | `.github/workflows/deploy.yml` | GitHub Pages pipeline: install, test, lint, build, upload artifact, deploy. |
 | `.github/workflows/android.yml` | Android CI: test, Capacitor sync, compile a debug APK, publish it to a release. |
@@ -246,10 +248,16 @@ a paired component look smaller. Audit both states whenever one is changed.
   a GitHub Release; the stable link
   `https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk` is the update
   source. Inside Android, `AppUpdaterPlugin` downloads it through DownloadManager, exposes progress
-  in the Android app dialog, and opens the system installer from an app-private FileProvider URI.
+  plus the downloaded APK build in the Android app dialog, and opens the system installer from an
+  app-private FileProvider URI. A ready file is installable only when its build matches the latest
+  release; once that build is already installed the action is explicitly **Reinstall build N**.
   Android requires the user to allow Fitness Hub as an install source once; the final system install
   confirmation is never bypassed. Web/PWA and APKs older than the plugin retain the browser-download
   fallback. Native offline relies on the cached service worker after the first online launch.
+  `src/pwaUpdates.ts` explicitly checks the worker on startup, app/tab return, reconnect, and every
+  five minutes; a changed bundle activates and reloads automatically instead of waiting for a force
+  reload. The Android release lookup keeps the last successful GitHub result and refreshes on resume,
+  so a transient lookup failure cannot erase the known build status.
 - **UI bookkeeping is sync-silent:** `scrollBySession` / `expandedBySession` changes persist to
   localStorage but do not advance `fitness-hub-v1-updated-at` or trigger a cloud push
   (`isMeaningfulChange` in `cloudSync.ts`). Only real edits (sessions, templates, prefs, baselines,
@@ -274,12 +282,14 @@ a paired component look smaller. Audit both states whenever one is changed.
   vibration and the notification 3 seconds apart; never reintroduce split timestamps.)
   `RestAlarmPlugin` (Java) uses `setExactAndAllowWhileIdle` (`USE_EXACT_ALARM`) — NOT
   `setAlarmClock`, which put an alarm icon and ring time on the lock screen. At zero,
-  `RestVibrationReceiver` plays a continuous 3s max-amplitude vibration (alarm usage) and, only if
-  a wired/USB/Bluetooth headset is connected, the bundled `rest_alarm.wav` via MediaPlayer with
-  media routing (never the speaker; plays at media volume; `goAsync()` keeps the receiver alive).
+  `RestVibrationReceiver` plays one continuous 5s max-amplitude vibration (alarm usage). **The
+  alert is vibration-only by explicit user decision** — a headphone-only tone was built twice and
+  removed (locked-phone Bluetooth playback stuttered); do not reintroduce sound.
   `RestTimerNotification` uses the standard template (custom layouts get dropped from lock screens
-  by some OEMs) with a header chronometer counting down to `endsAt`; the receiver cancels it at
-  zero. Android 13+ asks for notification permission the first time a rest timer starts.
+  by some OEMs) with a header chronometer counting down to `endsAt` (+999ms display bias: the app
+  rounds remaining time up, Chronometer truncates down); the receiver cancels it at zero. Its
+  channel is `rest_timer_v2` at default importance (silent) so lock screens show it. Android 13+
+  asks for notification permission the first time a rest timer starts.
   `src/restNotifications.ts` calls it through the `RestAlarm` plugin (`src/restAlarm.ts`); no-op on
   web. Changing the vibration needs a native APK rebuild, not just a web deploy.
 
@@ -289,36 +299,48 @@ a paired component look smaller. Audit both states whenever one is changed.
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
-- **Rest alert redesign (one timestamp, headphone tone):** the user hit a live bug — vibration at
-  app-zero but the notification 3s behind, running to −2 — caused by a web/native version skew
-  around the old "fire 3s early" contract (old web sent `endsAt`, new native added +3000 for the
-  notification). Redesigned per the user's decision: everything fires **at zero** from one shared
-  timestamp; the alert is one continuous 3s max vibration plus a generated two-tone alarm
-  (`res/raw/rest_alarm.wav`, built by a script) played **only through connected headphones**
-  (media routing, never the speaker, at media volume); the countdown notification went back to the
-  standard template (custom layouts don't render on some lock screens) and is cancelled by the
-  receiver at zero. Settings row renamed "Test rest alert" and previews the full alert including
-  the headphone tone. Native change → new APK.
+- **Updater/splash/history/rest hardening (2026-07-12):** downloaded APK state now carries its own
+  build number so a stale successful download cannot masquerade as a later update; matching installed
+  builds say **Reinstall build N**. The Android launch theme now declares the branded animated icon,
+  `icon_preferred`, and `postSplashScreenTheme`, while `MainActivity` installs the compat splash before
+  `super.onCreate()` so installer-triggered launches do not show an empty starting window. Historic
+  cards open **Historic workout options** with **Open workout**. Duration editing is h/m/s, steps by
+  10 seconds, and has a 10-second minimum; exercise rest shares the same step/minimum and old 5-second
+  values migrate to 10. Verified web behavior at 412×915 with temporary edits cancelled; native
+  splash/install behavior requires the CI APK and physical phone check.
+- **Rest alert final form: 5s max vibration, no sound.** The sound layer (a headphone-only alarm
+  tone) was built twice and fully removed at the user's request after locked-phone Bluetooth
+  playback kept stuttering — the alert is now one continuous **5-second** maximum-amplitude
+  vibration, always silent. Lessons kept from the sound era: everything fires **at zero** from one
+  shared timestamp (a "fire 3s early" design let a web/native version skew split the vibration and
+  notification — never reintroduce offsets); the countdown notification uses the standard template
+  with a +999ms chronometer display bias (app rounds up, Chronometer truncates down) on the
+  default-importance silent channel `rest_timer_v2` so lock screens show it. Settings "Test rest
+  alert" previews the exact 5s vibration. Native change → new APK.
 - **Rest alert feel + countdown notification fix:** the four alarm pulses are now distinct
   (550ms on / 450ms off, final 900ms — 800/200 blurred into one long buzz); scheduling went back to
   `setExactAndAllowWhileIdle` because `setAlarmClock` put a system alarm icon + ring time on the
   lock screen; the notification's countdown moved from the tiny header clock to a big custom
   `Chronometer` content view (static "Time remaining" text removed). Native change → new APK.
-- **Seamless launch (splash fix):** Android 12+ ignores the legacy `@drawable/splash` image and
-  draws the app icon on `windowSplashScreenBackground`, which defaulted to black — now set to
-  `#FF252730` in `styles.xml`. Added `@capacitor/splash-screen` with `launchAutoHide: false`
+- **Seamless launch (splash fix):** Android 12+ ignores the legacy `@drawable/splash` image. The
+  launch theme explicitly sets `windowSplashScreenBackground`, `windowSplashScreenAnimatedIcon`,
+  Android 13+ `windowSplashScreenBehavior=icon_preferred`, and `postSplashScreenTheme`; `MainActivity`
+  calls `SplashScreen.installSplashScreen(this)` before `super.onCreate()`. Added
+  `@capacitor/splash-screen` with `launchAutoHide: false`
   (`capacitor.config.ts`): the native splash stays up until `App` mounts and calls
   `SplashScreen.hide()` (ErrorBoundary also hides it on a crash so the reload screen shows). The
   `index.html` boot screen shows the barbell logo (gentle pulse, reduced-motion aware) instead of
   a spinner, so launch is logo-on-`#252730` from tap to menu. Native change → needs an APK
   reinstall; old APKs without the plugin reject the hide call harmlessly.
 - **History workout options + duration repair:** each History card is now one full-width target;
-  tapping it opens `Workout options` with Edit workout, Edit duration (finished sessions only),
-  Delete workout, and Cancel. Duration reuses the existing rest-time editor layout exactly: one
-  shared minus button, manual hours/minutes fields, and one shared plus button with hold-stepper
-  behavior. Edit workout opens the normal workout screen; its own pencil remains the only entry to
-  structural edit mode. Duration validates 1 minute–23h 59m, updates `finishedAt` while preserving `createdAt`, and
-  immediately recalculates the card and average. Finished/Unfinished chips share an exact 92px ×
+  tapping it opens `Historic workout options` with Open workout, Edit duration (finished sessions
+  only), Delete workout, and Cancel. Duration reuses the rest-time editor layout: one shared minus
+  button, manual hours/minutes/seconds fields, and one shared plus button with hold-stepper behavior;
+  minus/plus move 10 seconds. Open workout opens the normal workout screen; its own pencil remains
+  the only entry to structural edit mode. Duration validates 10 seconds–23h 59m 59s, updates
+  `finishedAt` while preserving `createdAt`, and
+  immediately recalculates the card and average. Invalid legacy durations over 24 hours remain on
+  their card for correction but are excluded from the average. Finished/Unfinished chips share an exact 92px ×
   48px footprint. The old separate trash column was removed.
 - Latest commit: **default workout seed refresh.** `defaultWorkouts` updated to match the user's
   revised spreadsheet: several exercises renamed (e.g. Chest-Supported Machine Row → Machine Row,
@@ -327,7 +349,7 @@ live in the commit messages and the feature list below.
   weights adjusted, and most rest times moved to 90–120s. IDs, categories, order, and the two
   `linkId` swap pairs are unchanged. Only affects a brand-new local store or confirmed reset —
   existing saved templates are untouched (see `normalizeTemplates`).
-- Previous commit: **new logo, stable APK signing, tile swap.**
+- Previous commit: **new logo and stable APK signing.**
   (1) `public/app-icon.svg` replaced with the user's final barbell mark (equal-thickness bars on
   `#252730`); `resources/android-foreground.svg` redrawn to match; every generated asset rebuilt
   via `npm run generate-pwa-assets` + `npm run generate-android-assets` (favicon, PWA/apple icons,
@@ -338,7 +360,6 @@ live in the commit messages and the feature list below.
   sideloaded updates always failed with "app not installed" and forced an uninstall. The user must
   uninstall/reinstall **one final time** (old random signature → this stable one); afterwards new
   APKs install over the old ones.
-  (3) Home grid: Gym pass and Settings swapped places (Gym pass now sits next to History).
 - Previous commit: **repository cleanup + Supabase keep-alive.** Removed dead `domain.ts` exports
   (`moveItem`, `clampRestSeconds`, `selectActiveVariantId`) and their tests, deleted the residual
   `PRODUCT.md`, rewrote `README.md` to match the current app, tightened this file (stale plan
@@ -349,18 +370,13 @@ live in the commit messages and the feature list below.
   audit bullet below); every user-facing string rewritten short and direct (copy audit below);
   dialog focus trapping, keyboard access, tap-target, and overflow hardening (interaction audit
   below).
-- `a31a1a9` Menu polish: Gym pass became a grid tile plus a new **About** tile (six tiles, 3×2);
-  the gym-pass dialog offers Remove or Upload, never both; dialog copy tightened; the rest dock's
-  `+10s` and `Cancel` are equal-sized.
 - `62114c5` **Five QoL features + backup check:** workout duration on History cards
   (`WorkoutSession.finishedAt`, stamped when the last displayed exercise gets a result); green
   "Workout complete" header state (`.ws-head-title span.complete`); rest **+10s** re-arms the
   native alarm via the shared `startRestAlarm(endsAt)` helper; optional per-exercise
   `ExerciseVariant.note` (editor field + quiet `.ws-note` line on the card); History = **28-day
   4×7 tracker** (`buildTrackerDays`) + **2×2 stats grid** (total / completion % / per-week / avg
-  length — 4-across overflowed 375px); **Gym pass** (`AppData.gymPass`: canvas-downscaled ≤640px
-  data-URL, PNG with JPEG fallback >400KB, synced via `isMeaningfulChange`, validated, shown on a
-  white `.pass-image` pad with `image-rendering: pixelated`); export blob-URL revoke delayed 2s
+  length — 4-across overflowed 375px); export blob-URL revoke delayed 2s
   (same-tick revoke can abort the download). Import/export verified incl. invalid-file rejection.
 - `8f513df` Square launcher tiles (icon top, text bottom, min-height 128px, single-line ellipsis);
   Android tile opens an explainer **dialog** with a status dot (accent "Update ready" / green "Up
@@ -374,7 +390,7 @@ live in the commit messages and the feature list below.
   `PASSWORD_RECOVERY` set-new-password dialog (⚠️ Supabase Auth → URL Configuration must allow
   `https://echonad3.github.io/fitness_hub/` — the user configured this); **APK build stamping**
   (`android.yml` passes `-PappBuildNumber=${{ github.run_number }}` → `versionCode`; read back via
-  `CapacitorApp.getInfo()`, builds ≤ 1 treated as unknown) compared against `fetchLatestApk`
+  `CapacitorApp.getInfo()`) compared against `fetchLatestApk`
   (build + release date). Cloud/APK rows left Settings.
 - `9fd3d56` Increase-stage −/+ hold-to-repeat parity with the weight stepper; fixed the oversized
   "Increase weight by?" prompt (its size rule was dead CSS, out-specified by `.ws-weight strong`);
@@ -461,25 +477,20 @@ live in the commit messages and the feature list below.
   thin accent drain bar along the dock's bottom edge shows remaining rest at a glance. Viewport-fit sessions
   suppress up to 64px of incidental overflow; longer routines retain normal scrolling.
 - **Home hub** (`main`) — title + date subtitle, **Resume** card (only for an unfinished latest
-  session), **Start** (auto-suggests the opposite of the last workout), then a 3×2 grid of square
-  launcher tiles: **History**, **Settings**, **Sign in / Account** (live sync-status dot),
-  **Android app** (version-aware status dot; opens the download dialog), **Gym pass** (the saved
-  entry QR; opens its dialog), and **About** (short app summary). No browser confirms.
+  session), **Start** (auto-suggests the opposite of the last workout), then a 2×2 grid of square
+  launcher tiles: **Sign in / Account** and **Android app** on the first row; **History** and
+  **Settings** together on the bottom row. The Android tile has a version-aware status dot and opens
+  the download dialog. No browser confirms.
 - **History** — full-width cards, relative + absolute time, equal-size green **Finished** / red
-  **Unfinished** chips with the displayed-slot count, the 28-day tracker, and a `Workout options`
-  dialog for opening, editing a finished duration, or deleting. Duration editing accepts manual
-  hours/minutes or the standard hold-to-repeat −/+ controls.
+  **Unfinished** chips with the displayed-slot count, the 28-day tracker, and a `Historic workout
+  options` dialog for opening, editing a finished duration, or deleting. Duration editing accepts
+  manual hours/minutes/seconds or 10-second hold-to-repeat −/+ controls, with a 10-second minimum.
 - **Settings** — Export/Import JSON backup, Test vibration, Reset (cloud sync and the APK download
   live on the home hub now). Export/Import and vibration outcomes show as inline notes on their
   rows (no browser alert popups anywhere in the app) and auto-clear after 5 seconds.
 - **Account management** — optional email/password auth with create-account, forgot-password reset
   emails, a recovery flow that prompts for a new password, an Account dialog (sync status, last
   synced, Sync now, Change password, Sign out), and a home-tile sync status.
-- **Gym pass** — the user's gym entry QR code, uploaded as an image (canvas-downscaled data URL in
-  `AppData.gymPass`, synced + backed up), shown full-size on a white pad from its home tile. The
-  dialog offers Upload (when empty) or Remove (when set) — never both.
-- **About tile** — a short app-summary dialog; the user called it temporary (it fills the sixth
-  grid slot until something better exists).
 - **In-place editing** — the pencil turns the workout screen into edit mode *on the same screen* (no
   separate menu, no dialog). Each exercise becomes a drag-sortable accordion (`EditableExerciseItem`,
   grip handle, press-and-hold to drag) whose expanded body is the **inline editor**. The editor is
@@ -510,14 +521,15 @@ live in the commit messages and the feature list below.
 - **Per-exercise rest** — each `ExerciseGroup` has its own `restSeconds` (migrated in for older
   saves via `normalizeTemplates`, validated as optional). The rest dock starts and labels from the
   **active exercise's** rest, so tapping a different exercise changes the timer; edit it inline via
-  two `[m]`/`[s]` windows (combined and clamped 5s–10m on commit). No global rest control anymore.
+  two `[m]`/`[s]` windows (combined and clamped 10s–10m on commit); −/+ step by 10 seconds. Existing
+  values below 10 seconds migrate to 10. No global rest control anymore.
   **All times display as mm:ss** app-wide (`formatTimer`); there is no seconds-only or `1m30s` format.
 - **Semantic haptics** — no feedback for navigation, opening/closing UI, back/cancel, expansion,
   focus, typing, scrolling, or generic presses. Light semantic feedback is limited to actual
   selections, discrete value changes, toggles, and drag start/drop; medium feedback covers logged
   Done/Failed results (the same effect), saved edits, successful backup/auth actions, invalid input,
   and failures; destructive confirmations use a strong effect. Android uses system-aware semantic
-  constants, while the locked-screen rest alarm remains a separate four-pulse maximum-amplitude alert.
+  constants, while the locked-screen rest alarm remains a separate continuous 5-second maximum-amplitude alert.
   The old raw `@capacitor/haptics` dependency was removed so there is only one interaction path.
   Every numeric −/+ stepper (sets, reps, rest, weight, increase amount, and History duration) applies a quick tap on
   release and delays repeat until 380ms, so a touch that becomes scrolling is cancelled before either
@@ -537,8 +549,10 @@ live in the commit messages and the feature list below.
 - **Automated safety net** — `npm test` runs Node-native unit tests covering result toggles,
   consecutive past-result streaks, auto-advance, rest bounds, wall-clock countdown math,
   backup/template/session validation
-  (including swap flags, increase fields, notes, `finishedAt`, `gymPass`), cloud timestamp parsing,
-  sync direction, migration safety, monotonic timestamps, and the meaningful-change rule.
+  (including swap flags, increase fields, notes, and `finishedAt`), cloud timestamp parsing,
+  sync direction, migration safety, monotonic timestamps, Android release-tag/cache parsing and
+  stale-downloaded-build rejection,
+  10-second rest bounds, second-precision History duration bounds, and the meaningful-change rule.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
@@ -549,12 +563,19 @@ live in the commit messages and the feature list below.
   two or more read, for example, `Last results: failed x2. Repeat today.` A single result stays
   singular with no `x1`. The open session is deliberately excluded, so logging today only affects
   the guidance when the next workout is created. Skipped swap variants do not break their own run.
+- **Release freshness + four-tile home (2026-07-12)** — the app actively checks `sw.js` on startup,
+  foreground return, reconnect, and every five minutes; Workbox activates a changed bundle and
+  reloads automatically. Android release metadata is cached after a successful lookup and refreshed
+  on native resume, while the installed build remains visible even when GitHub is temporarily
+  unavailable. The home grid is now Account/Android above History/Settings, with the bottom pair
+  structurally locked to one row. Verified at 412×915: four equal 187×132 tiles, no overflow, clean
+  console; production preview had `sw.js` active and controlling the page.
 - **Frontend interaction hardening (2026-07-11 audit)** — the existing visual system and information
   architecture were retained. Dialogs now move focus inside, trap keyboard focus, restore the prior
   focus target, close safely with Escape/back, and scroll within short or keyboard-reduced viewports.
   Dialog fields share the visible focus treatment; disabled/busy auth actions expose their state;
-  inline errors announce immediately. Settings backup import and gym-pass upload remain full-row tap
-  targets while also being keyboard/switch accessible. Primary editor utility controls and the workout
+  inline errors announce immediately. Settings backup import remains a full-row tap target while also
+  being keyboard/switch accessible. Primary editor utility controls and the workout
   swap action now meet the shared 48px tap target. The cloud-data conflict prompt now participates in
   overlay history and follows its safe sign-out path when dismissed with Back. Collapsed workout and
   editor panels are inert and hidden from assistive navigation, so their zero-height controls cannot
@@ -579,7 +600,7 @@ live in the commit messages and the feature list below.
   start, and rest stop are silent. Background autosync is silent on success; a manual Sync is tracked
   so it confirms once without a duplicate. Drag pickup and a valid changed drop each fire once.
   `timerFinished()` is separate: native completion is owned by the exact alarm, web completion runs
-  the waveform directly, and Test vibration previews the exact same four-pulse pattern.
+  the waveform directly, and Test vibration previews the same continuous 5-second alert.
   A final repository search found no legacy haptic event names, raw UI vibration calls, generic button
   hook, or custom timer vibration outside the central service/native timer receiver. Post-release
   verification passed at 412×915: manual sync moved from Syncing to Synced; Done and Failed were each
@@ -601,18 +622,21 @@ live in the commit messages and the feature list below.
 - **Cloud sync** — complete and verified cross-device (details in §6). Paused syncs expose a Retry
   action; sign-out shows a busy state and reports failures; timestamps stay strictly monotonic.
 - **PWA** — installable manifest, dark install icons, standalone/portrait mode, Workbox service
-  worker with `autoUpdate` (a previously cached client can serve the old version for one load while
-  the new worker activates — reopen once; expected, not a bug).
+  worker with `autoUpdate` plus active update checks. Startup, returning to the app/tab, reconnecting,
+  and a five-minute foreground interval all check `sw.js`; a new worker activates and reloads the UI
+  automatically. A force reload or Android force-stop is no longer the normal update path.
 - **Native Android** — Capacitor 8 wrapper, exact-alarm rest vibration, semantic haptics bridge,
   native DownloadManager updater, branded launcher/splash icons, and a CI-built APK on every push.
   This machine has no Java/Android SDK,
   so APKs come from GitHub Actions only. Native (Java/config) changes reach the phone only via a
   reinstalled APK; web changes auto-update through the live site. The pending physical-device check:
-  vibration + notification countdown hit zero together; the tone plays through Bluetooth headphones
-  and NEVER through the speaker (test both with and without headphones); the countdown survives a
-  locked screen and a foregrounded other app; no alarm icon/ring time on the lock screen. Also
+  vibration + notification countdown hit zero together showing the same digits; the 5s vibration is
+  felt through a pocket; the countdown shows on the lock screen and survives a locked screen and a
+  foregrounded other app; no alarm icon/ring time on the lock screen; no sound anywhere, ever. Also
   confirm the first native update asks once for per-source install access, shows download progress,
-  then opens Android's installer; later updates should skip the permission step.
+  then opens Android's installer; later updates should skip the permission step. Confirm installer
+  relaunch shows the branded logo (not a blank dark frame), an installed-current build says Reinstall,
+  and a stale downloaded APK is never offered as a newer release.
 
 Every phase shipped green (tests, lint, strict build) and was click-verified in a phone-sized
 browser preview at the time it landed; the 2026-07-11 audit passes additionally verified dialog

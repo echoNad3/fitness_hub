@@ -200,6 +200,13 @@
   gap: 10px;
 }
 
+.home-bottom-tiles {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 /* Square-ish launcher tiles: icon chip up top, title + status pinned to the bottom. The taller
    shape gives subtitles a full line of room instead of squeezing beside the icon. */
 .home-tile {

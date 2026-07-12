@@ -94,6 +94,7 @@ public class AppUpdaterPlugin extends Plugin {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.getPackageManager().canRequestPackageInstalls()) {
+            long archiveBuild = archiveBuild(context, file);
             Intent settings = new Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:" + context.getPackageName())
@@ -101,7 +102,7 @@ public class AppUpdaterPlugin extends Plugin {
             try {
                 startActivityForResult(call, settings, "installPermissionCallback");
             } catch (Exception error) {
-                call.resolve(result("permission-required", 100, "Allow installs from Fitness Hub in Android settings."));
+                call.resolve(result("permission-required", 100, "Allow installs from Fitness Hub in Android settings.", archiveBuild));
             }
             return;
         }
@@ -112,7 +113,12 @@ public class AppUpdaterPlugin extends Plugin {
     private void installPermissionCallback(PluginCall call, ActivityResult activityResult) {
         Context context = getContext();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.getPackageManager().canRequestPackageInstalls()) {
-            call.resolve(result("permission-required", 100, "Allow installs from Fitness Hub to continue."));
+            call.resolve(result(
+                    "permission-required",
+                    100,
+                    "Allow installs from Fitness Hub to continue.",
+                    archiveBuild(context, updateFile(context))
+            ));
             return;
         }
         openInstaller(call);
@@ -131,7 +137,7 @@ public class AppUpdaterPlugin extends Plugin {
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(intent);
-            call.resolve(result("installing", 100, null));
+            call.resolve(result("installing", 100, null, archiveBuild(context, file)));
         } catch (Exception error) {
             call.resolve(result("failed", 100, "Android's installer is unavailable."));
         }
@@ -153,7 +159,7 @@ public class AppUpdaterPlugin extends Plugin {
 
             if (status == DownloadManager.STATUS_SUCCESSFUL) {
                 return isValidUpdate(context, updateFile(context))
-                        ? result("ready", 100, null)
+                        ? result("ready", 100, null, archiveBuild(context, updateFile(context)))
                         : result("failed", 0, "The downloaded update is invalid.");
             }
             if (status == DownloadManager.STATUS_FAILED) {
@@ -183,12 +189,28 @@ public class AppUpdaterPlugin extends Plugin {
         return info != null && context.getPackageName().equals(info.packageName);
     }
 
+    @SuppressWarnings("deprecation")
+    private static long archiveBuild(Context context, File file) {
+        PackageInfo info = context.getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), 0);
+        if (info == null) {
+            return -1L;
+        }
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? info.getLongVersionCode() : info.versionCode;
+    }
+
     private static JSObject result(String status, int progress, String detail) {
+        return result(status, progress, detail, -1L);
+    }
+
+    private static JSObject result(String status, int progress, String detail, long build) {
         JSObject result = new JSObject();
         result.put("status", status);
         result.put("progress", progress);
         if (detail != null) {
             result.put("detail", detail);
+        }
+        if (build > 0) {
+            result.put("build", build);
         }
         return result;
     }

@@ -59,22 +59,27 @@ export function nextPendingId(
   return itemIds.slice(currentIndex + 1).find((itemId) => !isComplete(itemId))
 }
 
-export const MIN_REST_SECONDS = 5
+export const MIN_REST_SECONDS = 10
 export const MAX_REST_SECONDS = 600
-export const MAX_WORKOUT_DURATION_MINUTES = 23 * 60 + 59
+export const REST_STEP_SECONDS = 10
+export const MIN_WORKOUT_DURATION_SECONDS = 10
+export const MAX_WORKOUT_DURATION_SECONDS = 24 * 60 * 60 - 1
 
-export function workoutDurationMinutes(hours: number, minutes: number) {
+export function workoutDurationSeconds(hours: number, minutes: number, seconds: number) {
   if (
     !Number.isInteger(hours) ||
     !Number.isInteger(minutes) ||
+    !Number.isInteger(seconds) ||
     hours < 0 ||
     minutes < 0 ||
-    minutes > 59
+    minutes > 59 ||
+    seconds < 0 ||
+    seconds > 59
   ) {
     return null
   }
-  const total = hours * 60 + minutes
-  return total >= 1 && total <= MAX_WORKOUT_DURATION_MINUTES ? total : null
+  const total = hours * 60 * 60 + minutes * 60 + seconds
+  return total >= MIN_WORKOUT_DURATION_SECONDS && total <= MAX_WORKOUT_DURATION_SECONDS ? total : null
 }
 
 // Clamp a rest length to the supported range.

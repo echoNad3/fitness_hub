@@ -34,24 +34,28 @@ import {
 } from './cloudSync'
 import {
   MAX_REST_SECONDS,
+  MAX_WORKOUT_DURATION_SECONDS,
   MIN_REST_SECONDS,
   clampRestValue,
   nextPendingId,
   restSecondsRemaining,
+  REST_STEP_SECONDS,
   resultGuidance,
   resultStreak,
   toggleResult,
-  workoutDurationMinutes,
+  workoutDurationSeconds,
 } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { SplashScreen } from '@capacitor/splash-screen'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
-import { fetchLatestApk, type LatestApk } from './apkVersion'
+import { fetchLatestApk, readCachedLatestApk, type LatestApk } from './apkVersion'
 import { AppUpdater, type AppUpdateState } from './appUpdater'
+import { isDownloadedBuildInstallable } from './appUpdateLogic'
 import { getStored, setStored } from './storage'
 import { haptics } from './haptics'
+import { checkForAppUpdate } from './pwaUpdates'
 
 type WorkoutId = 'workout-a' | 'workout-b'
 type ResultStatus = 'success' | 'failure'
@@ -133,8 +137,6 @@ type AppData = {
   scrollBySession: Record<string, number>
   currentSessionByWorkout: Partial<Record<WorkoutId, string>>
   restSeconds: number
-  // The user's gym entry QR code, stored as a downscaled data-URL image (shown from the home menu).
-  gymPass?: string
 }
 
 type Screen =
@@ -169,6 +171,7 @@ type DurationDialog = {
   sessionId: string
   hours: string
   minutes: string
+  seconds: string
   error: string
 }
 
@@ -196,7 +199,9 @@ type CloudUser = {
 }
 
 type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'conflict'
-type AppUpdateUiState = AppUpdateState | { status: 'checking' | 'unsupported'; progress: number; detail?: string }
+type AppUpdateUiState =
+  | AppUpdateState
+  | { status: 'checking' | 'unsupported'; progress: number; detail?: string; build?: number }
 
 const STORAGE_KEY = 'fitness-hub-v1'
 const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
@@ -576,24 +581,6 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M18 6 6 18M6 6l12 12" />
         </svg>
       )
-    case 'info':
-      return (
-        <svg {...props}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 11v5" />
-          <path d="M12 7.5v.5" />
-        </svg>
-      )
-    case 'qr':
-      return (
-        <svg {...props}>
-          <rect x="3" y="3" width="7" height="7" rx="1.5" />
-          <rect x="14" y="3" width="7" height="7" rx="1.5" />
-          <rect x="3" y="14" width="7" height="7" rx="1.5" />
-          <path d="M14 14h3v3h-3z" />
-          <path d="M21 14v1M14 20v1M18 21h3M21 18h-1" />
-        </svg>
-      )
     case 'eye':
       return (
         <svg {...props}>
@@ -733,30 +720,36 @@ function DurationEditor({
 }) {
   const hoursRef = useRef(dialog.hours)
   const minutesRef = useRef(dialog.minutes)
+  const secondsRef = useRef(dialog.seconds)
   hoursRef.current = dialog.hours
   minutesRef.current = dialog.minutes
+  secondsRef.current = dialog.seconds
   const holdStepper = useHoldStepper()
 
   const step = (delta: number) => {
     const hours = Number.parseInt(hoursRef.current, 10)
     const minutes = Number.parseInt(minutesRef.current, 10)
+    const seconds = Number.parseInt(secondsRef.current, 10)
     const current =
-      (Number.isFinite(hours) ? Math.max(0, hours) : 0) * 60 +
-      (Number.isFinite(minutes) ? Math.max(0, minutes) : 0)
-    const next = Math.min(23 * 60 + 59, Math.max(1, current + delta))
+      (Number.isFinite(hours) ? Math.max(0, hours) : 0) * 60 * 60 +
+      (Number.isFinite(minutes) ? Math.max(0, minutes) : 0) * 60 +
+      (Number.isFinite(seconds) ? Math.max(0, seconds) : 0)
+    const next = Math.min(24 * 60 * 60 - 1, Math.max(10, current + delta))
     if (next === current) return false
-    const nextHours = String(Math.floor(next / 60))
-    const nextMinutes = String(next % 60)
+    const nextHours = String(Math.floor(next / 3600))
+    const nextMinutes = String(Math.floor((next % 3600) / 60))
+    const nextSeconds = String(next % 60)
     hoursRef.current = nextHours
     minutesRef.current = nextMinutes
-    onChange({ ...dialog, hours: nextHours, minutes: nextMinutes, error: '' })
+    secondsRef.current = nextSeconds
+    onChange({ ...dialog, hours: nextHours, minutes: nextMinutes, seconds: nextSeconds, error: '' })
     return true
   }
 
   return (
     <Dialog title="Edit duration">
       <div className="set-stepper rest-stepper">
-        <button type="button" aria-label="Decrease duration" {...holdStepper.bind(() => step(-1))}>
+        <button type="button" aria-label="Decrease duration" {...holdStepper.bind(() => step(-REST_STEP_SECONDS))}>
           <Icon name="minus" size={18} />
         </button>
         <div className="rest-mmss">
@@ -785,8 +778,21 @@ function DurationEditor({
             />
             <span>m</span>
           </label>
+          <label className="set-rest-field">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="59"
+              step="10"
+              value={dialog.seconds}
+              aria-label="Duration seconds"
+              onChange={(event) => onChange({ ...dialog, seconds: event.target.value, error: '' })}
+            />
+            <span>s</span>
+          </label>
         </div>
-        <button type="button" aria-label="Increase duration" {...holdStepper.bind(() => step(1))}>
+        <button type="button" aria-label="Increase duration" {...holdStepper.bind(() => step(REST_STEP_SECONDS))}>
           <Icon name="plus" size={18} />
         </button>
       </div>
@@ -1100,7 +1106,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
 
   // Rest is edited as separate minutes and seconds windows but stored as one total in seconds.
   // Commit combines both (whichever isn't being edited falls back to the current value), then clamps
-  // to 5s–10m so a stray entry can't produce an unusable timer.
+  // to 10s–10m so a stray entry can't produce an unusable timer.
   const commitRest = () => {
     if (minDraft === null && secDraft === null) {
       return
@@ -1109,7 +1115,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
     const secs = Number(secDraft ?? String(restSecondsPart))
     if (Number.isFinite(mins) && Number.isFinite(secs)) {
       const total = Math.max(0, Math.round(mins)) * 60 + Math.max(0, Math.round(secs))
-      const nextRest = Math.min(600, Math.max(5, total))
+      const nextRest = clampRestValue(total)
       if (nextRest !== restSeconds) {
         props.onRest(nextRest)
       }
@@ -1156,7 +1162,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                 <button
                   type="button"
                   aria-label="Decrease rest time"
-                  {...holdStepper.bind(() => adjustRest(-10))}
+                  {...holdStepper.bind(() => adjustRest(-REST_STEP_SECONDS))}
                 >
                   <Icon name="minus" size={18} />
                 </button>
@@ -1195,7 +1201,7 @@ function EditableExerciseItem(props: EditableExerciseItemProps) {
                 <button
                   type="button"
                   aria-label="Increase rest time"
-                  {...holdStepper.bind(() => adjustRest(10))}
+                  {...holdStepper.bind(() => adjustRest(REST_STEP_SECONDS))}
                 >
                   <Icon name="plus" size={18} />
                 </button>
@@ -1267,9 +1273,6 @@ function App() {
   const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
   const [apkDialogOpen, setApkDialogOpen] = useState(false)
-  const [passDialogOpen, setPassDialogOpen] = useState(false)
-  const [passError, setPassError] = useState('')
-  const [aboutDialogOpen, setAboutDialogOpen] = useState(false)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
   // When this device last completed a successful sync — shown on the home account row.
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
@@ -1288,7 +1291,7 @@ function App() {
   // Inline result note for the Export/Import backup rows (shown in place of the row subtitle, like
   // the Test vibration row) — the app never uses browser alert/confirm popups.
   const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
-  const [latestApk, setLatestApk] = useState<LatestApk | null>(null)
+  const [latestApk, setLatestApk] = useState<LatestApk | null>(readCachedLatestApk)
   const [appUpdateState, setAppUpdateState] = useState<AppUpdateUiState>({ status: 'checking', progress: 0 })
   // The build number of the installed APK (native only; CI stamps it into versionCode). Null on the
   // web and on APKs older than the stamping change — those can't tell which build they are.
@@ -1318,8 +1321,6 @@ function App() {
     passwordDialog !== null ||
     accountDialogOpen ||
     apkDialogOpen ||
-    passDialogOpen ||
-    aboutDialogOpen ||
     confirmDialog !== null ||
     historyOptionsSessionId !== null ||
     durationDialog !== null ||
@@ -1446,25 +1447,51 @@ function App() {
 
   useEffect(() => {
     let active = true
-    void fetchLatestApk().then((latest) => {
-      if (active && latest) {
-        setLatestApk(latest)
+    let lastCheck = 0
+
+    const refreshVersionInfo = (force = false) => {
+      const now = Date.now()
+      if (!force && now - lastCheck < 30_000) return
+      lastCheck = now
+
+      void fetchLatestApk().then((latest) => {
+        if (active && latest) setLatestApk(latest)
+      })
+
+      if (Capacitor.isNativePlatform()) {
+        void CapacitorApp.getInfo()
+          .then((info) => {
+            const build = Number(info.build)
+            if (active && Number.isFinite(build) && build > 0) setInstalledBuild(build)
+          })
+          .catch(() => undefined)
       }
-    })
-    // Inside the native app, read the installed APK's stamped build number so the home row can say
-    // whether the latest release is actually newer. Builds ≤ 1 predate the stamping and are unknown.
-    if (Capacitor.isNativePlatform()) {
-      void CapacitorApp.getInfo()
-        .then((info) => {
-          const build = Number(info.build)
-          if (active && Number.isFinite(build) && build > 1) {
-            setInstalledBuild(build)
+    }
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshVersionInfo()
+    }
+
+    refreshVersionInfo(true)
+    window.addEventListener('focus', refreshWhenVisible)
+    window.addEventListener('online', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+
+    const nativeStateListener = Capacitor.isNativePlatform()
+      ? CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            refreshVersionInfo(true)
+            checkForAppUpdate(true)
           }
         })
-        .catch(() => undefined)
-    }
+      : null
+
     return () => {
       active = false
+      window.removeEventListener('focus', refreshWhenVisible)
+      window.removeEventListener('online', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      if (nativeStateListener) void nativeStateListener.then((listener) => listener.remove())
     }
   }, [])
 
@@ -1998,8 +2025,6 @@ function App() {
     setPasswordDialog(null)
     setAccountDialogOpen(false)
     setApkDialogOpen(false)
-    setPassDialogOpen(false)
-    setAboutDialogOpen(false)
     setStartDialogOpen(false)
     setConfirmDialog(null)
     setHistoryOptionsSessionId(null)
@@ -2026,12 +2051,13 @@ function App() {
 
   const openDurationEditor = (session: WorkoutSession) => {
     if (session.finishedAt === undefined || session.finishedAt <= session.createdAt) return
-    const totalMinutes = Math.max(1, Math.round((session.finishedAt - session.createdAt) / 60000))
+    const totalSeconds = Math.max(10, Math.round((session.finishedAt - session.createdAt) / 1000))
     setHistoryOptionsSessionId(null)
     setDurationDialog({
       sessionId: session.id,
-      hours: String(Math.floor(totalMinutes / 60)),
-      minutes: String(totalMinutes % 60),
+      hours: String(Math.floor(totalSeconds / 3600)),
+      minutes: String(Math.floor((totalSeconds % 3600) / 60)),
+      seconds: String(totalSeconds % 60),
       error: '',
     })
   }
@@ -2040,9 +2066,10 @@ function App() {
     if (!durationDialog) return
     const hours = Number(durationDialog.hours)
     const minutes = Number(durationDialog.minutes)
-    const totalMinutes = workoutDurationMinutes(hours, minutes)
-    if (totalMinutes === null) {
-      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 1 minute to 23 hours 59 minutes.' })
+    const seconds = Number(durationDialog.seconds)
+    const totalSeconds = workoutDurationSeconds(hours, minutes, seconds)
+    if (totalSeconds === null) {
+      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 10 seconds to 23 hours 59 minutes 59 seconds.' })
       void haptics.reject()
       return
     }
@@ -2050,7 +2077,7 @@ function App() {
       ...current,
       sessions: current.sessions.map((session) =>
         session.id === durationDialog.sessionId
-          ? { ...session, finishedAt: session.createdAt + totalMinutes * 60000 }
+          ? { ...session, finishedAt: session.createdAt + totalSeconds * 1000 }
           : session,
       ),
     }))
@@ -2083,12 +2110,12 @@ function App() {
     if (!restRunning || restEndsAt === null) {
       return
     }
-    const endsAt = restEndsAt + 10_000
+    const endsAt = restEndsAt + REST_STEP_SECONDS * 1000
     restAlertStartedRef.current = false
     haptics.cancelTimerAlert()
     setRestEndsAt(endsAt)
     setRestSeconds(restSecondsRemaining(endsAt, Date.now()))
-    setRestDuration((current) => current + 10)
+    setRestDuration((current) => current + REST_STEP_SECONDS)
     void haptics.selection()
     startRestAlarm(endsAt)
   }
@@ -2175,7 +2202,15 @@ function App() {
               </span>
             </small>
           ) : (
-            <small>{native ? 'Version unknown' : build !== null ? `Build ${build} available` : 'Download'}</small>
+            <small>
+              {native
+                ? installedBuild !== null
+                  ? `Installed · Build ${installedBuild}`
+                  : 'Installed'
+                : build !== null
+                  ? `Build ${build} available`
+                  : 'Download'}
+            </small>
           )}
         </span>
       </button>
@@ -2230,28 +2265,6 @@ function App() {
         </button>
 
         <div className="home-tiles">
-          <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
-            <span className="home-tile-icon"><Icon name="history" size={22} /></span>
-            <span className="home-tile-text">
-              <span>History</span>
-              <small>{sessionCount} {sessionCount === 1 ? 'workout' : 'workouts'}</small>
-            </span>
-          </button>
-          <button
-            className="home-tile"
-            type="button"
-            onClick={() => {
-              setPassError('')
-              setPassDialogOpen(true)
-            }}
-          >
-            <span className="home-tile-icon"><Icon name="qr" size={22} /></span>
-            <span className="home-tile-text">
-              <span>Gym pass</span>
-              <small>{data.gymPass ? 'Show QR code' : 'Add QR code'}</small>
-            </span>
-          </button>
-
           {supabase &&
             (cloudUser ? (
               <button className="home-tile" type="button" onClick={() => setAccountDialogOpen(true)}>
@@ -2282,21 +2295,23 @@ function App() {
 
           {renderApkTile()}
 
-          <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
-            <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
-            <span className="home-tile-text">
-              <span>Settings</span>
-              <small>Backups and reset</small>
-            </span>
-          </button>
+          <div className="home-bottom-tiles">
+            <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
+              <span className="home-tile-icon"><Icon name="history" size={22} /></span>
+              <span className="home-tile-text">
+                <span>History</span>
+                <small>{sessionCount} {sessionCount === 1 ? 'workout' : 'workouts'}</small>
+              </span>
+            </button>
 
-          <button className="home-tile" type="button" onClick={() => setAboutDialogOpen(true)}>
-            <span className="home-tile-icon"><Icon name="info" size={22} /></span>
-            <span className="home-tile-text">
-              <span>About</span>
-              <small>App details</small>
-            </span>
-          </button>
+            <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
+              <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
+              <span className="home-tile-text">
+                <span>Settings</span>
+                <small>Backups and reset</small>
+              </span>
+            </button>
+          </div>
         </div>
 
         {startDialogOpen && (
@@ -2357,7 +2372,12 @@ function App() {
     const spanWeeks = oldest ? Math.max(1, (Date.now() - oldest.createdAt) / (7 * 24 * 60 * 60 * 1000)) : 1
     const perWeek = (totalCount / spanWeeks).toFixed(1)
     const durations = sessions
-      .filter((session) => session.finishedAt !== undefined && session.finishedAt > session.createdAt)
+      .filter(
+        (session) =>
+          session.finishedAt !== undefined &&
+          session.finishedAt > session.createdAt &&
+          session.finishedAt - session.createdAt <= MAX_WORKOUT_DURATION_SECONDS * 1000,
+      )
       .map((session) => (session.finishedAt as number) - session.createdAt)
     const avgLength =
       durations.length > 0 ? formatDuration(durations.reduce((sum, value) => sum + value, 0) / durations.length) : '—'
@@ -2616,7 +2636,7 @@ function App() {
         <button className="set-row" type="button" onClick={testVibration}>
           <span className="set-main">
             <strong>Test rest alert</strong>
-            <small role="status">{vibrationMessage || 'Max vibration · sound only in headphones'}</small>
+            <small role="status">{vibrationMessage || 'Five seconds of max vibration'}</small>
           </span>
           <Icon name="bell" />
         </button>
@@ -2624,7 +2644,7 @@ function App() {
         <button className="set-row danger" type="button" onClick={resetData}>
           <span className="set-main">
             <strong>Reset workout data</strong>
-            <small>Delete history, pass, and workout changes</small>
+            <small>Delete history and workout changes</small>
           </span>
           <Icon name="trash" />
         </button>
@@ -3547,63 +3567,6 @@ function App() {
     }
   }
 
-  // Store the gym's entry QR code: read the picked image, downscale it to a phone-screen-friendly
-  // size on a canvas, and keep it as a data URL inside AppData (so it syncs like everything else).
-  // PNG keeps QR edges sharp; a large photo falls back to JPEG so it can't blow the storage quota.
-  const importGymPass = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) {
-      return
-    }
-
-    const fail = () => {
-      setPassError('Could not read the image. Try a screenshot or photo of the QR code.')
-      void haptics.reject()
-    }
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      const image = new Image()
-      image.onload = () => {
-        const scale = Math.min(1, 640 / Math.max(image.width, image.height))
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.max(1, Math.round(image.width * scale))
-        canvas.height = Math.max(1, Math.round(image.height * scale))
-        const context = canvas.getContext('2d')
-        if (!context) {
-          fail()
-          return
-        }
-        context.drawImage(image, 0, 0, canvas.width, canvas.height)
-        let dataUrl = canvas.toDataURL('image/png')
-        if (dataUrl.length > 400_000) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.9)
-        }
-        setPassError('')
-        setData((current) => ({ ...current, gymPass: dataUrl }))
-        void haptics.confirm()
-      }
-      image.onerror = fail
-      image.src = String(reader.result)
-    }
-    reader.onerror = fail
-    reader.readAsDataURL(file)
-  }
-
-  const removeGymPass = () => {
-    setConfirmDialog({
-      title: 'Delete gym pass?',
-      message: 'Deletes the saved QR code.',
-      confirmLabel: 'Delete',
-      danger: true,
-      onConfirm: () => {
-        setData((current) => ({ ...current, gymPass: undefined }))
-        setConfirmDialog(null)
-      },
-    })
-  }
-
   const exportData = () => {
     let url = ''
     try {
@@ -3660,7 +3623,7 @@ function App() {
   const resetData = () => {
     setConfirmDialog({
       title: 'Reset workout data?',
-      message: 'Deletes workout history, gym pass, and workout changes.',
+      message: 'Deletes workout history and workout changes.',
       confirmLabel: 'Reset',
       danger: true,
       onConfirm: () => {
@@ -3878,11 +3841,15 @@ function App() {
           const { native, build, released, updateAvailable, upToDate } = apkStatus()
           const nativeUpdater = native && appUpdateState.status !== 'unsupported'
           const updateBusy = appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'
-          const updateReady = appUpdateState.status === 'ready' || appUpdateState.status === 'permission-required'
+          const updateReady = isDownloadedBuildInstallable(appUpdateState, build, installedBuild)
           return (
             <Dialog title="Android app">
               <p className="dialog-help">
-                {nativeUpdater ? 'Download and install the latest build.' : 'Download the Android app.'}
+                {nativeUpdater
+                  ? upToDate
+                    ? 'The latest build is installed. Reinstall only if needed.'
+                    : 'Download and install the latest build.'
+                  : 'Download the Android app.'}
               </p>
               <div className="account-status">
                 {updateAvailable ? (
@@ -3898,7 +3865,7 @@ function App() {
                 ) : native ? (
                   <span className="sync-status">
                     <i aria-hidden="true" />
-                    Version unknown
+                    Installed
                   </span>
                 ) : (
                   <span className="sync-status">
@@ -3946,7 +3913,11 @@ function App() {
                           : appUpdateState.status === 'installing'
                             ? 'Installer opened'
                             : updateReady
-                              ? 'Install update'
+                              ? upToDate
+                                ? `Reinstall${build !== null ? ` build ${build}` : ''}`
+                                : 'Install update'
+                              : upToDate
+                                ? `Reinstall${build !== null ? ` build ${build}` : ''}`
                               : build !== null
                                 ? `Download build ${build}`
                                 : 'Download update'}
@@ -3971,45 +3942,6 @@ function App() {
             </Dialog>
           )
         })()}
-      {passDialogOpen && (
-        <Dialog title="Gym pass">
-          {data.gymPass ? (
-            <div className="pass-image">
-              <img src={data.gymPass} alt="Gym pass QR code" />
-            </div>
-          ) : (
-            <p className="dialog-help">Add your gym pass QR code. A tight crop scans best.</p>
-          )}
-          {passError && <p className="auth-error" role="alert">{passError}</p>}
-          <div className="choice-list">
-            {data.gymPass ? (
-              <button className="choice failed" type="button" onClick={removeGymPass}>
-                <Icon name="trash" size={18} />
-                <span>Delete</span>
-              </button>
-            ) : (
-              <label className="choice">
-                <Icon name="upload" size={18} />
-                <span>Choose image</span>
-                <input type="file" accept="image/*" onChange={importGymPass} />
-              </label>
-            )}
-          </div>
-          <button className="choice-cancel" type="button" onClick={() => setPassDialogOpen(false)}>
-            Close
-          </button>
-        </Dialog>
-      )}
-      {aboutDialogOpen && (
-        <Dialog title="About">
-          <p className="dialog-help">
-            Track workouts, weights, rest times, and results. Works offline; sign in to sync across devices.
-          </p>
-          <button className="choice-cancel" type="button" onClick={() => setAboutDialogOpen(false)}>
-            Close
-          </button>
-        </Dialog>
-      )}
       {passwordDialog && (
         <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
           {passwordDialog.mode === 'recovery' && (
@@ -4055,7 +3987,7 @@ function App() {
         </Dialog>
       )}
       {historyOptionsSession && (
-        <Dialog title="Workout options">
+        <Dialog title="Historic workout options">
           <p className="dialog-help">
             {getWorkout(historyOptionsSession.workoutId).name} · {formatAbsolute(historyOptionsSession.createdAt)}
           </p>
@@ -4068,8 +4000,8 @@ function App() {
                 openSession(historyOptionsSession.workoutId, historyOptionsSession.id, false)
               }}
             >
-              <Icon name="edit" size={18} />
-              <span>Edit workout</span>
+              <Icon name="forward" size={18} />
+              <span>Open workout</span>
             </button>
             {historyOptionsSession.finishedAt !== undefined && historyOptionsSession.finishedAt > historyOptionsSession.createdAt && (
               <button className="choice" type="button" onClick={() => openDurationEditor(historyOptionsSession)}>
@@ -4266,8 +4198,9 @@ function normalizeData(value: unknown): AppData {
   }
 
   const partial = value as Partial<AppData>
-  const defaultRest =
-    typeof partial.restSeconds === 'number' && partial.restSeconds > 0 ? partial.restSeconds : DEFAULT_REST_SECONDS
+  const defaultRest = clampRestValue(
+    typeof partial.restSeconds === 'number' && partial.restSeconds > 0 ? partial.restSeconds : DEFAULT_REST_SECONDS,
+  )
 
   return {
     sessions: isValidSessions(partial.sessions) ? (partial.sessions as WorkoutSession[]) : [],
@@ -4278,7 +4211,6 @@ function normalizeData(value: unknown): AppData {
     scrollBySession: partial.scrollBySession ?? {},
     currentSessionByWorkout: partial.currentSessionByWorkout ?? {},
     restSeconds: defaultRest,
-    gymPass: typeof partial.gymPass === 'string' && partial.gymPass.startsWith('data:image/') ? partial.gymPass : undefined,
   }
 }
 
@@ -4309,8 +4241,9 @@ function normalizeTemplates(value: unknown, defaultRest: number): WorkoutTemplat
     ...template,
     groups: template.groups.map((group) => ({
       ...group,
-      restSeconds:
+      restSeconds: clampRestValue(
         typeof group.restSeconds === 'number' && group.restSeconds > 0 ? group.restSeconds : defaultRest,
+      ),
     })),
   }))
 }
@@ -4692,15 +4625,23 @@ function plural(count: number, unit: string) {
   return `${count} ${unit}${count === 1 ? '' : 's'} ago`
 }
 
-// Workout length from start to the final Done/Failed — "52 min" or "1h 24m".
+// Workout length from start to the final Done/Failed, including edited seconds.
 function formatDuration(ms: number) {
-  const mins = Math.max(1, Math.round(ms / 60000))
-  if (mins < 60) {
-    return `${mins} min`
+  const totalSeconds = Math.max(1, Math.round(ms / 1000))
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`
   }
-  const hours = Math.floor(mins / 60)
-  const rest = mins % 60
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours === 0) {
+    return seconds === 0 ? `${minutes} min` : `${minutes}m ${seconds}s`
+  }
+  return [
+    `${hours}h`,
+    minutes > 0 ? `${minutes}m` : '',
+    seconds > 0 ? `${seconds}s` : '',
+  ].filter(Boolean).join(' ')
 }
 
 // Full weekday + date for the home header — e.g. "Tuesday 2 July".

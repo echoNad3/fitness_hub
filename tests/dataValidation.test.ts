@@ -87,7 +87,7 @@ test('new optional fields must be well-typed when present', () => {
   Object.assign(badNote[0].groups[0].variants[0], { note: 42 })
   assert.equal(isValidTemplates(badNote), false)
 
-  // Session finishedAt + gymPass on the backup root
+  // Session finishedAt
   const session = {
     id: 'session-1',
     workoutId: 'workout-a',
@@ -97,8 +97,6 @@ test('new optional fields must be well-typed when present', () => {
   }
   assert.equal(isValidSessions([session]), true)
   assert.equal(isValidSessions([{ ...session, finishedAt: 'noon' }]), false)
-  assert.equal(isValidBackup({ sessions: [], gymPass: 'data:image/png;base64,abc' }), true)
-  assert.equal(isValidBackup({ sessions: [], gymPass: 12 }), false)
 })
 
 test('session entries reject invalid weights and result values', () => {

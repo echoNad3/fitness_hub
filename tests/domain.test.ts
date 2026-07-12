@@ -6,8 +6,9 @@ import {
   restSecondsRemaining,
   resultGuidance,
   resultStreak,
+  REST_STEP_SECONDS,
   toggleResult,
-  workoutDurationMinutes,
+  workoutDurationSeconds,
 } from '../src/domain.ts'
 
 test('result buttons toggle, switch, and clear predictably', () => {
@@ -43,11 +44,13 @@ test('auto-advance chooses the next unfinished exercise only', () => {
   assert.equal(nextPendingId(['a', 'b', 'c'], 'c', () => false), undefined)
 })
 
-test('rest length stays between 5 seconds and 10 minutes', () => {
-  assert.equal(clampRestValue(0), 5)
+test('rest length stays between 10 seconds and 10 minutes', () => {
+  assert.equal(REST_STEP_SECONDS, 10)
+  assert.equal(clampRestValue(0), 10)
+  assert.equal(clampRestValue(5), 10)
   assert.equal(clampRestValue(105), 105)
   assert.equal(clampRestValue(900), 600)
-  assert.equal(clampRestValue(Number.NaN), 5)
+  assert.equal(clampRestValue(Number.NaN), 10)
 })
 
 test('rest countdown follows its wall-clock end time', () => {
@@ -57,12 +60,13 @@ test('rest countdown follows its wall-clock end time', () => {
   assert.equal(restSecondsRemaining(100_000, 120_000), 0)
 })
 
-test('edited workout duration must be a real time under 24 hours', () => {
-  assert.equal(workoutDurationMinutes(1, 15), 75)
-  assert.equal(workoutDurationMinutes(0, 1), 1)
-  assert.equal(workoutDurationMinutes(23, 59), 1439)
-  assert.equal(workoutDurationMinutes(0, 0), null)
-  assert.equal(workoutDurationMinutes(24, 0), null)
-  assert.equal(workoutDurationMinutes(1, 60), null)
-  assert.equal(workoutDurationMinutes(1.5, 0), null)
+test('edited workout duration uses 10-second steps and stays between 10 seconds and 24 hours', () => {
+  assert.equal(workoutDurationSeconds(1, 15, 30), 4530)
+  assert.equal(workoutDurationSeconds(0, 0, 10), 10)
+  assert.equal(workoutDurationSeconds(23, 59, 59), 86_399)
+  assert.equal(workoutDurationSeconds(0, 0, 9), null)
+  assert.equal(workoutDurationSeconds(24, 0, 0), null)
+  assert.equal(workoutDurationSeconds(1, 60, 0), null)
+  assert.equal(workoutDurationSeconds(1, 0, 60), null)
+  assert.equal(workoutDurationSeconds(1.5, 0, 0), null)
 })

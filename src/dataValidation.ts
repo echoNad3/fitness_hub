@@ -174,7 +174,6 @@ export function isValidBackup(value: unknown) {
     (value.currentSessionByWorkout === undefined ||
       isRecordOf(value.currentSessionByWorkout, (entry) => typeof entry === 'string')) &&
     (value.restSeconds === undefined ||
-      (typeof value.restSeconds === 'number' && Number.isFinite(value.restSeconds) && value.restSeconds > 0)) &&
-    isOptionalString(value.gymPass)
+      (typeof value.restSeconds === 'number' && Number.isFinite(value.restSeconds) && value.restSeconds > 0))
   )
 }

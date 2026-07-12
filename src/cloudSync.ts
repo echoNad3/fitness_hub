@@ -41,7 +41,6 @@ type SyncedSlices = {
   baselineResults: unknown
   currentSessionByWorkout: unknown
   restSeconds: number
-  gymPass?: string
 }
 
 // Reference comparison is enough: the app updates state immutably, so an untouched slice keeps its
@@ -53,8 +52,7 @@ export function isMeaningfulChange(previous: SyncedSlices, next: SyncedSlices) {
     previous.variantPrefs !== next.variantPrefs ||
     previous.baselineResults !== next.baselineResults ||
     previous.currentSessionByWorkout !== next.currentSessionByWorkout ||
-    previous.restSeconds !== next.restSeconds ||
-    previous.gymPass !== next.gymPass
+    previous.restSeconds !== next.restSeconds
   )
 }
 

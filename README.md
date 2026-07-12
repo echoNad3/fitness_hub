@@ -27,8 +27,6 @@ timer buzzes even through a locked screen.
   and how long each workout took.
 - **Never lose your data.** Everything saves on your phone automatically and works with no account
   and no internet. Sign in (optional) to sync across devices. Export a backup file anytime.
-- **Gym pass built in.** Save a photo of your gym's entry QR code and pull it up from the home
-  screen instead of hunting through the gym's own app.
 
 The best way to understand it is to open the live link above and tap around — no sign-up needed.
 
@@ -57,6 +55,8 @@ npm run android:open   # open in Android Studio
 GitHub Actions builds a debug APK on every push and publishes it to a
 [release](https://github.com/echoNad3/fitness_hub/releases/latest). The installed app loads the live
 site, so web updates arrive automatically; only native changes need a fresh APK.
+The app checks for a new web bundle whenever it opens, returns to the foreground, reconnects, and
+periodically while visible, then activates and reloads the new UI automatically.
 
 ## Project layout
 
