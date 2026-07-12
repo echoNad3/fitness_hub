@@ -355,6 +355,43 @@ label.choice:focus-within {
   font-size: var(--fs-meta);
 }
 
+.app-update-status {
+  gap: 10px;
+  padding: 12px;
+}
+
+.app-build-list {
+  display: grid;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.app-build-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+}
+
+.app-build-row strong {
+  color: var(--muted);
+  font-weight: var(--fw-semibold);
+}
+
+.dialog-session-meta {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+
+.dialog-session-meta small {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+}
+
 /* Password input with a reveal toggle sitting inside the field's right edge. */
 .pw-field {
   position: relative;

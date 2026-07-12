@@ -54,6 +54,7 @@ import { cancelRestNotification, scheduleRestNotification } from './restNotifica
 import { fetchLatestApk, readCachedLatestApk, type LatestApk } from './apkVersion'
 import { AppUpdater, type AppUpdateState } from './appUpdater'
 import { isDownloadedBuildInstallable } from './appUpdateLogic'
+import { formatTimerDuration, formatWorkoutDuration } from './timeFormat'
 import { getStored, setStored } from './storage'
 import { haptics } from './haptics'
 import { checkForAppUpdate } from './pwaUpdates'
@@ -2362,7 +2363,9 @@ function App() {
       )
       .map((session) => (session.finishedAt as number) - session.createdAt)
     const avgLength =
-      durations.length > 0 ? formatDuration(durations.reduce((sum, value) => sum + value, 0) / durations.length) : '—'
+      durations.length > 0
+        ? formatWorkoutDuration(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+        : '—'
 
     return (
       <Page title={title} onBack={onBack}>
@@ -2437,11 +2440,7 @@ function App() {
                     <button className="hist-open" type="button" onClick={() => setHistoryOptionsSessionId(session.id)}>
                       <span className="hist-main">
                         <strong>{workout.name}</strong>
-                        <small>
-                          {formatAbsolute(session.createdAt)}
-                          {session.finishedAt !== undefined && session.finishedAt > session.createdAt &&
-                            ` · ${formatDuration(session.finishedAt - session.createdAt)}`}
-                        </small>
+                        <small>{formatHistorySessionLine(session)}</small>
                         <small className="hist-ago">{formatRelative(session.createdAt)}</small>
                       </span>
                       <span className={`hist-chip ${finished ? 'done' : 'unfinished'}`}>
@@ -3848,7 +3847,7 @@ function App() {
                       : 'The installed build is shown below. The latest-build check is temporarily unavailable.'
                   : 'Download the Android app.'}
               </p>
-              <div className="account-status">
+              <div className="account-status app-update-status">
                 {updateAvailable ? (
                   <span className="sync-status update">
                     <i aria-hidden="true" />
@@ -3870,10 +3869,19 @@ function App() {
                     Not installed on this device
                   </span>
                 )}
-                <small>
-                  {native && installedBuild !== null && `Installed: Build ${installedBuild} · `}
-                  {build !== null ? `Latest: Build ${build}${released ? `, released ${released}` : ''}` : 'Latest version unavailable'}
-                </small>
+                <div className="app-build-list">
+                  {native && installedBuild !== null && (
+                    <p className="app-build-row">
+                      <span>Installed</span>
+                      <strong>Build {installedBuild}</strong>
+                    </p>
+                  )}
+                  <p className="app-build-row">
+                    <span>Latest</span>
+                    <strong>{build !== null ? `Build ${build}` : 'Unavailable'}</strong>
+                  </p>
+                  {released && <small>Released {released}</small>}
+                </div>
               </div>
               {nativeUpdater && appUpdateState.status === 'downloading' && (
                 <div className="update-progress" role="status" aria-label={`Downloading ${appUpdateState.progress}%`}>
@@ -3983,10 +3991,11 @@ function App() {
         </Dialog>
       )}
       {historyOptionsSession && (
-        <Dialog title="Historic workout options">
-          <p className="dialog-help">
-            {getWorkout(historyOptionsSession.workoutId).name} · {formatAbsolute(historyOptionsSession.createdAt)}
-          </p>
+        <Dialog title={getWorkout(historyOptionsSession.workoutId).name}>
+          <div className="dialog-session-meta">
+            <p>{formatHistorySessionLine(historyOptionsSession)}</p>
+            <small>{formatRelative(historyOptionsSession.createdAt)}</small>
+          </div>
           <div className="choice-list">
             <button
               className="choice"
@@ -4588,9 +4597,7 @@ function formatTarget(sets: number, reps: number) {
 }
 
 function formatTimer(seconds: number) {
-  const minutes = Math.floor(seconds / 60)
-  const remainder = String(seconds % 60).padStart(2, '0')
-  return `${minutes}:${remainder}`
+  return formatTimerDuration(seconds)
 }
 
 function formatRelative(timestamp: number) {
@@ -4621,23 +4628,12 @@ function plural(count: number, unit: string) {
   return `${count} ${unit}${count === 1 ? '' : 's'} ago`
 }
 
-// Workout length from start to the final Done/Failed, including edited seconds.
-function formatDuration(ms: number) {
-  const totalSeconds = Math.max(1, Math.round(ms / 1000))
-  if (totalSeconds < 60) {
-    return `${totalSeconds}s`
-  }
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  if (hours === 0) {
-    return seconds === 0 ? `${minutes} min` : `${minutes}m ${seconds}s`
-  }
-  return [
-    `${hours}h`,
-    minutes > 0 ? `${minutes}m` : '',
-    seconds > 0 ? `${seconds}s` : '',
-  ].filter(Boolean).join(' ')
+function formatHistorySessionLine(session: WorkoutSession) {
+  const duration =
+    session.finishedAt !== undefined && session.finishedAt > session.createdAt
+      ? ` · ${formatWorkoutDuration(session.finishedAt - session.createdAt)}`
+      : ''
+  return `${formatAbsolute(session.createdAt)}${duration}`
 }
 
 // Full weekday + date for the home header — e.g. "Tuesday 2 July".

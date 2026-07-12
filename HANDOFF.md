@@ -154,6 +154,10 @@ must keep the same outer dimensions, alignment, padding, and visual weight even 
 have different lengths. Text may naturally differ, but a shorter label must never make one side of
 a paired component look smaller. Audit both states whenever one is changed.
 
+**Time displays use at most two adjacent units app-wide.** Historic workout lengths and their
+analytics use minutes or hours+minutes; unusually long legacy values use days+hours. Active timers
+use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+seconds.
+
 ---
 
 ## 6. Tech stack & architecture
@@ -193,6 +197,7 @@ a paired component look smaller. Audit both states whenever one is changed.
 | `android/.../AppHapticsPlugin.java` | Native semantic interaction haptics via `View.performHapticFeedback`; maps Selection, Confirm, Reject, Drag Start, and Drag Drop to device-tuned Android effects with older-version fallbacks. This path respects the system Touch feedback setting. |
 | `src/index.css` | Global resets, base dark background, font. |
 | `src/domain.ts` | Pure, tested workout logic: result toggling, auto-advance, rest clamping, countdown math. |
+| `src/timeFormat.ts` | Central two-unit time display rules: history/analytics use minute precision; active timers use `m:ss`. |
 | `src/dataValidation.ts` | Deep validation for imported backups, templates, sessions, and legacy variant overrides. |
 | `src/storage.ts` | `localStorage` get/set wrappers that never throw (private mode / quota) so storage failures can't crash the app. Use these instead of `localStorage` directly. |
 | `src/haptics.ts` | **The one central semantic haptic service.** It exposes `selection()`, `confirm()`, `reject()`, `dragStart()`, `dragDrop()`, `timerFinished()`, and the non-vibrating `cancelTimerAlert()` cleanup. There is no global button listener. Navigation, open/close, back/cancel, card expansion, focus, typing, scrolling, and generic presses are silent. Normal native interactions call `AppHapticsPlugin`; the timer alone uses the deliberate custom waveform. If an auto-updated web bundle reaches an older APK without the native plugin, interaction haptics fail silently instead of bypassing Android's setting. |
@@ -303,6 +308,12 @@ a paired component look smaller. Audit both states whenever one is changed.
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **History time/header + updater spacing polish (2026-07-12):** historic cards and average duration
+  now use the central two-unit rule: minutes, hours+minutes, or days+hours for invalid multi-day legacy
+  values, never seconds or three units. Opening a History card uses its Workout A/B name as the dialog
+  title and repeats the card's exact date/duration and relative-age lines. The Android app dialog now
+  separates Installed and Latest into labeled build rows, with release age on its own line. Covered by
+  dedicated time-format tests and verified in the phone preview with no console errors.
 - **Splash quality + updater recovery (2026-07-12):** replaced the density-specific launcher PNG
   used by the Android system splash with `drawable/splash_logo.xml`, a 288dp vector derived from the
   user's canonical 1024×1024 SVG and kept inside Android's safe icon area. Release/build detection now
@@ -317,7 +328,7 @@ live in the commit messages and the feature list below.
   builds say **Reinstall build N**. The Android launch theme now declares the branded animated icon,
   `icon_preferred`, and `postSplashScreenTheme`, while `MainActivity` installs the compat splash before
   `super.onCreate()` so installer-triggered launches do not show an empty starting window. Historic
-  cards open **Historic workout options** with **Open workout**. Duration editing is hours/minutes,
+  cards open a Workout A/B-titled options dialog with **Open workout**. Duration editing is hours/minutes,
   steps by 10 minutes, and has a 10-minute minimum; exercise rest remains a separate 10-second
   step/minimum and old 5-second values migrate to 10. Verified web behavior at 412×915 with temporary edits cancelled; native
   splash/install behavior requires the CI APK and physical phone check.
@@ -347,7 +358,8 @@ live in the commit messages and the feature list below.
   a spinner, so launch is logo-on-`#252730` from tap to menu. Native change → needs an APK
   reinstall; old APKs without the plugin reject the hide call harmlessly.
 - **History workout options + duration repair:** each History card is now one full-width target;
-  tapping it opens `Historic workout options` with Open workout, Edit duration (finished sessions
+  tapping it opens a dialog titled with that card's Workout A/B name and matching date/duration text,
+  with Open workout, Edit duration (finished sessions
   only), Delete workout, and Cancel. Duration reuses the rest-time editor layout: one shared minus
   button, manual hours/minutes fields, and one shared plus button with hold-stepper behavior;
   minus/plus move 10 minutes. Open workout opens the normal workout screen; its own pencil remains
@@ -496,9 +508,11 @@ live in the commit messages and the feature list below.
   **Settings** together on the bottom row. The Android tile has a version-aware status dot and opens
   the download dialog. No browser confirms.
 - **History** — full-width cards, relative + absolute time, equal-size green **Finished** / red
-  **Unfinished** chips with the displayed-slot count, the 28-day tracker, and a `Historic workout
-  options` dialog for opening, editing a finished duration, or deleting. Duration editing accepts
-  manual hours/minutes or 10-minute hold-to-repeat −/+ controls, with a 10-minute minimum.
+  **Unfinished** chips with the displayed-slot count, the 28-day tracker, and a workout-options
+  flow for opening, editing a finished duration, or deleting. Its dialog title and two meta
+  lines match the selected collapsed card. Displayed workout lengths and Avg duration use minute
+  precision with at most two units. Duration editing accepts manual hours/minutes or 10-minute
+  hold-to-repeat −/+ controls, with a 10-minute minimum.
 - **Settings** — Export/Import JSON backup, Test vibration, Reset (cloud sync and the APK download
   live on the home hub now). Export/Import and vibration outcomes show as inline notes on their
   rows (no browser alert popups anywhere in the app) and auto-clear after 5 seconds.
@@ -537,7 +551,8 @@ live in the commit messages and the feature list below.
   **active exercise's** rest, so tapping a different exercise changes the timer; edit it inline via
   two `[m]`/`[s]` windows (combined and clamped 10s–10m on commit); −/+ step by 10 seconds. Existing
   values below 10 seconds migrate to 10. No global rest control anymore.
-  **All times display as mm:ss** app-wide (`formatTimer`); there is no seconds-only or `1m30s` format.
+  **All active rest times display as mm:ss** (`formatTimerDuration`); there is no seconds-only or
+  `1m30s` timer format. Historic durations follow the separate two-unit minute-precision rule.
 - **Semantic haptics** — no feedback for navigation, opening/closing UI, back/cancel, expansion,
   focus, typing, scrolling, or generic presses. Light semantic feedback is limited to actual
   selections, discrete value changes, toggles, and drag start/drop; medium feedback covers logged
