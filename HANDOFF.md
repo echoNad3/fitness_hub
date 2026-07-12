@@ -154,6 +154,13 @@ must keep the same outer dimensions, alignment, padding, and visual weight even 
 have different lengths. Text may naturally differ, but a shorter label must never make one side of
 a paired component look smaller. Audit both states whenever one is changed.
 
+**Text spacing is an app-wide rule.** Use the shared spacing scale, never visually jam adjacent text
+lines together: 4px (`--space-1`) between a label and its directly related value; 8px (`--space-2`)
+between supporting lines in one text group; 12px (`--space-3`) between distinct rows/groups; and
+16px (`--space-4`) between major sections. Body/meta copy uses at least 1.35 line-height. A divider
+does not replace spacing — keep the 12px inset on both sides of a divider. Audit the narrowest phone
+layout whenever a text group changes.
+
 **Time displays use at most two adjacent units app-wide.** Historic workout lengths and their
 analytics use minutes or hours+minutes; unusually long legacy values use days+hours. Active timers
 use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+seconds.
@@ -308,6 +315,16 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **Updater progress/text-spacing + notification assessment (2026-07-12):** native download status
+  polling is 150ms instead of 750ms; the displayed percentage follows real DownloadManager samples
+  in four-point steps and a completed small download remains visible for 1.2 seconds so the bar reaches
+  100 before Install replaces it. Installed and Latest are now separate stacked text groups divided
+  with 12px insets, following the new measurable app-wide text-spacing rule. The rest notification
+  was audited against the phone screenshot and Android guidance: its small header countdown is not
+  the ideal visual hierarchy, but the standard system template remains deliberate because the earlier
+  large custom Chronometer was unreliable on OEM lock screens. Do not trade away the now-confirmed
+  lock-screen visibility merely to enlarge the digits; revisit only if Android exposes a reliable
+  standard-template timer treatment for this device.
 - **History time/header + updater spacing polish (2026-07-12):** historic cards and average duration
   now use the central two-unit rule: minutes, hours+minutes, or days+hours for invalid multi-day legacy
   values, never seconds or three units. Opening a History card uses its Workout A/B name as the dialog

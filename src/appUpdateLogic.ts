@@ -33,3 +33,9 @@ export function isDownloadedBuildInstallable(
 
   return latestBuild <= installedBuild && downloadedBuild === installedBuild
 }
+
+export function nextDisplayedDownloadProgress(current: number, reported: number) {
+  const safeCurrent = Math.min(100, Math.max(0, Math.round(current)))
+  const safeReported = Math.min(100, Math.max(0, Math.round(reported)))
+  return safeCurrent >= safeReported ? safeCurrent : Math.min(safeReported, safeCurrent + 4)
+}

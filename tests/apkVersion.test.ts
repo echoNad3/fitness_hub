@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { parseBuild, parseCachedLatestApk, parseLatestApk } from '../src/apkVersion.ts'
-import { isDownloadedBuildInstallable } from '../src/appUpdateLogic.ts'
+import { isDownloadedBuildInstallable, nextDisplayedDownloadProgress } from '../src/appUpdateLogic.ts'
 
 test('Android release build numbers parse from CI tags and names', () => {
   assert.equal(parseBuild('android-v123'), 123)
@@ -37,4 +37,12 @@ test('only the latest downloaded Android build can be installed as an update', (
   assert.equal(isDownloadedBuildInstallable({ status: 'ready', build: 13 }, null, 12), true)
   assert.equal(isDownloadedBuildInstallable({ status: 'ready', build: 11 }, null, 12), false)
   assert.equal(isDownloadedBuildInstallable({ status: 'ready', build: 12 }, null, null), false)
+})
+
+test('displayed download progress advances smoothly without exceeding real progress', () => {
+  assert.equal(nextDisplayedDownloadProgress(0, 100), 4)
+  assert.equal(nextDisplayedDownloadProgress(20, 100), 24)
+  assert.equal(nextDisplayedDownloadProgress(20, 22), 22)
+  assert.equal(nextDisplayedDownloadProgress(80, 75), 80)
+  assert.equal(nextDisplayedDownloadProgress(-5, 150), 4)
 })

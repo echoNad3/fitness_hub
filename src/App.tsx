@@ -53,7 +53,7 @@ import { SplashScreen } from '@capacitor/splash-screen'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApk, readCachedLatestApk, type LatestApk } from './apkVersion'
 import { AppUpdater, type AppUpdateState } from './appUpdater'
-import { isDownloadedBuildInstallable } from './appUpdateLogic'
+import { isDownloadedBuildInstallable, nextDisplayedDownloadProgress } from './appUpdateLogic'
 import { formatTimerDuration, formatWorkoutDuration } from './timeFormat'
 import { getStored, setStored } from './storage'
 import { haptics } from './haptics'
@@ -1275,6 +1275,7 @@ function App() {
   const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
   const [latestApk, setLatestApk] = useState<LatestApk | null>(readCachedLatestApk)
   const [appUpdateState, setAppUpdateState] = useState<AppUpdateUiState>({ status: 'checking', progress: 0 })
+  const [displayedDownloadProgress, setDisplayedDownloadProgress] = useState(0)
   // The build number of the installed APK (native only; CI stamps it into versionCode). Null on the
   // web and on APKs older than the stamping change — those can't tell which build they are.
   const [installedBuild, setInstalledBuild] = useState<number | null>(null)
@@ -1282,6 +1283,8 @@ function App() {
   const [highlightSession, setHighlightSession] = useState<string | null>(null)
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
+  const downloadStartedAtRef = useRef<number | null>(null)
+  const downloadReadyTimerRef = useRef<number | null>(null)
   const restAlertStartedRef = useRef(false)
   const syncTimer = useRef<number | null>(null)
   const manualSyncPendingRef = useRef(false)
@@ -1487,19 +1490,41 @@ function App() {
       if (unsupported) return
       try {
         const state = await AppUpdater.getStatus()
-        if (active) setAppUpdateState(state)
+        if (active) applyAppUpdateState(state)
       } catch {
         unsupported = true
         if (active) setAppUpdateState({ status: 'unsupported', progress: 0 })
       }
     }
     void poll()
-    const intervalId = window.setInterval(() => void poll(), 750)
+    const intervalId = window.setInterval(() => void poll(), 150)
     return () => {
       active = false
       window.clearInterval(intervalId)
     }
   }, [apkDialogOpen])
+
+  useEffect(() => {
+    if (appUpdateState.status === 'ready') {
+      setDisplayedDownloadProgress(100)
+      return
+    }
+    if (appUpdateState.status !== 'downloading') {
+      return
+    }
+
+    const target = Math.min(100, Math.max(0, appUpdateState.progress))
+    const intervalId = window.setInterval(() => {
+      setDisplayedDownloadProgress((current) => {
+        if (current >= target) {
+          window.clearInterval(intervalId)
+          return current
+        }
+        return nextDisplayedDownloadProgress(current, target)
+      })
+    }, 40)
+    return () => window.clearInterval(intervalId)
+  }, [appUpdateState.progress, appUpdateState.status])
 
   useEffect(() => {
     setStored(STORAGE_KEY, JSON.stringify(data))
@@ -1887,6 +1912,9 @@ function App() {
       if (syncTimer.current !== null) {
         window.clearTimeout(syncTimer.current)
       }
+      if (downloadReadyTimerRef.current !== null) {
+        window.clearTimeout(downloadReadyTimerRef.current)
+      }
     }
   }, [])
 
@@ -2128,11 +2156,37 @@ function App() {
     }
   }
 
+  const applyAppUpdateState = (state: AppUpdateUiState) => {
+    if (state.status !== 'ready' || downloadStartedAtRef.current === null) {
+      setAppUpdateState(state)
+      return
+    }
+
+    if (downloadReadyTimerRef.current !== null) {
+      return
+    }
+
+    // A small APK can complete between two DownloadManager samples. Keep the real 100% target on
+    // screen briefly so the interpolated bar/value can visibly reach it before Install replaces it.
+    setAppUpdateState({ status: 'downloading', progress: 100, build: state.build })
+    downloadReadyTimerRef.current = window.setTimeout(() => {
+      downloadReadyTimerRef.current = null
+      downloadStartedAtRef.current = null
+      setAppUpdateState(state)
+    }, 1200)
+  }
+
   const startAppUpdate = async () => {
+    if (downloadReadyTimerRef.current !== null) {
+      window.clearTimeout(downloadReadyTimerRef.current)
+      downloadReadyTimerRef.current = null
+    }
+    downloadStartedAtRef.current = Date.now()
+    setDisplayedDownloadProgress(0)
     setAppUpdateState({ status: 'downloading', progress: 0 })
     try {
       const state = await AppUpdater.download({ url: APK_DOWNLOAD_URL })
-      setAppUpdateState(state)
+      applyAppUpdateState(state)
       if (state.status === 'downloading' || state.status === 'ready') {
         void haptics.confirm()
       } else {
@@ -3872,21 +3926,29 @@ function App() {
                 <div className="app-build-list">
                   {native && installedBuild !== null && (
                     <p className="app-build-row">
-                      <span>Installed</span>
+                      <span>Installed build</span>
                       <strong>Build {installedBuild}</strong>
                     </p>
                   )}
                   <p className="app-build-row">
-                    <span>Latest</span>
+                    <span>Latest build</span>
                     <strong>{build !== null ? `Build ${build}` : 'Unavailable'}</strong>
+                    {released && <small>Released {released}</small>}
                   </p>
-                  {released && <small>Released {released}</small>}
                 </div>
               </div>
               {nativeUpdater && appUpdateState.status === 'downloading' && (
-                <div className="update-progress" role="status" aria-label={`Downloading ${appUpdateState.progress}%`}>
-                  <span>Downloading <strong>{appUpdateState.progress}%</strong></span>
-                  <progress max="100" value={appUpdateState.progress} />
+                <div className="update-progress" role="status" aria-label={`Downloading ${displayedDownloadProgress}%`}>
+                  <span>Downloading <strong>{displayedDownloadProgress}%</strong></span>
+                  <div
+                    className="update-progress-track"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={displayedDownloadProgress}
+                  >
+                    <i style={{ width: `${displayedDownloadProgress}%` }} />
+                  </div>
                 </div>
               )}
               {nativeUpdater && appUpdateState.status === 'ready' && updateReady && (
