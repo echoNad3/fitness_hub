@@ -21,9 +21,9 @@ const WEB_PATTERNS: Record<InteractionHaptic, number | number[]> = {
   'drag-drop': 12,
 }
 
-// One continuous 3s vibration at the timer's end. Keep this in sync with RestVibrationReceiver so
+// One continuous 5s vibration at the timer's end. Keep this in sync with RestVibrationReceiver so
 // the web preview matches the native alert.
-const WEB_TIMER_PATTERN = [3000]
+const WEB_TIMER_PATTERN = [5000]
 
 async function interaction(type: InteractionHaptic): Promise<boolean> {
   if (native) {

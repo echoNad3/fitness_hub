@@ -136,11 +136,9 @@ public class RestAlarmPlugin extends Plugin {
 
     @PluginMethod
     public void preview(PluginCall call) {
-        // Plays exactly what a real timer plays: the vibration always, the tone only through a
-        // connected headset.
+        // Plays exactly the vibration a real timer plays.
         JSObject result = new JSObject();
         result.put("performed", RestVibrationReceiver.vibrate(getContext()));
-        result.put("sound", RestVibrationReceiver.playHeadphoneAlarm(getContext()));
         call.resolve(result);
     }
 }

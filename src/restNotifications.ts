@@ -11,10 +11,10 @@ export interface RestNotificationResult {
 }
 
 // On the native Android app this schedules the rest alert (via an exact alarm) that fires even
-// when the phone is locked: a continuous 3s maximum vibration, plus an alarm tone through
-// headphones when connected. The alarm, the countdown notification, and the in-app timer all use
-// this one end timestamp, so they cannot drift apart. On the web/PWA it is a no-op — browsers
-// can't run code while locked, so the visible in-app timer is the only alert there.
+// when the phone is locked: one continuous 5s maximum vibration. The alarm, the countdown
+// notification, and the in-app timer all use this one end timestamp, so they cannot drift apart.
+// On the web/PWA it is a no-op — browsers can't run code while locked, so the visible in-app
+// timer is the only alert there.
 export async function scheduleRestNotification(endsAt: number): Promise<RestNotificationResult> {
   if (!Capacitor.isNativePlatform()) {
     return { status: 'web' }
