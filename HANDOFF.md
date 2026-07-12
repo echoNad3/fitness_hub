@@ -304,9 +304,9 @@ live in the commit messages and the feature list below.
   builds say **Reinstall build N**. The Android launch theme now declares the branded animated icon,
   `icon_preferred`, and `postSplashScreenTheme`, while `MainActivity` installs the compat splash before
   `super.onCreate()` so installer-triggered launches do not show an empty starting window. Historic
-  cards open **Historic workout options** with **Open workout**. Duration editing is h/m/s, steps by
-  10 seconds, and has a 10-second minimum; exercise rest shares the same step/minimum and old 5-second
-  values migrate to 10. Verified web behavior at 412×915 with temporary edits cancelled; native
+  cards open **Historic workout options** with **Open workout**. Duration editing is hours/minutes,
+  steps by 10 minutes, and has a 10-minute minimum; exercise rest remains a separate 10-second
+  step/minimum and old 5-second values migrate to 10. Verified web behavior at 412×915 with temporary edits cancelled; native
   splash/install behavior requires the CI APK and physical phone check.
 - **Rest alert final form: 5s max vibration, no sound.** The sound layer (a headphone-only alarm
   tone) was built twice and fully removed at the user's request after locked-phone Bluetooth
@@ -335,9 +335,9 @@ live in the commit messages and the feature list below.
 - **History workout options + duration repair:** each History card is now one full-width target;
   tapping it opens `Historic workout options` with Open workout, Edit duration (finished sessions
   only), Delete workout, and Cancel. Duration reuses the rest-time editor layout: one shared minus
-  button, manual hours/minutes/seconds fields, and one shared plus button with hold-stepper behavior;
-  minus/plus move 10 seconds. Open workout opens the normal workout screen; its own pencil remains
-  the only entry to structural edit mode. Duration validates 10 seconds–23h 59m 59s, updates
+  button, manual hours/minutes fields, and one shared plus button with hold-stepper behavior;
+  minus/plus move 10 minutes. Open workout opens the normal workout screen; its own pencil remains
+  the only entry to structural edit mode. Duration validates 10 minutes–23h 59m, updates
   `finishedAt` while preserving `createdAt`, and
   immediately recalculates the card and average. Invalid legacy durations over 24 hours remain on
   their card for correction but are excluded from the average. Finished/Unfinished chips share an exact 92px ×
@@ -484,7 +484,7 @@ live in the commit messages and the feature list below.
 - **History** — full-width cards, relative + absolute time, equal-size green **Finished** / red
   **Unfinished** chips with the displayed-slot count, the 28-day tracker, and a `Historic workout
   options` dialog for opening, editing a finished duration, or deleting. Duration editing accepts
-  manual hours/minutes/seconds or 10-second hold-to-repeat −/+ controls, with a 10-second minimum.
+  manual hours/minutes or 10-minute hold-to-repeat −/+ controls, with a 10-minute minimum.
 - **Settings** — Export/Import JSON backup, Test vibration, Reset (cloud sync and the APK download
   live on the home hub now). Export/Import and vibration outcomes show as inline notes on their
   rows (no browser alert popups anywhere in the app) and auto-clear after 5 seconds.

@@ -8,6 +8,7 @@ import {
   resultStreak,
   REST_STEP_SECONDS,
   toggleResult,
+  WORKOUT_DURATION_STEP_SECONDS,
   workoutDurationSeconds,
 } from '../src/domain.ts'
 
@@ -60,13 +61,13 @@ test('rest countdown follows its wall-clock end time', () => {
   assert.equal(restSecondsRemaining(100_000, 120_000), 0)
 })
 
-test('edited workout duration uses 10-second steps and stays between 10 seconds and 24 hours', () => {
-  assert.equal(workoutDurationSeconds(1, 15, 30), 4530)
-  assert.equal(workoutDurationSeconds(0, 0, 10), 10)
-  assert.equal(workoutDurationSeconds(23, 59, 59), 86_399)
-  assert.equal(workoutDurationSeconds(0, 0, 9), null)
-  assert.equal(workoutDurationSeconds(24, 0, 0), null)
-  assert.equal(workoutDurationSeconds(1, 60, 0), null)
-  assert.equal(workoutDurationSeconds(1, 0, 60), null)
-  assert.equal(workoutDurationSeconds(1.5, 0, 0), null)
+test('edited workout duration uses minute precision between 10 minutes and 24 hours', () => {
+  assert.equal(WORKOUT_DURATION_STEP_SECONDS, 600)
+  assert.equal(workoutDurationSeconds(1, 15), 4500)
+  assert.equal(workoutDurationSeconds(0, 10), 600)
+  assert.equal(workoutDurationSeconds(23, 59), 86_340)
+  assert.equal(workoutDurationSeconds(0, 9), null)
+  assert.equal(workoutDurationSeconds(24, 0), null)
+  assert.equal(workoutDurationSeconds(1, 60), null)
+  assert.equal(workoutDurationSeconds(1.5, 0), null)
 })

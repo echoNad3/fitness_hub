@@ -62,23 +62,21 @@ export function nextPendingId(
 export const MIN_REST_SECONDS = 10
 export const MAX_REST_SECONDS = 600
 export const REST_STEP_SECONDS = 10
-export const MIN_WORKOUT_DURATION_SECONDS = 10
+export const MIN_WORKOUT_DURATION_SECONDS = 10 * 60
 export const MAX_WORKOUT_DURATION_SECONDS = 24 * 60 * 60 - 1
+export const WORKOUT_DURATION_STEP_SECONDS = 10 * 60
 
-export function workoutDurationSeconds(hours: number, minutes: number, seconds: number) {
+export function workoutDurationSeconds(hours: number, minutes: number) {
   if (
     !Number.isInteger(hours) ||
     !Number.isInteger(minutes) ||
-    !Number.isInteger(seconds) ||
     hours < 0 ||
     minutes < 0 ||
-    minutes > 59 ||
-    seconds < 0 ||
-    seconds > 59
+    minutes > 59
   ) {
     return null
   }
-  const total = hours * 60 * 60 + minutes * 60 + seconds
+  const total = hours * 60 * 60 + minutes * 60
   return total >= MIN_WORKOUT_DURATION_SECONDS && total <= MAX_WORKOUT_DURATION_SECONDS ? total : null
 }
 

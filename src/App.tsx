@@ -43,6 +43,7 @@ import {
   resultGuidance,
   resultStreak,
   toggleResult,
+  WORKOUT_DURATION_STEP_SECONDS,
   workoutDurationSeconds,
 } from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
@@ -171,7 +172,6 @@ type DurationDialog = {
   sessionId: string
   hours: string
   minutes: string
-  seconds: string
   error: string
 }
 
@@ -720,36 +720,30 @@ function DurationEditor({
 }) {
   const hoursRef = useRef(dialog.hours)
   const minutesRef = useRef(dialog.minutes)
-  const secondsRef = useRef(dialog.seconds)
   hoursRef.current = dialog.hours
   minutesRef.current = dialog.minutes
-  secondsRef.current = dialog.seconds
   const holdStepper = useHoldStepper()
 
   const step = (delta: number) => {
     const hours = Number.parseInt(hoursRef.current, 10)
     const minutes = Number.parseInt(minutesRef.current, 10)
-    const seconds = Number.parseInt(secondsRef.current, 10)
     const current =
       (Number.isFinite(hours) ? Math.max(0, hours) : 0) * 60 * 60 +
-      (Number.isFinite(minutes) ? Math.max(0, minutes) : 0) * 60 +
-      (Number.isFinite(seconds) ? Math.max(0, seconds) : 0)
-    const next = Math.min(24 * 60 * 60 - 1, Math.max(10, current + delta))
+      (Number.isFinite(minutes) ? Math.max(0, minutes) : 0) * 60
+    const next = Math.min(23 * 60 * 60 + 59 * 60, Math.max(10 * 60, current + delta))
     if (next === current) return false
     const nextHours = String(Math.floor(next / 3600))
     const nextMinutes = String(Math.floor((next % 3600) / 60))
-    const nextSeconds = String(next % 60)
     hoursRef.current = nextHours
     minutesRef.current = nextMinutes
-    secondsRef.current = nextSeconds
-    onChange({ ...dialog, hours: nextHours, minutes: nextMinutes, seconds: nextSeconds, error: '' })
+    onChange({ ...dialog, hours: nextHours, minutes: nextMinutes, error: '' })
     return true
   }
 
   return (
     <Dialog title="Edit duration">
       <div className="set-stepper rest-stepper">
-        <button type="button" aria-label="Decrease duration" {...holdStepper.bind(() => step(-REST_STEP_SECONDS))}>
+        <button type="button" aria-label="Decrease duration" {...holdStepper.bind(() => step(-WORKOUT_DURATION_STEP_SECONDS))}>
           <Icon name="minus" size={18} />
         </button>
         <div className="rest-mmss">
@@ -778,21 +772,8 @@ function DurationEditor({
             />
             <span>m</span>
           </label>
-          <label className="set-rest-field">
-            <input
-              type="number"
-              inputMode="numeric"
-              min="0"
-              max="59"
-              step="10"
-              value={dialog.seconds}
-              aria-label="Duration seconds"
-              onChange={(event) => onChange({ ...dialog, seconds: event.target.value, error: '' })}
-            />
-            <span>s</span>
-          </label>
         </div>
-        <button type="button" aria-label="Increase duration" {...holdStepper.bind(() => step(REST_STEP_SECONDS))}>
+        <button type="button" aria-label="Increase duration" {...holdStepper.bind(() => step(WORKOUT_DURATION_STEP_SECONDS))}>
           <Icon name="plus" size={18} />
         </button>
       </div>
@@ -2051,13 +2032,15 @@ function App() {
 
   const openDurationEditor = (session: WorkoutSession) => {
     if (session.finishedAt === undefined || session.finishedAt <= session.createdAt) return
-    const totalSeconds = Math.max(10, Math.round((session.finishedAt - session.createdAt) / 1000))
+    const totalMinutes = Math.min(
+      23 * 60 + 59,
+      Math.max(10, Math.round((session.finishedAt - session.createdAt) / 60_000)),
+    )
     setHistoryOptionsSessionId(null)
     setDurationDialog({
       sessionId: session.id,
-      hours: String(Math.floor(totalSeconds / 3600)),
-      minutes: String(Math.floor((totalSeconds % 3600) / 60)),
-      seconds: String(totalSeconds % 60),
+      hours: String(Math.floor(totalMinutes / 60)),
+      minutes: String(totalMinutes % 60),
       error: '',
     })
   }
@@ -2066,10 +2049,9 @@ function App() {
     if (!durationDialog) return
     const hours = Number(durationDialog.hours)
     const minutes = Number(durationDialog.minutes)
-    const seconds = Number(durationDialog.seconds)
-    const totalSeconds = workoutDurationSeconds(hours, minutes, seconds)
+    const totalSeconds = workoutDurationSeconds(hours, minutes)
     if (totalSeconds === null) {
-      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 10 seconds to 23 hours 59 minutes 59 seconds.' })
+      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 10 minutes to 23 hours 59 minutes.' })
       void haptics.reject()
       return
     }
