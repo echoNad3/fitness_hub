@@ -8,8 +8,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.os.SystemClock;
-import android.widget.RemoteViews;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -47,24 +45,22 @@ public final class RestTimerNotification {
         long remaining = Math.max(0L, endsAt - System.currentTimeMillis());
         long timeoutAfter = Math.max(1000L, remaining + 1000L);
 
-        // The countdown is the whole point of this notification, so it renders as the big content
-        // line (a live Chronometer in a custom view) instead of a small clock in the header row.
-        RemoteViews content = new RemoteViews(context.getPackageName(), R.layout.notification_rest_timer);
-        content.setChronometer(R.id.rest_timer_countdown, SystemClock.elapsedRealtime() + remaining, null, true);
-        content.setChronometerCountDown(R.id.rest_timer_countdown, true);
-
+        // Standard template on purpose: custom notification layouts are unreliable on lock screens
+        // (several OEMs silently drop them there). The system chronometer renders the live
+        // countdown, which the standard template shows in the header time slot.
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_fitness)
-                .setStyle(new NotificationCompat.DecoratedCustomViewStyle())
-                .setCustomContentView(content)
-                .setCustomBigContentView(content)
+                .setContentTitle("Rest timer")
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setSilent(true)
-                .setShowWhen(false)
+                .setShowWhen(true)
+                .setWhen(endsAt)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
                 .setTimeoutAfter(timeoutAfter)
                 .setContentIntent(buildContentIntent(context));
 

@@ -2547,8 +2547,8 @@ function App() {
 
         <button className="set-row" type="button" onClick={testVibration}>
           <span className="set-main">
-            <strong>Test vibration</strong>
-            <small role="status">{vibrationMessage || 'Play one test buzz'}</small>
+            <strong>Test rest alert</strong>
+            <small role="status">{vibrationMessage || 'Max vibration · sound only in headphones'}</small>
           </span>
           <Icon name="bell" />
         </button>
@@ -3603,7 +3603,7 @@ function App() {
 
   const testVibration = () => {
     void haptics.timerFinished(true).then((performed) => {
-      setVibrationMessage(performed ? 'Test vibration played.' : 'Vibration is off or unavailable.')
+      setVibrationMessage(performed ? 'Alert played.' : 'Vibration is off or unavailable.')
     })
   }
 

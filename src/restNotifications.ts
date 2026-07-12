@@ -10,11 +10,11 @@ export interface RestNotificationResult {
   detail?: string
 }
 
-const REST_ALERT_LEAD_MS = 3000
-
-// On the native Android app this schedules the strong one-shot rest pattern (via an exact alarm) that fires
-// even when the phone is locked. On the web/PWA it is a no-op — browsers can't run code while
-// locked, so the visible in-app timer is the only alert there.
+// On the native Android app this schedules the rest alert (via an exact alarm) that fires even
+// when the phone is locked: a continuous 3s maximum vibration, plus an alarm tone through
+// headphones when connected. The alarm, the countdown notification, and the in-app timer all use
+// this one end timestamp, so they cannot drift apart. On the web/PWA it is a no-op — browsers
+// can't run code while locked, so the visible in-app timer is the only alert there.
 export async function scheduleRestNotification(endsAt: number): Promise<RestNotificationResult> {
   if (!Capacitor.isNativePlatform()) {
     return { status: 'web' }
@@ -29,8 +29,7 @@ export async function scheduleRestNotification(endsAt: number): Promise<RestNoti
     // timestamp is too large for an int — so a whole number arrives as a Long and reads back as
     // null ("Missing 'at' timestamp"). Adding a fractional part forces the bridge to serialize it
     // as a Double; the native side truncates the fraction with longValue(), so the time is exact.
-    // The four-pulse waveform begins with 3 seconds left, then pulses at 2, 1, and 0.
-    const result = await RestAlarm.schedule({ at: endsAt - REST_ALERT_LEAD_MS + 0.5 })
+    const result = await RestAlarm.schedule({ at: endsAt + 0.5 })
     if (!result.exact) {
       return { status: 'failed', detail: 'Allow Alarms and reminders for Fitness Hub.' }
     }

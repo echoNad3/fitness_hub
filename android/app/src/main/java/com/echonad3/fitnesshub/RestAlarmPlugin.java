@@ -17,8 +17,9 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 /**
- * Schedules an exact alarm that triggers RestVibrationReceiver three seconds before rest ends, so
- * its four equal pulses land at 3, 2, 1, and 0 even while the phone is locked.
+ * Schedules an exact alarm that triggers RestVibrationReceiver at the moment rest ends. The alarm,
+ * the countdown notification, and the in-app timer all share that one timestamp, so they can never
+ * drift apart (an earlier lead-in design let a web/native version skew put them 3 seconds apart).
  */
 @CapacitorPlugin(
         name = "RestAlarm",
@@ -117,7 +118,7 @@ public class RestAlarmPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("scheduled", true);
         result.put("exact", exact);
-        result.put("notification", RestTimerNotification.show(context, triggerAt + 3000L));
+        result.put("notification", RestTimerNotification.show(context, triggerAt));
         call.resolve(result);
     }
 
@@ -135,8 +136,11 @@ public class RestAlarmPlugin extends Plugin {
 
     @PluginMethod
     public void preview(PluginCall call) {
+        // Plays exactly what a real timer plays: the vibration always, the tone only through a
+        // connected headset.
         JSObject result = new JSObject();
         result.put("performed", RestVibrationReceiver.vibrate(getContext()));
+        result.put("sound", RestVibrationReceiver.playHeadphoneAlarm(getContext()));
         call.resolve(result);
     }
 }
