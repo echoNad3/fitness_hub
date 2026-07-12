@@ -32,7 +32,17 @@ import {
   nextLocalTimestamp,
   parseCloudTimestamp,
 } from './cloudSync'
-import { MAX_REST_SECONDS, MIN_REST_SECONDS, clampRestValue, nextPendingId, restSecondsRemaining, toggleResult, workoutDurationMinutes } from './domain'
+import {
+  MAX_REST_SECONDS,
+  MIN_REST_SECONDS,
+  clampRestValue,
+  nextPendingId,
+  restSecondsRemaining,
+  resultGuidance,
+  resultStreak,
+  toggleResult,
+  workoutDurationMinutes,
+} from './domain'
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
@@ -2763,7 +2773,8 @@ function App() {
     const displaySetup = getExerciseSetup(entry, variant)
     const displaySets = getExerciseSets(entry, variant)
     const displayReps = getExerciseReps(entry, variant)
-    const previous = getPreviousResult(data, workout.id, session, group.id, variant.id)
+    const previousStreak = getPreviousResultStreak(data, workout.id, session, group.id, variant.id)
+    const previous = previousStreak.result ?? 'missing'
     const isExpanded = expandedGroupId === group.id
     const muscle = muscleColor(variant.category)
     const numLabel = String(index + 1).padStart(2, '0')
@@ -2822,7 +2833,7 @@ function App() {
                 }
               >
                 <Icon name={previous === 'success' ? 'arrow-up' : previous === 'failure' ? 'repeat' : 'clock'} size={18} />
-                <span>{guidanceSentence(previous)}</span>
+                <span>{resultGuidance(previousStreak)}</span>
               </button>
 
               {showIncrease ? (
@@ -4455,21 +4466,23 @@ function getLatestWeight(data: AppData, workoutId: WorkoutId, variantId: string)
   return entry?.entries[variantId].weight ?? null
 }
 
-function getPreviousResult(
+function getPreviousResultStreak(
   data: AppData,
   workoutId: WorkoutId,
   session: WorkoutSession,
   groupId: string,
   variantId: string,
-): PreviousResult {
-  const target = findPreviousTarget(data, workoutId, session, groupId, variantId)
+) {
+  const results = data.sessions
+    .filter((candidate) => candidate.workoutId === workoutId && candidate.createdAt < session.createdAt)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .flatMap((candidate) => {
+      const result = candidate.groupEntries[groupId]?.entries[variantId]?.result
+      return result ? [result] : []
+    })
+  const baseline = data.baselineResults[variantId]
 
-  if (target.sessionId) {
-    const previousSession = data.sessions.find((candidate) => candidate.id === target.sessionId)
-    return previousSession?.groupEntries[groupId]?.entries[variantId]?.result ?? 'missing'
-  }
-
-  return data.baselineResults[variantId] ?? 'missing'
+  return resultStreak(results, baseline === 'missing' ? undefined : baseline)
 }
 
 function findPreviousTarget(
@@ -4556,18 +4569,6 @@ function getNextPendingGroupId(session: WorkoutSession, currentGroupId: string) 
     const groupEntry = session.groupEntries[group.id]
     return Boolean(groupEntry?.entries[group.activeVariantId]?.result)
   })
-}
-
-function guidanceSentence(previous: PreviousResult) {
-  if (previous === 'success') {
-    return 'Last result: done. Increase today.'
-  }
-
-  if (previous === 'failure') {
-    return 'Last result: failed. Repeat today.'
-  }
-
-  return "No previous result. Choose today's weight."
 }
 
 function guidanceClass(previous: PreviousResult) {

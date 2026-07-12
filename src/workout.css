@@ -201,7 +201,10 @@
 }
 
 .ws-chip {
-  padding: 4px 9px;
+  width: 56px;
+  padding: 4px;
+  display: inline-grid;
+  place-items: center;
   border-radius: 8px;
   font-size: var(--fs-caption);
   font-weight: var(--fw-bold);

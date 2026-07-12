@@ -149,6 +149,11 @@ category word; in the editor as selectable chips.
 **Rule:** muscle colors must stay visually distinct from the reserved UI colors (accent blue,
 success green, danger coral, warning amber). If adding/retheming a muscle, keep this rule.
 
+**Component symmetry is an app-wide rule.** Equivalent controls, badges, icons, and status elements
+must keep the same outer dimensions, alignment, padding, and visual weight even when their labels
+have different lengths. Text may naturally differ, but a shorter label must never make one side of
+a paired component look smaller. Audit both states whenever one is changed.
+
 ---
 
 ## 6. Tech stack & architecture
@@ -530,12 +535,20 @@ live in the commit messages and the feature list below.
   setup/target/weight changes stay in sync with the open session, the final exercise cannot be
   removed, backup imports are deeply validated, and React hook lint warnings are resolved.
 - **Automated safety net** — `npm test` runs Node-native unit tests covering result toggles,
-  auto-advance, rest bounds, wall-clock countdown math, backup/template/session validation
+  consecutive past-result streaks, auto-advance, rest bounds, wall-clock countdown math,
+  backup/template/session validation
   (including swap flags, increase fields, notes, `finishedAt`, `gymPass`), cloud timestamp parsing,
   sync direction, migration safety, monotonic timestamps, and the meaningful-change rule.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
+  Equivalent paired components must stay dimensionally symmetrical regardless of label length; the
+  collapsed workout Done/Failed badges now share one fixed width.
+- **Exercise result streaks (2026-07-12)** — the expanded workout guidance derives the current run
+  of matching Done or Failed results from completed past attempts of that exercise variant. Runs of
+  two or more read, for example, `Last results: failed x2. Repeat today.` A single result stays
+  singular with no `x1`. The open session is deliberately excluded, so logging today only affects
+  the guidance when the next workout is created. Skipped swap variants do not break their own run.
 - **Frontend interaction hardening (2026-07-11 audit)** — the existing visual system and information
   architecture were retained. Dialogs now move focus inside, trap keyboard focus, restore the prior
   focus target, close safely with Escape/back, and scroll within short or keyboard-reduced viewports.
