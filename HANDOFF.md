@@ -714,20 +714,17 @@ unavailable, the entry above says so.
 
 ## 8. Status and what's next
 
-The app implementation and July 2026 public-readiness audit are complete. Two repository-level
-release decisions remain and must not be guessed:
+The app implementation and July 2026 public-readiness audit are complete. The owner explicitly
+accepted these two repository tradeoffs on 2026-07-13; do not treat them as blockers or repeatedly
+reopen them unless the owner asks:
 
-1. **Production Android signing is required before calling the APK public-ready.** The current
-   release is a debug APK signed with a key committed to the public repository. Removing or rotating
-   that key breaks seamless updates for existing installs, so migrate deliberately to a private
-   release keystore and treat it as a new trust/install lineage if Android requires it.
-2. **Choose and add an open-source license.** Public source without a license is visible source, not
-   legally reusable open source. MIT is the simplest fit if the intent is broad reuse with attribution,
-   but the copyright/license choice belongs to the owner.
+1. Keep publishing the current debug APK with its signing key committed publicly for now. The owner
+   understands this is weaker than private production signing and accepts that risk.
+2. Leave the repository without an open-source license for now. The owner does not need legal reuse
+   permissions added yet.
 
-Until those two decisions are resolved, describe the downloadable APK as a debug sideload build,
-not a production release. Everything else planned so far has shipped: GitHub Pages, PWA, native
-wrapper, cloud sync, updater, and the audit rounds in §7.
+Keep describing the downloadable APK accurately as a debug sideload build. Everything else planned
+so far has shipped: GitHub Pages, PWA, native wrapper, cloud sync, updater, and the audit rounds in §7.
 
 **Supabase operational notes:**
 - Project `jrsowjbxenkrmzzknnab.supabase.co`; one row per user in `public.app_state`
