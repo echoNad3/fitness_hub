@@ -342,6 +342,9 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- `719f054` **Automatic cloud recovery copies:** three validated device/cloud copies, safe restore
+  and deletion, cross-device deletion records, Settings UI, Supabase RLS migration, fail-closed
+  destructive paths, responsive coverage, and a reliable Windows/CI Playwright runner.
 - **Updater progress/text-spacing + notification assessment (2026-07-12):** native download status
   polling is 150ms instead of 750ms; the displayed percentage follows real DownloadManager samples
   in four-point steps and a completed small download remains visible for 1.2 seconds so the bar reaches
