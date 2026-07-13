@@ -26,6 +26,9 @@
              ignores the drawable above; without this it defaults to black. -->
         <item name="windowSplashScreenBackground">#FF252730</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <!-- Android 12+ gets a 1 ms visually static animated vector. That keeps the vector on the
+             system's SurfaceView path instead of filtering a bitmap copy, without delaying launch. -->
+        <item name="windowSplashScreenAnimationDuration">1</item>
         <item name="android:windowSplashScreenBehavior">icon_preferred</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
         <!-- Keep the cold-start splash dark so the system bars don't flash grey around the app's

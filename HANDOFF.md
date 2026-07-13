@@ -232,7 +232,7 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 | `.github/workflows/keepalive.yml` | Twice-weekly Supabase REST query so the free-tier project never idles 7 days and gets paused. |
 | `capacitor.config.ts` / `android/` | Capacitor app identity/config plus the generated and customized Android Studio project. |
 | `brand/fitness-hub-logo.svg` / `AGENTS.md` | The owner's original SVG and the mandatory rule that it is the only editable logo source. The approved geometry is pinned so an accidental redraw fails the build. |
-| `scripts/sync-brand-assets.mjs` | The single brand pipeline. It generates and pixel-verifies web icons, Android fallback PNGs, the Android 12+ splash vector, adaptive launcher vector, and monochrome notification vector. |
+| `scripts/sync-brand-assets.mjs` | The single brand pipeline. It generates and pixel-verifies web icons, Android fallback PNGs, the pre-Android-12 static splash vector, the Android 12+ animated-vector surface wrapper, adaptive launcher vector, and monochrome notification vector. |
 | `vite.config.ts` | Vite base path plus PWA manifest and Workbox precache configuration. |
 | `public/app-icon.svg` + generated icon files | Generated Fitness Hub favicon, home-screen, Apple touch, and maskable install assets. Never edit these copies directly. |
 | `index.html` | Page shell. Its boot screen loads the generated SVG instead of carrying another hand-copied logo. |
@@ -343,7 +343,18 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
-- **Single-install sharp Android launch (2026-07-13):** physical build 65 showed that vector source
+- **Native vector-surface Android splash (2026-07-13):** the untouched Pixel screenshot from build
+  66 confirmed a faint dark/bright halo still surrounded the launch logo. The canonical SVG and
+  generated paths were exact; the remaining cause was Android itself. AOSP's splash implementation
+  copies immobile icons into a filtered bitmap when transferring the system splash, while animatable
+  icons stay on a `SurfaceView`. Android 12+ now receives a generated `AnimatedVectorDrawable` with
+  a 1ms `fillAlpha` 1.0-to-1.0 no-op. The artwork never visibly moves and launch is not delayed, but
+  Android keeps the vector-rendered surface instead of making the softened bitmap copy. Older Android
+  versions retain the generated static vector. The protected brand pipeline, repository rules, and
+  launch regression test enforce this split. All 43 unit tests, brand validation, lint, web build,
+  and Capacitor sync pass locally; Android resource/APK compilation and the physical Pixel visual
+  check belong to the next CI release.
+- **Single-install Android launch (2026-07-13):** physical build 65 showed that vector source
   quality alone did not remove the slight blur. The launch path still installed Android's splash
   once in `MainActivity` and again later from `@capacitor/splash-screen`, then faded the composed
   splash for 150ms. The dependency and second installer are removed. `MainActivity` now owns one
@@ -353,7 +364,8 @@ live in the commit messages and the feature list below.
   regression test enforces the single installer and keeps an older-APK fallback so live web updates
   cannot trap build 65 or earlier behind their legacy splash. Local and CI tests, lint, build,
   Capacitor sync, Java/resource compilation, APK publication, and updater metadata are verified.
-  Release `android-v66` is live; only its final visual launch check on the Pixel 9 Pro XL remains.
+  Release `android-v66` is live. Its physical Pixel check confirmed the remaining system bitmap halo
+  that the vector-surface correction above now addresses.
 - **Protected vector brand pipeline (2026-07-13):** the owner's supplied SVG now lives unchanged at
   `brand/fitness-hub-logo.svg` as the only source. `npm run brand:sync` deterministically rebuilds
   every web/PWA/Android logo asset. `npm run brand:check` runs inside tests and builds, pins the
@@ -384,7 +396,9 @@ live in the commit messages and the feature list below.
   dedicated time-format tests and verified in the phone preview with no console errors.
 - **Splash quality + updater recovery (2026-07-12):** replaced the density-specific launcher PNG
   used by the Android system splash with `drawable/splash_logo.xml`, a 288dp vector derived from the
-  user's canonical 1024×1024 SVG and kept inside Android's safe icon area. Release/build detection now
+  user's canonical 1024×1024 SVG and kept inside Android's safe icon area. Android 12+ later moved
+  to the animated-vector surface wrapper documented above after the OS bitmap copy was identified.
+  Release/build detection now
   comes from a static `android-release.json` generated during Pages deployment with authenticated CI;
   Android CI refreshes Pages after publishing each APK. The dialog distinguishes Download, Install,
   and Reinstall, uses the downloaded APK's actual build number, never calls a stale file “ready,” and
@@ -417,7 +431,8 @@ live in the commit messages and the feature list below.
 - **Seamless launch (splash fix, superseded by the single-install controller above):** Android 12+
   ignores the legacy `@drawable/splash` image. The
   launch theme explicitly sets `windowSplashScreenBackground`, `windowSplashScreenAnimatedIcon`
-  to the resolution-independent `@drawable/splash_logo` vector (never a mipmap PNG),
+  to generated `@drawable/splash_logo` (a static vector before Android 12 and the no-op animated
+  vector surface wrapper on Android 12+, never a mipmap PNG),
   Android 13+ `windowSplashScreenBehavior=icon_preferred`, and `postSplashScreenTheme`; `MainActivity`
   calls `SplashScreen.installSplashScreen(this)` before `super.onCreate()`. The earlier
   `@capacitor/splash-screen` hold/hide layer was removed after build 65 because it installed the

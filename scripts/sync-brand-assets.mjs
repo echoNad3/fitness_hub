@@ -99,15 +99,15 @@ function scaleRectAroundCenter(rect, scale) {
 
 function androidVector(
   sizeDp,
-  { scale = safeAreaScale, monochrome = false, bakeScale = false } = {},
+  { scale = safeAreaScale, monochrome = false, bakeScale = false, animationAnchor = false } = {},
 ) {
   const mark = bakeScale
     ? approvedArtwork.mark.map((rect) => scaleRectAroundCenter(rect, scale))
     : approvedArtwork.mark
   const paths = mark
     .map(
-      (rect) =>
-        `        <path android:fillColor="${monochrome ? '#FFFFFFFF' : rect.fill}" android:pathData="${roundedRectPath(rect)}" />`,
+      (rect, index) =>
+        `        <path${animationAnchor && index === 0 ? ' android:name="splash_vector_anchor"' : ''} android:fillColor="${monochrome ? '#FFFFFFFF' : rect.fill}" android:pathData="${roundedRectPath(rect)}" />`,
     )
     .join('\n')
 
@@ -131,6 +131,30 @@ ${paths}
     android:viewportHeight="1024">
 ${renderedPaths}
 </vector>
+`
+}
+
+function animatedSplashVectorXml() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- ${generatedNotice} Android 12+ keeps animated vectors on a SurfaceView instead of copying them to a bitmap. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/splash_logo_vector">
+    <target
+        android:name="splash_vector_anchor"
+        android:animation="@animator/splash_logo_hold" />
+</animated-vector>
+`
+}
+
+function splashHoldAnimatorXml() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- ${generatedNotice} This 1 ms no-op preserves the exact logo while avoiding Android's static-icon bitmap copy. -->
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="1"
+    android:propertyName="fillAlpha"
+    android:valueFrom="1.0"
+    android:valueTo="1.0"
+    android:valueType="floatType" />
 `
 }
 
@@ -180,6 +204,12 @@ const textOutputs = new Map([
     'android/app/src/main/res/drawable/splash_logo.xml',
     androidVector(288, { bakeScale: true }),
   ],
+  [
+    'android/app/src/main/res/drawable/splash_logo_vector.xml',
+    androidVector(288, { bakeScale: true, animationAnchor: true }),
+  ],
+  ['android/app/src/main/res/drawable-v31/splash_logo.xml', animatedSplashVectorXml()],
+  ['android/app/src/main/res/animator/splash_logo_hold.xml', splashHoldAnimatorXml()],
   [
     'android/app/src/main/res/drawable/ic_stat_fitness.xml',
     androidVector(24, { scale: 1, monochrome: true }),
