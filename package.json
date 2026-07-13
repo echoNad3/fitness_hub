@@ -12,7 +12,8 @@
     "generate-android-assets": "node scripts/generate-android-assets.mjs",
     "lint": "oxlint",
     "security:rls": "node --experimental-strip-types scripts/check-supabase-rls.ts",
-    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts tests/cloudSync.test.ts tests/apkVersion.test.ts tests/timeFormat.test.ts tests/storage.test.ts tests/restTimerState.test.ts",
+    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts tests/cloudSync.test.ts tests/apkVersion.test.ts tests/timeFormat.test.ts tests/storage.test.ts tests/restTimerState.test.ts tests/historyPagination.test.ts",
+    "test:e2e": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",
+    "@playwright/test": "^1.58.0",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

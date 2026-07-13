@@ -372,3 +372,10 @@
     transition: none;
   }
 }
+.ws-editor-loading {
+  min-height: 96px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: var(--fs-label);
+}

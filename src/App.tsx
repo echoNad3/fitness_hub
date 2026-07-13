@@ -1,23 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { useId } from 'react'
-import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import { lazy, Suspense } from 'react'
+import type { ChangeEvent, ReactNode } from 'react'
 import './App.css'
 import './workout.css'
 import './home.css'
@@ -33,9 +17,7 @@ import {
   parseCloudTimestamp,
 } from './cloudSync'
 import {
-  MAX_REST_SECONDS,
   MAX_WORKOUT_DURATION_SECONDS,
-  MIN_REST_SECONDS,
   clampRestValue,
   nextPendingId,
   restSecondsRemaining,
@@ -59,25 +41,17 @@ import { getStored, removeStored, setStored } from './storage'
 import { haptics } from './haptics'
 import { checkForAppUpdate } from './pwaUpdates'
 import { parseStoredRestTimer } from './restTimerState'
+import {
+  HISTORY_PAGE_SIZE,
+  clampHistoryCount,
+  historyCountForIndex,
+  nextHistoryCount,
+} from './historyPagination'
+import type { ExerciseVariant, PreviousResult, ResultStatus, WorkoutId } from './workoutTypes'
+import { categoryLabel, muscleColor } from './workoutPresentation'
+import { useHoldStepper } from './useHoldStepper'
 
-type WorkoutId = 'workout-a' | 'workout-b'
-type ResultStatus = 'success' | 'failure'
-type PreviousResult = ResultStatus | 'missing'
-type Category = 'CHEST' | 'BACK' | 'SHOULDERS' | 'BICEPS' | 'TRICEPS' | 'CORE' | 'LEGS'
-
-type ExerciseVariant = {
-  id: string
-  name: string
-  category: Category
-  setup: string
-  sets: number
-  reps: number
-  weight: number
-  perHand: boolean
-  lastResult: PreviousResult
-  // Optional free-text note ("grip felt off", "try seat 5") shown quietly on the workout card.
-  note?: string
-}
+const WorkoutEditorList = lazy(() => import('./WorkoutEditorList'))
 
 // A group is a single exercise slot. `variants` always holds exactly one exercise now (swaps are no
 // longer nested); the swap feature is expressed with `linkId` instead. Kept as an array so the session
@@ -215,13 +189,11 @@ const SYNCED_ACCOUNT_KEY = 'fitness-hub-v1-synced-account'
 const LAST_SYNCED_KEY = 'fitness-hub-v1-last-synced'
 const REST_TIMER_KEY = 'fitness-hub-rest-timer'
 const MAX_BACKUP_BYTES = 10 * 1024 * 1024
-const MAX_EXERCISE_COUNT = 999
 // Where password-reset emails send the user to set a new password (the live web app).
 const PUBLIC_APP_URL = 'https://echonad3.github.io/fitness_hub/'
 const APK_DOWNLOAD_URL = 'https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
-const CATEGORIES: Category[] = ['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS']
 
 const defaultWorkouts: WorkoutTemplate[] = [
   {
@@ -422,20 +394,6 @@ function singleExercise(
   }
 }
 
-const muscleColors: Record<Category, string> = {
-  CHEST: '#d6b252', // gold
-  BACK: '#b9c2cb', // silver
-  SHOULDERS: '#a37f50', // bronze
-  BICEPS: '#aa9fc9', // purplish silver
-  TRICEPS: '#d98c4e', // warm orange
-  CORE: '#e48fbf', // pink
-  LEGS: '#e48fbf', // pink (same as core)
-}
-
-function muscleColor(category: Category): string {
-  return muscleColors[category]
-}
-
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const props = {
     width: size,
@@ -618,12 +576,6 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   }
 }
 
-const blurOnEnter = (event: { key: string; currentTarget: HTMLInputElement }) => {
-  if (event.key === 'Enter') {
-    event.currentTarget.blur()
-  }
-}
-
 // Password field with an eye toggle to reveal what's being typed. Used by every password entry
 // (sign in, create account, change/reset password).
 function PasswordInput({
@@ -660,56 +612,6 @@ function PasswordInput({
       </button>
     </span>
   )
-}
-
-type HoldAction = () => boolean
-
-// Every numeric −/+ control uses this exact interaction: a quick tap applies once on release;
-// holding for 380ms starts a 110ms repeat. Each real step gets one Selection haptic, bounds stay
-// silent, scrolling cancels the pending tap, and keyboard activation applies one step.
-function useHoldStepper() {
-  const holdRef = useRef<{ timeout?: number; interval?: number; action?: HoldAction; started?: boolean }>({})
-
-  const stop = () => {
-    if (holdRef.current.timeout !== undefined) window.clearTimeout(holdRef.current.timeout)
-    if (holdRef.current.interval !== undefined) window.clearInterval(holdRef.current.interval)
-    holdRef.current = {}
-  }
-
-  const start = (action: HoldAction) => {
-    stop()
-    holdRef.current.action = action
-    holdRef.current.timeout = window.setTimeout(() => {
-      holdRef.current.started = true
-      if (action()) void haptics.selection()
-      holdRef.current.interval = window.setInterval(() => {
-        if (action()) void haptics.selection()
-      }, 110)
-    }, 380)
-  }
-
-  const finish = () => {
-    const { action, started } = holdRef.current
-    if (action && !started && action()) void haptics.selection()
-    stop()
-  }
-
-  const bind = (action: HoldAction) => ({
-    onPointerDown: () => start(action),
-    onPointerUp: finish,
-    onPointerLeave: stop,
-    onPointerCancel: stop,
-    onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault()
-        if (action()) void haptics.selection()
-      }
-    },
-  })
-
-  useEffect(() => stop, [])
-
-  return { bind, stop }
 }
 
 function DurationEditor({
@@ -791,449 +693,6 @@ function DurationEditor({
   )
 }
 
-// The editable fields for a single exercise. Swap alternatives are equal siblings, so every one shows
-// the full set of fields including its own muscle picker. Drafts are held locally and committed on
-// blur so typing never fights the persisted value.
-function VariantFields({
-  variant,
-  onPatch,
-}: {
-  variant: ExerciseVariant
-  onPatch: (patch: Partial<ExerciseVariant>) => void
-}) {
-  const { name, category, setup, sets, reps, weight, perHand } = variant
-  const [nameDraft, setNameDraft] = useState<string | null>(null)
-  const [setupDraft, setSetupDraft] = useState<string | null>(null)
-  const [noteDraft, setNoteDraft] = useState<string | null>(null)
-  const [weightDraft, setWeightDraft] = useState<string | null>(null)
-  const setsRef = useRef(sets)
-  const repsRef = useRef(reps)
-  setsRef.current = sets
-  repsRef.current = reps
-  const holdStepper = useHoldStepper()
-
-  const adjustSets = (delta: number) => {
-    const next = Math.min(MAX_EXERCISE_COUNT, Math.max(1, setsRef.current + delta))
-    if (next === setsRef.current) return false
-    setsRef.current = next
-    onPatch({ sets: next })
-    return true
-  }
-
-  const adjustReps = (delta: number) => {
-    const next = Math.min(MAX_EXERCISE_COUNT, Math.max(1, repsRef.current + delta))
-    if (next === repsRef.current) return false
-    repsRef.current = next
-    onPatch({ reps: next })
-    return true
-  }
-
-  // Commit on blur. Read the draft from state and call the parent update OUTSIDE any setState updater
-  // (calling a parent setState inside an updater runs it during render → React warns/misbehaves).
-  const commitName = () => {
-    if (nameDraft !== null) {
-      const nextName = nameDraft.trim()
-      if (!nextName) {
-        void haptics.reject()
-        setNameDraft(null)
-        return
-      }
-      if (nextName !== name) {
-        onPatch({ name: nextName })
-      }
-      setNameDraft(null)
-    }
-  }
-  const commitSetup = () => {
-    if (setupDraft !== null) {
-      const nextSetup = setupDraft.trim()
-      if (nextSetup !== setup) {
-        onPatch({ setup: nextSetup })
-      }
-      setSetupDraft(null)
-    }
-  }
-  const commitNote = () => {
-    if (noteDraft !== null) {
-      const trimmed = noteDraft.trim()
-      const nextNote = trimmed === '' ? undefined : trimmed
-      if (nextNote !== variant.note) {
-        onPatch({ note: nextNote })
-      }
-      setNoteDraft(null)
-    }
-  }
-  const commitWeight = () => {
-    if (weightDraft !== null) {
-      const parsed = Number(weightDraft)
-      if (weightDraft.trim() !== '' && Number.isFinite(parsed) && parsed >= 0) {
-        const nextWeight = roundWeight(parsed)
-        if (nextWeight !== weight) {
-          onPatch({ weight: nextWeight })
-        }
-      } else {
-        void haptics.reject()
-      }
-      setWeightDraft(null)
-    }
-  }
-
-  return (
-    <>
-      <label className="ex-field">
-        <span>Name</span>
-        <input
-          className="ws-editor-input"
-          type="text"
-          maxLength={80}
-          value={nameDraft ?? name}
-          onFocus={() => setNameDraft(name)}
-          onChange={(event) => setNameDraft(event.target.value)}
-          onBlur={commitName}
-          onKeyDown={blurOnEnter}
-        />
-      </label>
-
-      <div className="ex-field">
-        <span>Muscle group</span>
-        <div className="ex-muscles">
-          {CATEGORIES.map((cat) => {
-            const selected = category === cat
-            return (
-              <button
-                key={cat}
-                type="button"
-                className={`ex-muscle ${selected ? 'sel' : ''}`}
-                style={selected ? { background: muscleColor(cat), borderColor: muscleColor(cat) } : undefined}
-                onClick={() => {
-                  if (!selected) {
-                    onPatch({ category: cat })
-                    void haptics.selection()
-                  }
-                }}
-              >
-                {categoryLabel(cat)}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="ws-editor-row">
-        <div className="ex-field">
-          <span>Sets</span>
-          <div className="set-stepper">
-            <button
-              type="button"
-              aria-label="Decrease sets"
-              {...holdStepper.bind(() => adjustSets(-1))}
-            >
-              <Icon name="minus" size={18} />
-            </button>
-            <strong>{sets}</strong>
-            <button
-              type="button"
-              aria-label="Increase sets"
-              {...holdStepper.bind(() => adjustSets(1))}
-            >
-              <Icon name="plus" size={18} />
-            </button>
-          </div>
-        </div>
-        <div className="ex-field">
-          <span>Reps</span>
-          <div className="set-stepper">
-            <button
-              type="button"
-              aria-label="Decrease reps"
-              {...holdStepper.bind(() => adjustReps(-1))}
-            >
-              <Icon name="minus" size={18} />
-            </button>
-            <strong>{reps}</strong>
-            <button
-              type="button"
-              aria-label="Increase reps"
-              {...holdStepper.bind(() => adjustReps(1))}
-            >
-              <Icon name="plus" size={18} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <label className="ex-field">
-        <span>Setup</span>
-        <input
-          className="ws-editor-input"
-          type="text"
-          maxLength={120}
-          placeholder="Seat 4, 20°"
-          value={setupDraft ?? setup}
-          onFocus={() => setSetupDraft(setup)}
-          onChange={(event) => setSetupDraft(event.target.value)}
-          onBlur={commitSetup}
-          onKeyDown={blurOnEnter}
-        />
-      </label>
-
-      <label className="ex-field">
-        <span>Note</span>
-        <input
-          className="ws-editor-input"
-          type="text"
-          maxLength={240}
-          placeholder="Grip felt off; go slower"
-          value={noteDraft ?? (variant.note ?? '')}
-          onFocus={() => setNoteDraft(variant.note ?? '')}
-          onChange={(event) => setNoteDraft(event.target.value)}
-          onBlur={commitNote}
-          onKeyDown={blurOnEnter}
-        />
-      </label>
-
-      <label className="ex-field">
-        <span>Weight (kg)</span>
-        <input
-          className="ws-editor-input"
-          type="number"
-          inputMode="decimal"
-          min={0}
-          value={weightDraft ?? String(weight)}
-          onFocus={() => setWeightDraft(String(weight))}
-          onChange={(event) => setWeightDraft(event.target.value)}
-          onBlur={commitWeight}
-          onKeyDown={blurOnEnter}
-        />
-      </label>
-
-      <div className="ex-field">
-        <span>Weight type</span>
-        <div className="ex-segment" role="group" aria-label="Weight type">
-          <button
-            type="button"
-            className={perHand ? '' : 'sel'}
-            aria-pressed={!perHand}
-            onClick={() => {
-              if (perHand) {
-                onPatch({ perHand: false })
-                void haptics.selection()
-              }
-            }}
-          >
-            Total
-          </button>
-          <button
-            type="button"
-            className={perHand ? 'sel' : ''}
-            aria-pressed={perHand}
-            onClick={() => {
-              if (!perHand) {
-                onPatch({ perHand: true })
-                void haptics.selection()
-              }
-            }}
-          >
-            Per hand
-          </button>
-        </div>
-      </div>
-    </>
-  )
-}
-
-type EditableExerciseItemProps = {
-  id: string
-  variant: ExerciseVariant
-  restSeconds: number
-  hidden: boolean
-  linkedPartnerName?: string
-  isExpanded: boolean
-  canRemove: boolean
-  canLink: boolean
-  canToggleHidden: boolean
-  onToggle: () => void
-  onVariant: (patch: Partial<ExerciseVariant>) => void
-  onRest: (value: number) => void
-  onRemove: () => void
-  onToggleHidden: () => void
-  onLink: () => void
-  onUnlink: () => void
-}
-
-// One exercise, in edit mode: a drag-sortable accordion whose expanded body is the inline editor.
-// Exercises are independent rows (reorderable on their own). Each can be hidden from the workout, and
-// linked to one other as a swap pair via the controls in its footer.
-function EditableExerciseItem(props: EditableExerciseItemProps) {
-  const { id, variant, restSeconds, hidden, linkedPartnerName, isExpanded, canRemove, canLink, canToggleHidden } = props
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const restMinutes = Math.floor(restSeconds / 60)
-  const restSecondsPart = restSeconds % 60
-  const [minDraft, setMinDraft] = useState<string | null>(null)
-  const [secDraft, setSecDraft] = useState<string | null>(null)
-  const restSecondsRef = useRef(restSeconds)
-  restSecondsRef.current = restSeconds
-  const holdStepper = useHoldStepper()
-
-  const adjustRest = (delta: number) => {
-    const next = Math.min(MAX_REST_SECONDS, Math.max(MIN_REST_SECONDS, restSecondsRef.current + delta))
-    if (next === restSecondsRef.current) return false
-    restSecondsRef.current = next
-    props.onRest(next)
-    return true
-  }
-
-  const muscle = muscleColor(variant.category)
-
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    borderColor: isExpanded ? `${muscle}b0` : `${muscle}52`,
-    opacity: isDragging ? 0.75 : 1,
-    zIndex: isDragging ? 5 : undefined,
-    boxShadow: isDragging ? 'var(--shadow)' : undefined,
-  }
-
-  // Rest is edited as separate minutes and seconds windows but stored as one total in seconds.
-  // Commit combines both (whichever isn't being edited falls back to the current value), then clamps
-  // to 10s–10m so a stray entry can't produce an unusable timer.
-  const commitRest = () => {
-    if (minDraft === null && secDraft === null) {
-      return
-    }
-    const mins = Number(minDraft ?? String(restMinutes))
-    const secs = Number(secDraft ?? String(restSecondsPart))
-    if (Number.isFinite(mins) && Number.isFinite(secs)) {
-      const total = Math.max(0, Math.round(mins)) * 60 + Math.max(0, Math.round(secs))
-      const nextRest = clampRestValue(total)
-      if (nextRest !== restSeconds) {
-        props.onRest(nextRest)
-      }
-    } else {
-      void haptics.reject()
-    }
-    setMinDraft(null)
-    setSecDraft(null)
-  }
-
-  return (
-    <article
-      ref={setNodeRef}
-      style={style}
-      id={`exercise-${id}`}
-      className={`ws-item editing${isExpanded ? ' open' : ''}${isDragging ? ' dragging' : ''}${hidden ? ' is-hidden' : ''}`}
-    >
-      <div className="ws-edit-head">
-        <button className="ws-edit-handle" type="button" aria-label="Reorder exercise" {...attributes} {...listeners}>
-          <Icon name="grip" size={18} />
-        </button>
-        <button className="ws-edit-open" type="button" aria-expanded={isExpanded} onClick={props.onToggle}>
-          <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
-          <span className="ws-edit-open-main">
-            <strong>{variant.name}</strong>
-            <small>
-              {categoryLabel(variant.category)} · {variant.sets}×{variant.reps} · rest {formatTimer(restSeconds)}
-              {linkedPartnerName && ` · ⇄ ${linkedPartnerName}`}
-              {hidden && ' · hidden'}
-            </small>
-          </span>
-          <Icon name={isExpanded ? 'up' : 'down'} size={18} />
-        </button>
-      </div>
-
-      <div className="ws-item-body" aria-hidden={!isExpanded} inert={!isExpanded}>
-        <div className="ws-item-body-inner">
-          <div className="ws-editor">
-            <VariantFields variant={variant} onPatch={props.onVariant} />
-
-            <div className="ex-field ex-slot-rest">
-              <span>Rest time</span>
-              <div className="set-stepper rest-stepper">
-                <button
-                  type="button"
-                  aria-label="Decrease rest time"
-                  {...holdStepper.bind(() => adjustRest(-REST_STEP_SECONDS))}
-                >
-                  <Icon name="minus" size={18} />
-                </button>
-                <div className="rest-mmss">
-                  <label className="set-rest-field">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={10}
-                      aria-label="Rest minutes"
-                      value={minDraft ?? String(restMinutes)}
-                      onFocus={() => setMinDraft(String(restMinutes))}
-                      onChange={(event) => setMinDraft(event.target.value)}
-                      onBlur={commitRest}
-                      onKeyDown={blurOnEnter}
-                    />
-                    <span>m</span>
-                  </label>
-                  <label className="set-rest-field">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={59}
-                      aria-label="Rest seconds"
-                      value={secDraft ?? String(restSecondsPart)}
-                      onFocus={() => setSecDraft(String(restSecondsPart))}
-                      onChange={(event) => setSecDraft(event.target.value)}
-                      onBlur={commitRest}
-                      onKeyDown={blurOnEnter}
-                    />
-                    <span>s</span>
-                  </label>
-                </div>
-                <button
-                  type="button"
-                  aria-label="Increase rest time"
-                  {...holdStepper.bind(() => adjustRest(REST_STEP_SECONDS))}
-                >
-                  <Icon name="plus" size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="ex-controls">
-              <button className="ex-control-btn" type="button" disabled={!canToggleHidden} onClick={props.onToggleHidden}>
-                <Icon name={hidden ? 'eye' : 'eye-off'} size={16} />
-                {hidden ? 'Show in workout' : 'Hide from workout'}
-              </button>
-              {linkedPartnerName ? (
-                <div className="ex-linked">
-                  <span className="ex-linked-label">
-                    <Icon name="repeat" size={15} />
-                    Linked to {linkedPartnerName}
-                  </span>
-                  <button className="ex-control-btn" type="button" onClick={props.onUnlink}>
-                    Unlink
-                  </button>
-                </div>
-              ) : (
-                <button className="ex-control-btn" type="button" disabled={!canLink} onClick={props.onLink}>
-                  <Icon name="repeat" size={15} />
-                  Link another exercise
-                </button>
-              )}
-            </div>
-
-            <div className="ex-danger">
-              <button className="ws-editor-remove" type="button" disabled={!canRemove} onClick={props.onRemove}>
-                <Icon name="trash" size={18} />
-                Delete exercise
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
-  )
-}
-
 function App() {
   const [data, setData] = useState<AppData>(loadData)
   templatesRef = data.templates
@@ -1255,6 +714,7 @@ function App() {
     onConfirm: () => void
   } | null>(null)
   const [historyOptionsSessionId, setHistoryOptionsSessionId] = useState<string | null>(null)
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_PAGE_SIZE)
   const [durationDialog, setDurationDialog] = useState<DurationDialog | null>(null)
   const [syncError, setSyncError] = useState('')
   const [syncAttempt, setSyncAttempt] = useState(0)
@@ -1974,22 +1434,10 @@ function App() {
     ? data.sessions.find((session) => session.id === historyOptionsSessionId) ?? null
     : null
 
-  // Drag-to-reorder in edit mode: press-and-hold to start (the standard mobile reorder gesture), so
-  // the interaction is consistent — every drag begins the same way and fires one haptic at drag
-  // start (see onDragStart). A quick flick no longer slips straight into a drag. Keyboard supported.
-  const dragSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
-  const reorderGroups = (workoutId: WorkoutId, event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) {
-      return
-    }
+  const reorderGroups = (workoutId: WorkoutId, activeId: string, overId: string) => {
     const workout = data.templates.find((template) => template.id === workoutId)
-    const oldIndex = workout?.groups.findIndex((group) => group.id === active.id) ?? -1
-    const newIndex = workout?.groups.findIndex((group) => group.id === over.id) ?? -1
+    const oldIndex = workout?.groups.findIndex((group) => group.id === activeId) ?? -1
+    const newIndex = workout?.groups.findIndex((group) => group.id === overId) ?? -1
     if (oldIndex < 0 || newIndex < 0) {
       return
     }
@@ -2000,7 +1448,10 @@ function App() {
         if (template.id !== workoutId) {
           return template
         }
-        return { ...template, groups: arrayMove(template.groups, oldIndex, newIndex) }
+        const groups = [...template.groups]
+        const [moved] = groups.splice(oldIndex, 1)
+        groups.splice(newIndex, 0, moved)
+        return { ...template, groups }
       }),
     }))
     void haptics.dragDrop()
@@ -2099,12 +1550,16 @@ function App() {
   }
 
   const scrollToSession = (sessionId: string) => {
-    const card = document.getElementById(`hist-${sessionId}`)
-    card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    setHighlightSession(sessionId)
+    const index = sortedSessions.findIndex((session) => session.id === sessionId)
+    setHistoryVisibleCount((current) => Math.max(current, historyCountForIndex(index, sortedSessions.length)))
     window.setTimeout(() => {
-      setHighlightSession((current) => (current === sessionId ? null : current))
-    }, 1800)
+      const card = document.getElementById(`hist-${sessionId}`)
+      card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightSession(sessionId)
+      window.setTimeout(() => {
+        setHighlightSession((current) => (current === sessionId ? null : current))
+      }, 1800)
+    }, 0)
   }
 
   const openDurationEditor = (session: WorkoutSession) => {
@@ -2485,6 +1940,8 @@ function App() {
       durations.length > 0
         ? formatWorkoutDuration(durations.reduce((sum, value) => sum + value, 0) / durations.length)
         : '—'
+    const visibleCount = clampHistoryCount(historyVisibleCount, sessions.length)
+    const visibleSessions = sessions.slice(0, visibleCount)
 
     return (
       <Page title={title} onBack={onBack}>
@@ -2543,7 +2000,7 @@ function App() {
             </div>
 
             <div className="hist-list">
-              {sessions.map((session) => {
+              {visibleSessions.map((session) => {
                 const workout = getWorkout(session.workoutId)
                 const doneCount = countDone(session)
                 // Count displayed slots (linked pairs collapse, hidden drop) — same base as countDone,
@@ -2571,6 +2028,16 @@ function App() {
                 )
               })}
             </div>
+            {visibleCount < sessions.length && (
+              <button
+                className="hist-load-more"
+                type="button"
+                onClick={() => setHistoryVisibleCount((current) => nextHistoryCount(current, sessions.length))}
+              >
+                Show older workouts
+                <small>{visibleCount} of {sessions.length} shown</small>
+              </button>
+            )}
           </>
         )}
       </Page>
@@ -2816,44 +2283,37 @@ function App() {
 
         <section className="ws-list" aria-label={`${workout.name} exercises`}>
           {editMode ? (
-            <DndContext
-              sensors={dragSensors}
-              collisionDetection={closestCenter}
-              onDragStart={() => void haptics.dragStart()}
-              onDragEnd={(event) => reorderGroups(workout.id, event)}
-            >
-              <SortableContext items={workout.groups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
-                {workout.groups.map((group) => {
+            <Suspense fallback={<p className="ws-editor-loading" role="status">Loading editor…</p>}>
+              <WorkoutEditorList
+                Icon={Icon}
+                onReorder={(activeId, overId) => reorderGroups(workout.id, activeId, overId)}
+                items={workout.groups.map((group) => {
                   const partner = group.linkId
                     ? workout.groups.find((other) => other.id !== group.id && other.linkId === group.linkId)
                     : undefined
-                  return (
-                    <EditableExerciseItem
-                      key={group.id}
-                      id={group.id}
-                      variant={soleVariant(group)}
-                      restSeconds={group.restSeconds}
-                      hidden={Boolean(group.hidden)}
-                      linkedPartnerName={partner ? soleVariant(partner).name : undefined}
-                      isExpanded={expandedGroupId === group.id}
-                      canRemove={
-                        workout.groups.length > 1 &&
-                        displayedGroups(workout.groups.filter((candidate) => candidate.id !== group.id)).length > 0
-                      }
-                      canLink={!group.linkId && workout.groups.some((other) => other.id !== group.id && !other.linkId)}
-                      canToggleHidden={Boolean(group.hidden) || Boolean(group.linkId) || slots.length > 1}
-                      onToggle={() => toggleExpand(session.id, group.id)}
-                      onVariant={(patch) => editVariant(session.id, group.id, group.activeVariantId, patch)}
-                      onRest={(value) => editGroupRest(group.id, value)}
-                      onRemove={() => removeGroup(workout.id, group.id)}
-                      onToggleHidden={() => toggleHidden(workout.id, group.id)}
-                      onLink={() => setLinkDialog({ workoutId: workout.id, groupId: group.id })}
-                      onUnlink={() => unlinkExercise(workout.id, group.id)}
-                    />
-                  )
+                  return {
+                    id: group.id,
+                    variant: soleVariant(group),
+                    restSeconds: group.restSeconds,
+                    hidden: Boolean(group.hidden),
+                    linkedPartnerName: partner ? soleVariant(partner).name : undefined,
+                    isExpanded: expandedGroupId === group.id,
+                    canRemove:
+                      workout.groups.length > 1 &&
+                      displayedGroups(workout.groups.filter((candidate) => candidate.id !== group.id)).length > 0,
+                    canLink: !group.linkId && workout.groups.some((other) => other.id !== group.id && !other.linkId),
+                    canToggleHidden: Boolean(group.hidden) || Boolean(group.linkId) || slots.length > 1,
+                    onToggle: () => toggleExpand(session.id, group.id),
+                    onVariant: (patch: Partial<ExerciseVariant>) => editVariant(session.id, group.id, group.activeVariantId, patch),
+                    onRest: (value: number) => editGroupRest(group.id, value),
+                    onRemove: () => removeGroup(workout.id, group.id),
+                    onToggleHidden: () => toggleHidden(workout.id, group.id),
+                    onLink: () => setLinkDialog({ workoutId: workout.id, groupId: group.id }),
+                    onUnlink: () => unlinkExercise(workout.id, group.id),
+                  }
                 })}
-              </SortableContext>
-            </DndContext>
+              />
+            </Suspense>
           ) : (
             slots.map(({ group, partner }, index) =>
               renderExerciseRow(workout, session, group, partner, expandedGroupId, index),
@@ -4704,20 +4164,6 @@ function resultLabel(result: ResultStatus | undefined) {
   }
 
   return 'Not marked'
-}
-
-function categoryLabel(category: Category) {
-  const labels: Record<Category, string> = {
-    CHEST: 'Chest',
-    BACK: 'Back',
-    SHOULDERS: 'Shoulders',
-    BICEPS: 'Biceps',
-    TRICEPS: 'Triceps',
-    CORE: 'Core',
-    LEGS: 'Legs',
-  }
-
-  return labels[category]
 }
 
 function syncStatusLabel(status: SyncStatus) {

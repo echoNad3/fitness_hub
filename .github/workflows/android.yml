@@ -55,11 +55,26 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug -PappBuildNumber=${{ github.run_number }}
 
+      - name: Write checksum and release notes
+        run: |
+          cd android/app/build/outputs/apk/debug
+          sha256sum app-debug.apk > app-debug.apk.sha256
+          {
+            echo "Fitness Hub Android debug build ${{ github.run_number }}."
+            echo
+            echo "Change: $(git -C ../../../../../.. log -1 --pretty=%s)"
+            echo "Commit: ${{ github.sha }}"
+            echo
+            echo "The SHA-256 file can verify that the APK downloaded without being changed."
+          } > android-release-notes.md
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: fitness-hub-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -69,7 +84,10 @@ jobs:
           tag_name: android-v${{ github.run_number }}
           name: Android APK build ${{ github.run_number }}
           make_latest: true
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          body_path: android/app/build/outputs/apk/debug/android-release-notes.md
+          files: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/debug/app-debug.apk.sha256
 
       - name: Refresh the deployed Android version metadata
         run: gh workflow run deploy.yml --ref main -f android_build=${{ github.run_number }}

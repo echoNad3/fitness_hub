@@ -40,7 +40,8 @@ Web-interface updates activate in the background and are used on the next app lo
 reload an open workout. Native Android changes still require a new APK.
 
 The current GitHub workflow publishes a debug APK for sideloaded testing. It needs private release
-signing before the APK is treated as a public production release.
+signing before the APK is treated as a public production release. Each release also includes short
+notes and a SHA-256 checksum so the downloaded APK can be verified.
 
 ## Run locally
 
@@ -50,6 +51,7 @@ Requires Node.js 24.
 npm install
 npm run dev
 npm test
+npm run test:e2e
 npm run lint
 npm run build
 ```
@@ -67,9 +69,10 @@ npm run android:open
 
 ## Project map
 
-- `src/App.tsx` — screens, state, and interactions.
+- `src/App.tsx` — app state, screens, and interactions.
+- `src/WorkoutEditorList.tsx` — the lazy-loaded workout editor.
 - `src/*.ts` — tested domain, sync, validation, storage, timer, and update logic.
 - `src/*.css` — the shared design system and screen styles.
 - `android/` — the Capacitor app and native Android plugins.
-- `tests/` — Node unit tests.
+- `tests/` — unit and phone-layout browser tests.
 - `HANDOFF.md` — product rules, architecture, decisions, and current status.

@@ -134,7 +134,7 @@ flashing black with grey bars. **Reorder** in edit mode is drag-and-drop (`@dnd-
   `--soft-shadow` for raised cards/docks. Do not add accent-colored glow shadows.
 
 **Muscle-group colors** ("metallic" theme — user-chosen). Defined in `muscleColors` in
-`src/App.tsx`. Shown as a subtle row outline (~32% alpha, hex suffix `52`), a dot, and the colored
+`src/workoutPresentation.ts`. Shown as a subtle row outline (~32% alpha, hex suffix `52`), a dot, and the colored
 category word; in the editor as selectable chips.
 | Muscle | Color |
 |---|---|
@@ -181,14 +181,19 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
   (Earlier used Local Notifications, but a notification only gives a
   brief light buzz; the user needs a heavy multi-second vibration, hence the native alarm.)
   Node 24. This stack is correct for a one-user phone app — do **not** rewrite it in something else.
-- **Single-component app.** Almost everything is in `src/App.tsx` (one big `App()` component with
-  render helpers + module-level helpers). State is one `data: AppData` object + a `screen` object,
-  both persisted to localStorage on every change via `useEffect`.
+- **Central app with focused modules.** `src/App.tsx` still owns the app state, navigation, screens,
+  dialogs, and persistence. Shared types/presentation helpers are separate, and the heavy drag/drop
+  workout editor is lazy-loaded only when Edit workout is opened. State is one `data: AppData`
+  object + a `screen` object, both persisted to localStorage on every change via `useEffect`.
 
 **File map** (everything else is config/build):
 | File | Role |
 |---|---|
-| `src/App.tsx` | The entire app: types, default workout data, `App()` component, all screens, all logic, dialogs, the `Icon` component (inline SVGs), data builders/migration. |
+| `src/App.tsx` | Main app state, default workout data, screens, dialogs, interactions, the inline-SVG `Icon` component, and data builders/migration. |
+| `src/WorkoutEditorList.tsx` | Lazy-loaded drag/drop workout editor. Keeps the editor and `@dnd-kit` out of the startup bundle until needed. |
+| `src/workoutTypes.ts` / `src/workoutPresentation.ts` | Shared workout types plus the muscle labels/colors used by session and editor UI. |
+| `src/useHoldStepper.ts` | Shared tap/hold behavior for numeric steppers. |
+| `src/historyPagination.ts` | Pure 50-workout History paging rules; stats still use the complete history. |
 | `src/App.css` | `:root` tokens, base button/heading styles, `.empty-state`, and **dialog** styles only. |
 | `src/workout.css` | The workout/session screen (`.ws-*`). |
 | `src/home.css` | The home hub (`.home-*`). |
@@ -212,10 +217,11 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Reads and caches deployed `android-release.json` metadata for the home tile/dialog, with the GitHub API only as a fallback. |
 | `src/pwaUpdates.ts` | Registers the Workbox service worker, actively checks for a new UI bundle on startup/focus/visibility/online plus every five minutes, and activates it silently. The visible page adopts it on its next real load instead of being forcibly reloaded. |
-| `tests/*.test.ts` | Node-native unit tests for domain behavior, backup/data validation, storage failures, and timer restoration (no extra test dependency). |
+| `tests/*.test.ts` | Node-native unit tests for domain behavior, backup/data validation, storage failures, timer restoration, and History paging. |
+| `tests/e2e/responsive-smoke.spec.ts` / `playwright.config.ts` | Browser smoke tests at 360×800 and 412×915 for home, dialogs, Settings, workout/edit mode, overflow, and a 120-workout History. |
 | `scripts/check-supabase-rls.ts` | Release safety probe: anonymously queries `app_state` and fails unless the response is an empty array. |
-| `.github/workflows/deploy.yml` | GitHub Pages pipeline: writes authenticated Android release metadata, tests, verifies live Supabase RLS, lints, builds, uploads, and deploys. |
-| `.github/workflows/android.yml` | Android CI: on native/config/dependency changes, test, Capacitor sync, compile/publish a debug APK, then trigger Pages to refresh release metadata. Web-only changes deploy without manufacturing a new APK update. |
+| `.github/workflows/deploy.yml` | GitHub Pages pipeline: writes authenticated Android release metadata, runs unit and responsive browser tests, verifies live Supabase RLS, lints, builds, uploads, and deploys. |
+| `.github/workflows/android.yml` | Android CI: on native/config/dependency changes, test, Capacitor sync, compile/publish a debug APK with short release notes and a SHA-256 checksum, then trigger Pages to refresh release metadata. Web-only changes deploy without manufacturing a new APK update. |
 | `.github/workflows/keepalive.yml` | Twice-weekly Supabase REST query so the free-tier project never idles 7 days and gets paused. |
 | `capacitor.config.ts` / `android/` | Capacitor app identity/config plus the generated and customized Android Studio project. |
 | `scripts/generate-android-assets.mjs` / `resources/` | Rebuild branded Android launcher icons and legacy splash images from the Fitness Hub SVG sources. Android 12+ uses `drawable/splash_logo.xml`, a true vector derived from `public/app-icon.svg`, not a launcher PNG. |
@@ -604,8 +610,9 @@ live in the commit messages and the feature list below.
   sync direction, migration safety, monotonic timestamps, Android release-tag/cache parsing and
   stale-downloaded-build rejection,
   10-second rest bounds, second-precision History duration bounds, the meaningful-change rule,
-  storage failure reporting, and persisted rest-timer restoration. The deploy pipeline also probes
-  live Supabase RLS and fails unless an anonymous `app_state` query returns exactly zero rows.
+  storage failure reporting, persisted rest-timer restoration, and bounded History paging. The
+  deploy pipeline also runs Playwright at 360×800 and 412×915, then probes live Supabase RLS and
+  fails unless an anonymous `app_state` query returns exactly zero rows.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
@@ -636,6 +643,16 @@ live in the commit messages and the feature list below.
   README and remaining UI copy were rewritten for direct, concise language. Compatible dependencies
   were refreshed; both production and full `npm audit` report zero known vulnerabilities. The narrow
   home tile now says `Android` so its title remains intact at 360px instead of truncating.
+- **Performance and release QoL (2026-07-13)** — History now renders 50 workouts at a time and
+  loads 50 more on request, while totals, analytics, and tracker navigation still use every saved
+  session. The workout editor and its drag/drop dependencies moved into a lazy chunk, reducing the
+  startup JavaScript from about 537 KB to about 486 KB minified and removing Vite's large-chunk
+  warning. Responsive Playwright coverage now protects both the narrow layout and the Pixel 9 Pro
+  XL layout in every deploy. Android releases now include short notes and a SHA-256 checksum beside
+  the APK. Functional `+10s` / `Stop` notification actions were deliberately not added: making them
+  work would change the fragile native alarm/notification state path, so it cannot honestly satisfy
+  the owner's "only if it cannot break the timer" condition without a physical Pixel test. No rest
+  alarm, notification, vibration, channel, receiver, or bridge code changed in this round.
 - **Frontend interaction hardening (2026-07-11 audit)** — the existing visual system and information
   architecture were retained. Dialogs now move focus inside, trap keyboard focus, restore the prior
   focus target, close safely with Escape/back, and scroll within short or keyboard-reduced viewports.
@@ -674,11 +691,11 @@ live in the commit messages and the feature list below.
   data change. The browser console stayed clean. The live Pages site returned HTTP 200, its deployed
   bundle contained the final semantic haptic service and timer waveform, and both Deploy and Android
   workflow badges were passing.
-  Follow-up polish replaced that waveform with four equal strong pulses at 3, 2, 1, and 0
-  seconds remaining. The native exact alarm now starts three seconds before the end, while the web
-  timer starts the same waveform when its wall-clock countdown reaches 3. Sets, reps, rest time,
-  session weight, and increase amount now all share one hold-stepper implementation (380ms delay,
-  110ms repeat, one Selection per real step, silent at bounds).
+  A tested lead-in pulse experiment was removed because web/native version skew could move the
+  alert away from zero. The current native exact alarm and web fallback both start one continuous
+  five-second vibration exactly when the countdown ends. Sets, reps, rest time, session weight, and
+  increase amount all share one hold-stepper implementation (380ms delay, 110ms repeat, one
+  Selection per real step, silent at bounds).
 - **Safety net** — real git repo (the original `.git` was empty/broken). "Undo everything" = ask
   to restore commit `5adba7c`.
 - Removed: the `impeccable` design tool (`.agents`, `.impeccable`, `.codex/hooks.json`), ~600+
@@ -724,7 +741,9 @@ reopen them unless the owner asks:
    permissions added yet.
 
 Keep describing the downloadable APK accurately as a debug sideload build. Everything else planned
-so far has shipped: GitHub Pages, PWA, native wrapper, cloud sync, updater, and the audit rounds in §7.
+so far has shipped: GitHub Pages, PWA, native wrapper, cloud sync, updater, the audit rounds in §7,
+responsive deploy tests, faster startup loading, large-History paging, and verifiable APK downloads.
+Notification actions remain an unapproved physical-device experiment, not missing release work.
 
 **Supabase operational notes:**
 - Project `jrsowjbxenkrmzzknnab.supabase.co`; one row per user in `public.app_state`
@@ -752,6 +771,7 @@ already work for any number of workouts.
 npm install        # if node_modules missing
 npm run dev        # Vite dev server on http://localhost:5173
 npm test           # Node-native domain, validation, storage, and timer tests
+npm run test:e2e   # Phone-layout browser smoke tests (local Chrome; CI installs Chromium)
 npm run security:rls # Confirm anonymous clients cannot read app_state
 npm run build      # tsc -b && vite build  — MUST pass before committing
 npm run lint       # oxlint

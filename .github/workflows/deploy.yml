@@ -53,6 +53,12 @@ jobs:
       - name: Build site
         run: npm run build
 
+      - name: Install browser for responsive tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Test phone layouts and core flows
+        run: npm run test:e2e
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 

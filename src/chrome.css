@@ -32,6 +32,26 @@
   gap: 9px;
 }
 
+.hist-load-more {
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.hist-load-more small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+}
+
 .hist-card {
   scroll-margin-top: calc(70px + env(safe-area-inset-top));
   border-radius: var(--radius-card);
