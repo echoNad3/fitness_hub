@@ -18,7 +18,7 @@ export default defineConfig({
     { name: 'narrow-phone', use: { viewport: { width: 360, height: 800 } } },
     { name: 'pixel-9-pro-xl', use: { viewport: { width: 412, height: 915 } } },
   ],
-  webServer: {
+  webServer: process.env.PLAYWRIGHT_EXTERNAL_SERVER ? undefined : {
     // Launch Vite directly so Playwright owns one process and can stop it cleanly on Windows.
     command: 'node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173',

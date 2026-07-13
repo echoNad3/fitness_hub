@@ -16,6 +16,7 @@ can be changed inside the app.
 - Runs a per-exercise rest timer. The Android app can vibrate while the phone is locked.
 - Saves locally first and works offline. No account is required.
 - Optionally syncs across devices with Supabase.
+- Keeps up to three recovery copies on the device and, when signed in, in the cloud.
 - Exports and imports a JSON backup.
 
 ## Use it
@@ -29,9 +30,12 @@ swap pairs. History shows completion, frequency, and workout duration.
 
 ## Your data
 
-Workout data stays in browser storage unless you sign in. Signed-in data is stored in one private
-Supabase row per account and protected by Row Level Security. Download a backup from Settings before
-clearing browser or app data.
+Workout data saves to the device first. If you sign in, current data and up to three recovery copies
+also sync to your private Supabase account. Fitness Hub creates recovery copies after completed
+workouts and before risky changes. You can also create, restore, or delete them in Settings.
+
+Download a JSON backup before clearing browser or app data. Recovery copies are not included inside
+that file, so backups never contain copies of themselves.
 
 ## Android
 
@@ -72,7 +76,9 @@ npm run android:open
 - `src/App.tsx` — app state, screens, and interactions.
 - `src/WorkoutEditorList.tsx` — the lazy-loaded workout editor.
 - `src/*.ts` — tested domain, sync, validation, storage, timer, and update logic.
+- `src/recovery.ts` — bounded, validated recovery-copy rules and device storage.
 - `src/*.css` — the shared design system and screen styles.
 - `android/` — the Capacitor app and native Android plugins.
+- `supabase/` — repeatable SQL migrations for cloud recovery storage and security.
 - `tests/` — unit and phone-layout browser tests.
 - `HANDOFF.md` — product rules, architecture, decisions, and current status.

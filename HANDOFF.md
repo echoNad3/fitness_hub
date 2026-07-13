@@ -59,6 +59,9 @@ generic SaaS-dashboard look, no childish/gamer styling.**
 - **Rest timer** (default **90s**, was 10s for testing — now a setting).
 - **Everything autosaves** to **localStorage** first. Optional Supabase sign-in syncs that local
   cache across devices; the app remains fully usable without an account or network.
+- Settings keeps up to three recovery copies. Copies are automatic after completed workouts and
+  before risky replacements, can be created/restored/deleted manually, and sync privately across
+  signed-in devices without being nested inside the main workout data.
 - **Edit everything in-app, never return to code:** exercise name, setup, sets, reps, weight,
   muscle group, per-hand, the *previous result*, the *lineup* (add / remove / reorder / replace
   exercises), and settings (rest length). All done; see §7.
@@ -201,6 +204,8 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 | `src/edit.css` | Edit mode + exercise editor (`.ws-edit-*`, `.ws-add`, `.ex-*`). |
 | `src/cloud.ts` / `src/cloudConfig.ts` | Supabase client + connection config (URL + publishable key) for cloud sync. |
 | `src/cloudSync.ts` | Pure timestamp/conflict helpers for deciding pull vs push and protecting existing local data during the sync migration. |
+| `src/recovery.ts` | Pure bounded recovery-copy rules, integrity checks, deduplication, merge/deletion handling, and device persistence. |
+| `supabase/recovery_snapshots.sql` | Repeatable migration for private recovery copies, cross-device deletion records, RLS policies, and server-side retention limits. |
 | `src/restNotifications.ts` / `src/restAlarm.ts` | Schedule/cancel the native locked-screen rest vibration and countdown notification via the custom `RestAlarm` plugin; no-op on web. |
 | `src/appUpdater.ts` | Typed bridge to the native Android updater: start a download, poll progress, and open the installer. |
 | `src/appUpdateLogic.ts` | Pure tested guard that permits the latest/current downloaded APK and, when release metadata is offline, allows only a package-validated same/newer build — never a downgrade. |
@@ -217,9 +222,10 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Reads and caches deployed `android-release.json` metadata for the home tile/dialog, with the GitHub API only as a fallback. |
 | `src/pwaUpdates.ts` | Registers the Workbox service worker, actively checks for a new UI bundle on startup/focus/visibility/online plus every five minutes, and activates it silently. The visible page adopts it on its next real load instead of being forcibly reloaded. |
-| `tests/*.test.ts` | Node-native unit tests for domain behavior, backup/data validation, storage failures, timer restoration, and History paging. |
-| `tests/e2e/responsive-smoke.spec.ts` / `playwright.config.ts` | Browser smoke tests at 360×800 and 412×915 for home, dialogs, Settings, workout/edit mode, overflow, and a 120-workout History. |
-| `scripts/check-supabase-rls.ts` | Release safety probe: anonymously queries `app_state` and fails unless the response is an empty array. |
+| `tests/*.test.ts` | Node-native unit tests for domain behavior, backup/data validation, storage failures, timer restoration, History paging, and recovery-copy rules. |
+| `tests/e2e/responsive-smoke.spec.ts` / `playwright.config.ts` | Browser smoke tests at 360×800 and 412×915 for home, dialogs, Settings/recovery, workout/edit mode, overflow, and a 120-workout History. |
+| `scripts/run-e2e.mjs` | Starts and closes Vite programmatically around Playwright, so `npm run test:e2e` exits cleanly on Windows and CI. |
+| `scripts/check-supabase-rls.ts` | Release safety probe: confirms anonymous clients cannot read current data, recovery copies, or recovery deletion records. |
 | `.github/workflows/deploy.yml` | GitHub Pages pipeline: writes authenticated Android release metadata, runs unit and responsive browser tests, verifies live Supabase RLS, lints, builds, uploads, and deploys. |
 | `.github/workflows/android.yml` | Android CI: on native/config/dependency changes, test, Capacitor sync, compile/publish a debug APK with short release notes and a SHA-256 checksum, then trigger Pages to refresh release metadata. Web-only changes deploy without manufacturing a new APK update. |
 | `.github/workflows/keepalive.yml` | Twice-weekly Supabase REST query so the free-tier project never idles 7 days and gets paused. |
@@ -251,6 +257,10 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
   `fitness-hub-v1` (data), `fitness-hub-v1-screen` (current screen), and
   `fitness-hub-v1-updated-at` (last local/cloud change used for conflict resolution). A running
   countdown uses `fitness-hub-rest-timer` and is removed when the timer stops or finishes.
+- Recovery copies use the separate `fitness-hub-recovery-v1` key. They store only `AppData`, never
+  the recovery store itself, so copies cannot recursively contain other copies. Every copy is size
+  bounded, hashed, deeply validated on load, deduplicated against the newest copy, and pruned to the
+  three newest entries. A failed device write is shown in Settings instead of being treated as saved.
 - Imported JSON must pass `isValidBackup` before it can replace local data. Invalid or structurally
   incomplete templates/sessions are rejected rather than trusted through a TypeScript cast.
 - TypeScript is strict (`noUnusedLocals`): unused functions/locals **fail the build**. Remove dead
@@ -302,6 +312,12 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
     **not** auto-resolve — it shows a "Choose which data to keep" dialog (use account / keep this
     device), so neither side is silently overwritten. `resolveSyncConflict` then pulls or pushes and
     records the account. Continuations, empty devices, and brand-new accounts skip the prompt.
+- Recovery sync is separate from the current-data row, so it cannot slow or enlarge normal workout
+  writes. `public.app_recovery_snapshots` holds the three newest copies per account;
+  `public.app_recovery_deletions` keeps the latest 20 deletion records so an old offline device cannot
+  resurrect a deleted copy. Both tables use owner-only RLS. Invalid remote copies are discarded.
+  Restoring first saves the current data; cloud/device replacement, import, reset, saved workout
+  edits, and workout deletion also create a safety copy when that state is not already newest.
 - Rest countdown state is wall-clock based (`restEndsAt`), not interval-count based. This prevents
   a suspended/locked app from resuming with a stale countdown. **One timestamp rule:** the exact
   alarm, the countdown notification, and the in-app timer all target `endsAt` — no lead-ins or
@@ -610,9 +626,11 @@ live in the commit messages and the feature list below.
   sync direction, migration safety, monotonic timestamps, Android release-tag/cache parsing and
   stale-downloaded-build rejection,
   10-second rest bounds, second-precision History duration bounds, the meaningful-change rule,
-  storage failure reporting, persisted rest-timer restoration, and bounded History paging. The
+  storage failure reporting, persisted rest-timer restoration, bounded History paging, and recovery
+  copy retention/deduplication/validation/offline-deletion merging. The
   deploy pipeline also runs Playwright at 360×800 and 412×915, then probes live Supabase RLS and
-  fails unless an anonymous `app_state` query returns exactly zero rows.
+  fails unless anonymous clients can read no rows from current data, recovery copies, or recovery
+  deletion records.
 - **Consistency polish** — home accent glow was removed, shared glow/depth/radius/focus tokens now
   drive every screen, dialogs reserve filled blue for the primary action, and compact icon targets
   are 42px. Phone audit covered home, workout, history, settings, edit mode, and the editor dialog.
@@ -653,6 +671,17 @@ live in the commit messages and the feature list below.
   work would change the fragile native alarm/notification state path, so it cannot honestly satisfy
   the owner's "only if it cannot break the timer" condition without a physical Pixel test. No rest
   alarm, notification, vibration, channel, receiver, or bridge code changed in this round.
+- **Automatic recovery copies (2026-07-13)** — Settings now exposes the three newest validated
+  safety copies with their reason, exact time, routine count, and History count. The app creates one
+  after a completed workout and before imports, resets, cloud replacements, saved workout edits,
+  workout deletions, and restores; identical consecutive states are not duplicated. A restore first
+  preserves the current state; destructive replacement/deletion paths stop without changing data if
+  that safety copy cannot be stored. Deletion is confirmed, storage failures are visible, and signed-in
+  copies merge across devices while working offline. Cloud deletion records stop stale offline
+  devices from bringing removed copies back. The live Supabase migration is applied: 2 RLS-enabled
+  tables, 7 owner-only policies, and 2 retention triggers. Unit/lint/strict-build checks pass; all 4
+  responsive browser tests pass at 360×800 and 412×915; both sizes were visually checked with no
+  clipping or overflow; and the live anonymous RLS probe passes for all three app-data tables.
 - **Frontend interaction hardening (2026-07-11 audit)** — the existing visual system and information
   architecture were retained. Dialogs now move focus inside, trap keyboard focus, restore the prior
   focus target, close safely with Escape/back, and scroll within short or keyboard-reduced viewports.
@@ -741,14 +770,17 @@ reopen them unless the owner asks:
    permissions added yet.
 
 Keep describing the downloadable APK accurately as a debug sideload build. Everything else planned
-so far has shipped: GitHub Pages, PWA, native wrapper, cloud sync, updater, the audit rounds in §7,
-responsive deploy tests, faster startup loading, large-History paging, and verifiable APK downloads.
+so far has shipped: GitHub Pages, PWA, native wrapper, cloud sync, recovery copies, updater, the audit
+rounds in §7, responsive deploy tests, faster startup loading, large-History paging, and verifiable APK downloads.
 Notification actions remain an unapproved physical-device experiment, not missing release work.
 
 **Supabase operational notes:**
 - Project `jrsowjbxenkrmzzknnab.supabase.co`; one row per user in `public.app_state`
   (`user_id uuid pk`, `data jsonb`, `updated_at timestamptz`), RLS restricts each row to its owner.
   The URL + publishable key in `src/cloudConfig.ts` are public-safe.
+- `public.app_recovery_snapshots` stores at most three owner-only copies per account;
+  `public.app_recovery_deletions` stores at most 20 owner-only deletion records. The repeatable setup
+  SQL is `supabase/recovery_snapshots.sql`. It was applied and verified on 2026-07-13.
 - The free tier pauses the project after 7 idle days. `.github/workflows/keepalive.yml` queries the
   REST API twice a week to prevent that. A paused project must be resumed once by the user from the
   Supabase dashboard. GitHub suspends cron workflows in repos with no commits for 60 days — it
@@ -772,7 +804,7 @@ npm install        # if node_modules missing
 npm run dev        # Vite dev server on http://localhost:5173
 npm test           # Node-native domain, validation, storage, and timer tests
 npm run test:e2e   # Phone-layout browser smoke tests (local Chrome; CI installs Chromium)
-npm run security:rls # Confirm anonymous clients cannot read app_state
+npm run security:rls # Confirm anonymous clients cannot read current or recovery data
 npm run build      # tsc -b && vite build  — MUST pass before committing
 npm run lint       # oxlint
 npm run android:sync # Build with the Capacitor base path and sync Android assets/plugins

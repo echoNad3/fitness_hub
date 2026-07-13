@@ -12,8 +12,8 @@
     "generate-android-assets": "node scripts/generate-android-assets.mjs",
     "lint": "oxlint",
     "security:rls": "node --experimental-strip-types scripts/check-supabase-rls.ts",
-    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts tests/cloudSync.test.ts tests/apkVersion.test.ts tests/timeFormat.test.ts tests/storage.test.ts tests/restTimerState.test.ts tests/historyPagination.test.ts",
-    "test:e2e": "playwright test",
+    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts tests/cloudSync.test.ts tests/apkVersion.test.ts tests/timeFormat.test.ts tests/storage.test.ts tests/restTimerState.test.ts tests/historyPagination.test.ts tests/recovery.test.ts",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

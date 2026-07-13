@@ -7,7 +7,17 @@ import './workout.css'
 import './home.css'
 import './chrome.css'
 import './edit.css'
-import { loadCloudState, saveCloudState, supabase, type CloudState } from './cloud'
+import {
+  deleteCloudRecoverySnapshots,
+  loadCloudRecoveryDeletedIds,
+  loadCloudRecoverySnapshots,
+  loadCloudState,
+  saveCloudRecoverySnapshots,
+  saveCloudRecoveryDeletedIds,
+  saveCloudState,
+  supabase,
+  type CloudState,
+} from './cloud'
 import {
   chooseSyncDirection,
   hasMeaningfulLocalData,
@@ -41,6 +51,21 @@ import { getStored, removeStored, setStored } from './storage'
 import { haptics } from './haptics'
 import { checkForAppUpdate } from './pwaUpdates'
 import { parseStoredRestTimer } from './restTimerState'
+import {
+  addRecoverySnapshot,
+  automaticRecoveryDue,
+  createRecoverySnapshot,
+  deleteRecoverySnapshot,
+  loadRecoveryStore,
+  mergeRecoverySnapshots,
+  normalizeRecoverySnapshots,
+  persistRecoveryStore,
+  recoveryDataHash,
+  recoveryReasonLabel,
+  type RecoveryReason,
+  type RecoverySnapshot,
+  type RecoveryStore,
+} from './recovery'
 import {
   HISTORY_PAGE_SIZE,
   clampHistoryCount,
@@ -175,6 +200,8 @@ type CloudUser = {
 }
 
 type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'conflict'
+type RecoverySyncStatus = 'device-only' | 'syncing' | 'synced' | 'error'
+type RecoveryDialog = { mode: 'list' } | { mode: 'details'; id: string }
 type AppUpdateUiState =
   | AppUpdateState
   | { status: 'checking' | 'unsupported'; progress: number; detail?: string; build?: number }
@@ -711,7 +738,8 @@ function App() {
     message: string
     confirmLabel: string
     danger?: boolean
-    onConfirm: () => void
+    onConfirm: () => boolean | void
+    onCancel?: () => void
   } | null>(null)
   const [historyOptionsSessionId, setHistoryOptionsSessionId] = useState<string | null>(null)
   const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_PAGE_SIZE)
@@ -746,6 +774,12 @@ function App() {
   // Inline result note for the Export/Import backup rows (shown in place of the row subtitle, like
   // the Test vibration row) — the app never uses browser alert/confirm popups.
   const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
+  const [recoveryStore, setRecoveryStore] = useState<RecoveryStore>(() => loadRecoveryStore(isValidBackup))
+  const [recoveryDialog, setRecoveryDialog] = useState<RecoveryDialog | null>(null)
+  const [recoverySyncStatus, setRecoverySyncStatus] = useState<RecoverySyncStatus>('device-only')
+  const [recoveryError, setRecoveryError] = useState('')
+  const [recoveryLocalError, setRecoveryLocalError] = useState(false)
+  const [recoveryMessage, setRecoveryMessage] = useState('')
   const [storageError, setStorageError] = useState(false)
   const [latestApk, setLatestApk] = useState<LatestApk | null>(readCachedLatestApk)
   const [appUpdateState, setAppUpdateState] = useState<AppUpdateUiState>({ status: 'checking', progress: 0 })
@@ -767,6 +801,10 @@ function App() {
   const restDurationRef = useRef(restDuration)
   restDurationRef.current = restDuration
   const syncTimer = useRef<number | null>(null)
+  const recoverySyncTimer = useRef<number | null>(null)
+  const recoverySyncRunningRef = useRef(false)
+  const recoverySyncQueuedRef = useRef(false)
+  const recoveryRevisionRef = useRef(0)
   const manualSyncPendingRef = useRef(false)
   const scrollPositionsRef = useRef(data.scrollBySession)
   scrollPositionsRef.current = data.scrollBySession
@@ -789,6 +827,7 @@ function App() {
     confirmDialog !== null ||
     historyOptionsSessionId !== null ||
     durationDialog !== null ||
+    recoveryDialog !== null ||
     syncConflict !== null ||
     startDialogOpen
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
@@ -809,10 +848,13 @@ function App() {
   dataRef.current = data
   const cloudUserRef = useRef(cloudUser)
   cloudUserRef.current = cloudUser
+  const recoveryStoreRef = useRef(recoveryStore)
+  recoveryStoreRef.current = recoveryStore
   const lastPersistedDataRef = useRef(data)
   const applyingRemoteTimestampRef = useRef<number | null>(null)
   const syncReadyRef = useRef(false)
   const queueCloudPushRef = useRef<() => void>(() => undefined)
+  const queueRecoverySyncRef = useRef<() => void>(() => undefined)
   const [initialSyncTimestamp] = useState(() => {
     const initialData = buildInitialData()
     return initialLocalTimestamp(
@@ -884,6 +926,127 @@ function App() {
     }, SYNC_DEBOUNCE_MS)
   }
 
+  const applyRecoveryStore = (next: RecoveryStore, changedLocally: boolean) => {
+    const persisted = persistRecoveryStore(next)
+    setRecoveryLocalError(!persisted)
+    if (!persisted) return false
+
+    recoveryStoreRef.current = next
+    setRecoveryStore(next)
+    if (changedLocally) {
+      setRecoveryError('')
+      recoveryRevisionRef.current += 1
+      queueRecoverySyncRef.current()
+    }
+    return true
+  }
+
+  const storeRecoveryCopy = (
+    reason: RecoveryReason,
+    sourceData: AppData = dataRef.current,
+  ) => {
+    try {
+      const snapshot = createRecoverySnapshot(sourceData, reason, { id: createId(), now: Date.now() })
+      const result = addRecoverySnapshot(recoveryStoreRef.current, snapshot)
+      if (!result.created) return 'unchanged' as const
+      if (!applyRecoveryStore(result.store, true)) {
+        setRecoveryError('Recovery copy could not be saved on this device.')
+        return 'error' as const
+      }
+      return 'created' as const
+    } catch (error) {
+      setRecoveryError(errorMessage(error))
+      return 'error' as const
+    }
+  }
+
+  const syncRecoveryCopies = async () => {
+    const user = cloudUserRef.current
+    if (!supabase || !user) {
+      setRecoverySyncStatus('device-only')
+      return
+    }
+    if (recoverySyncRunningRef.current) {
+      recoverySyncQueuedRef.current = true
+      return
+    }
+
+    recoverySyncRunningRef.current = true
+    recoverySyncQueuedRef.current = false
+    setRecoverySyncStatus('syncing')
+    setRecoveryError('')
+    const revision = recoveryRevisionRef.current
+    const local = recoveryStoreRef.current
+
+    try {
+      const [remoteRaw, remoteDeletedIds] = await Promise.all([
+        loadCloudRecoverySnapshots(user.id),
+        loadCloudRecoveryDeletedIds(user.id),
+      ])
+      const remote = normalizeRecoverySnapshots(remoteRaw, isValidBackup)
+      const knownDeletedIds = [...new Set([...remoteDeletedIds, ...local.deletedIds])]
+      const merged = mergeRecoverySnapshots(local.copies, remote, knownDeletedIds)
+      const keptIds = new Set(merged.copies.map((copy) => copy.id))
+      const remoteIds = remoteRaw.flatMap((value) =>
+        isRecord(value) && typeof value.id === 'string' ? [value.id] : [],
+      )
+      const deleteIds = [...new Set([
+        ...knownDeletedIds,
+        ...merged.prunedIds,
+        ...remoteIds.filter((id) => !keptIds.has(id)),
+      ])]
+
+      await saveCloudRecoverySnapshots(user.id, merged.copies)
+      await saveCloudRecoveryDeletedIds(user.id, deleteIds)
+      await deleteCloudRecoverySnapshots(user.id, deleteIds)
+      if (cloudUserRef.current?.id !== user.id) return
+
+      const changedWhileSyncing = recoveryRevisionRef.current !== revision
+      const current = recoveryStoreRef.current
+      const currentMerged = mergeRecoverySnapshots(current.copies, merged.copies, current.deletedIds)
+      const stored = applyRecoveryStore(
+        {
+          copies: currentMerged.copies,
+          deletedIds: changedWhileSyncing
+            ? [...new Set([...current.deletedIds, ...currentMerged.prunedIds])]
+            : [],
+        },
+        false,
+      )
+      if (!stored) throw new Error('Recovery copies could not be saved on this device.')
+
+      if (changedWhileSyncing) {
+        recoverySyncQueuedRef.current = true
+      } else {
+        setRecoverySyncStatus('synced')
+      }
+    } catch (error) {
+      if (cloudUserRef.current?.id === user.id) {
+        setRecoverySyncStatus('error')
+        setRecoveryError(errorMessage(error))
+      }
+    } finally {
+      recoverySyncRunningRef.current = false
+      if (recoverySyncQueuedRef.current && cloudUserRef.current?.id === user.id) {
+        recoverySyncQueuedRef.current = false
+        queueRecoverySyncRef.current()
+      }
+    }
+  }
+
+  queueRecoverySyncRef.current = () => {
+    if (!supabase || !cloudUserRef.current) {
+      setRecoverySyncStatus('device-only')
+      return
+    }
+    if (recoverySyncTimer.current !== null) window.clearTimeout(recoverySyncTimer.current)
+    setRecoverySyncStatus('syncing')
+    recoverySyncTimer.current = window.setTimeout(() => {
+      recoverySyncTimer.current = null
+      void syncRecoveryCopies()
+    }, 450)
+  }
+
   // Inline Settings notes (vibration test, backup results) clear themselves after a few seconds, so
   // the rows return to their normal descriptions without needing a dismiss control.
   useEffect(() => {
@@ -901,6 +1064,12 @@ function App() {
     const id = window.setTimeout(() => setBackupMessage(null), 5000)
     return () => window.clearTimeout(id)
   }, [backupMessage])
+
+  useEffect(() => {
+    if (!recoveryMessage) return
+    const id = window.setTimeout(() => setRecoveryMessage(''), 5000)
+    return () => window.clearTimeout(id)
+  }, [recoveryMessage])
 
   // The native splash stays up (launchAutoHide: false) until the real UI has mounted, so launch is
   // logo-on-background the whole way. Old APKs without the plugin reject the call — ignored.
@@ -1029,6 +1198,14 @@ function App() {
       return
     }
 
+    const completedNow = data.sessions.some((session) => {
+      const prior = previous.sessions.find((candidate) => candidate.id === session.id)
+      return session.finishedAt !== undefined && prior?.finishedAt === undefined
+    })
+    if (completedNow && automaticRecoveryDue(recoveryStoreRef.current.copies, Date.now())) {
+      storeRecoveryCopy('automatic', data)
+    }
+
     const updatedAt = nextLocalTimestamp(localUpdatedAtRef.current, Date.now())
     localUpdatedAtRef.current = updatedAt
     setStored(LOCAL_UPDATED_KEY, String(updatedAt))
@@ -1038,6 +1215,15 @@ function App() {
   useEffect(() => {
     if (localUpdatedAtRef.current > 0 && !getStored(LOCAL_UPDATED_KEY)) {
       setStored(LOCAL_UPDATED_KEY, String(localUpdatedAtRef.current))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (
+      recoveryStoreRef.current.copies.length === 0 &&
+      hasMeaningfulLocalData(dataRef.current, buildInitialData())
+    ) {
+      storeRecoveryCopy('automatic', dataRef.current)
     }
   }, [])
 
@@ -1124,6 +1310,12 @@ function App() {
             throw new Error('Cloud data is invalid. Local data was not changed.')
           }
 
+          if (hasMeaningfulLocalData(dataRef.current, buildInitialData())) {
+            if (storeRecoveryCopy('before-cloud-replace', dataRef.current) === 'error') {
+              throw new Error('Recovery copy could not be saved. Device data was not changed.')
+            }
+          }
+
           applyingRemoteTimestampRef.current = remoteUpdatedAt
           localUpdatedAtRef.current = remoteUpdatedAt
           setStored(LOCAL_UPDATED_KEY, String(remoteUpdatedAt))
@@ -1150,6 +1342,11 @@ function App() {
         const pushedAt = localUpdatedAt > 0 ? localUpdatedAt : Date.now()
         localUpdatedAtRef.current = pushedAt
         setStored(LOCAL_UPDATED_KEY, String(pushedAt))
+        if (remote && isValidBackup(remote.data)) {
+          if (storeRecoveryCopy('before-cloud-replace', normalizeData(remote.data)) === 'error') {
+            throw new Error('Recovery copy could not be saved. Account data was not changed.')
+          }
+        }
         await saveCloudState(cloudUserId, dataRef.current, pushedAt)
         if (cancelled) {
           return
@@ -1179,6 +1376,19 @@ function App() {
     return () => {
       cancelled = true
     }
+  }, [cloudUserId, syncAttempt])
+
+  useEffect(() => {
+    if (!cloudUserId || !supabase) {
+      if (recoverySyncTimer.current !== null) {
+        window.clearTimeout(recoverySyncTimer.current)
+        recoverySyncTimer.current = null
+      }
+      setRecoverySyncStatus('device-only')
+      setRecoveryError('')
+      return
+    }
+    queueRecoverySyncRef.current()
   }, [cloudUserId, syncAttempt])
 
   useEffect(() => {
@@ -1246,12 +1456,14 @@ function App() {
                   setData((current) => ({ ...current, templates: snapshot.templates, sessions: snapshot.sessions }))
                 }
                 setEditMode(false)
+                editSnapshotRef.current = null
                 setConfirmDialog(null)
               },
             })
             return
           }
           setEditMode(false)
+          editSnapshotRef.current = null
         }
         return
       }
@@ -1420,6 +1632,9 @@ function App() {
       if (syncTimer.current !== null) {
         window.clearTimeout(syncTimer.current)
       }
+      if (recoverySyncTimer.current !== null) {
+        window.clearTimeout(recoverySyncTimer.current)
+      }
       if (downloadReadyTimerRef.current !== null) {
         window.clearTimeout(downloadReadyTimerRef.current)
       }
@@ -1481,22 +1696,31 @@ function App() {
     setSyncStatus('checking')
     setSyncError('')
     try {
-      setStored(SYNCED_ACCOUNT_KEY, userId)
       if (keep === 'account') {
+        if (hasMeaningfulLocalData(dataRef.current, buildInitialData())) {
+          if (storeRecoveryCopy('before-cloud-replace', dataRef.current) === 'error') {
+            throw new Error('Recovery copy could not be saved. Device data was not changed.')
+          }
+        }
         applyingRemoteTimestampRef.current = conflict.remoteUpdatedAt
         localUpdatedAtRef.current = conflict.remoteUpdatedAt
         setStored(LOCAL_UPDATED_KEY, String(conflict.remoteUpdatedAt))
         syncReadyRef.current = true
+        setStored(SYNCED_ACCOUNT_KEY, userId)
         setData(normalizeData(conflict.remote.data))
         setSyncStatus('synced')
         markSynced()
         void haptics.confirm()
       } else {
+        if (storeRecoveryCopy('before-cloud-replace', normalizeData(conflict.remote.data)) === 'error') {
+          throw new Error('Recovery copy could not be saved. Account data was not changed.')
+        }
         const pushedAt = Math.max(localUpdatedAtRef.current, Date.now())
         localUpdatedAtRef.current = pushedAt
         setStored(LOCAL_UPDATED_KEY, String(pushedAt))
         await saveCloudState(userId, dataRef.current, pushedAt)
         syncReadyRef.current = true
+        setStored(SYNCED_ACCOUNT_KEY, userId)
         setSyncStatus('synced')
         markSynced()
         void haptics.confirm()
@@ -1538,6 +1762,7 @@ function App() {
     setConfirmDialog(null)
     setHistoryOptionsSessionId(null)
     setDurationDialog(null)
+    setRecoveryDialog(null)
     if (syncConflictRef.current) {
       setSyncConflict(null)
       setSyncStatus('idle')
@@ -2172,9 +2397,96 @@ function App() {
     void haptics.confirm()
   }
 
+  const recoveryCountLabel = (() => {
+    const count = recoveryStore.copies.length
+    if (count === 0) return 'No recovery copies yet'
+    const copies = `${count} ${count === 1 ? 'copy' : 'copies'}`
+    if (!cloudUser) return `${copies} on this device`
+    if (recoverySyncStatus === 'syncing') return `${copies} · Syncing…`
+    if (recoverySyncStatus === 'error') return `${copies} · Cloud sync paused`
+    if (recoverySyncStatus === 'synced') return `${copies} · Cloud synced`
+    return `${copies} on this device`
+  })()
+
+  const createManualRecoveryCopy = () => {
+    setRecoveryError('')
+    const result = storeRecoveryCopy('manual')
+    if (result === 'created') {
+      setRecoveryMessage('Recovery copy created.')
+      void haptics.confirm()
+    } else if (result === 'unchanged') {
+      setRecoveryMessage('Latest copy is already current.')
+      void haptics.selection()
+    } else {
+      void haptics.reject()
+    }
+  }
+
+  const recoveryCopyIsCurrent = (copy: RecoverySnapshot) => {
+    try {
+      return recoveryDataHash(dataRef.current).hash === recoveryDataHash(normalizeData(copy.data)).hash
+    } catch {
+      return false
+    }
+  }
+
+  const restoreRecoveryCopy = (copy: RecoverySnapshot) => {
+    setRecoveryDialog(null)
+    setConfirmDialog({
+      title: 'Restore this copy?',
+      message: `${formatAbsolute(copy.createdAt)}. Your current data will be saved first.`,
+      confirmLabel: 'Restore',
+      onCancel: () => setRecoveryDialog({ mode: 'details', id: copy.id }),
+      onConfirm: () => {
+        if (!isValidBackup(copy.data) || storeRecoveryCopy('before-restore') === 'error') {
+          setConfirmDialog(null)
+          setRecoveryDialog({ mode: 'details', id: copy.id })
+          return false
+        }
+        setData(normalizeData(copy.data))
+        setRecoveryMessage('Recovery copy restored.')
+        setConfirmDialog(null)
+      },
+    })
+  }
+
+  const confirmRecoveryCopyDeletion = (copy: RecoverySnapshot) => {
+    setRecoveryDialog(null)
+    setConfirmDialog({
+      title: 'Delete recovery copy?',
+      message: cloudUser
+        ? 'This removes it from this device and your account.'
+        : 'This removes it from this device.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onCancel: () => setRecoveryDialog({ mode: 'details', id: copy.id }),
+      onConfirm: () => {
+        const deleted = applyRecoveryStore(deleteRecoverySnapshot(recoveryStoreRef.current, copy.id), true)
+        if (!deleted) {
+          setRecoveryError('Recovery copy could not be deleted on this device.')
+          setConfirmDialog(null)
+          setRecoveryDialog({ mode: 'details', id: copy.id })
+          return false
+        }
+        setRecoveryMessage('Recovery copy deleted.')
+        setConfirmDialog(null)
+      },
+    })
+  }
+
   const renderSettings = () => (
     <Page title="Settings" onBack={() => goBack({ name: 'main' })}>
       <div className="set-list">
+        <button className="set-row" type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
+          <span className="set-main">
+            <strong>Recovery copies</strong>
+            <small className={recoveryLocalError ? 'set-note-error' : undefined} role="status">
+              {recoveryMessage || (recoveryLocalError ? 'Device save paused' : recoveryCountLabel)}
+            </small>
+          </span>
+          <Icon name="history" />
+        </button>
+
         <button className="set-row" type="button" onClick={exportData}>
           <span className="set-main">
             <strong>Download backup</strong>
@@ -2260,9 +2572,22 @@ function App() {
             onClick={() => {
               if (editMode) {
                 if (editDirty) {
+                  const snapshot = editSnapshotRef.current
+                  if (snapshot) {
+                    const recoveryResult = storeRecoveryCopy('before-workout-edit', {
+                      ...dataRef.current,
+                      templates: snapshot.templates,
+                      sessions: snapshot.sessions,
+                    })
+                    if (recoveryResult === 'error') {
+                      void haptics.reject()
+                      return
+                    }
+                  }
                   void haptics.confirm()
                 }
                 setEditMode(false)
+                editSnapshotRef.current = null
               } else {
                 editSnapshotRef.current = { templates: data.templates, sessions: data.sessions }
                 setEditDirty(false)
@@ -2747,6 +3072,12 @@ function App() {
       confirmLabel: 'Delete',
       danger: true,
       onConfirm: () => {
+        if (storeRecoveryCopy('before-workout-delete') === 'error') {
+          setConfirmDialog((current) => current
+            ? { ...current, message: 'Recovery copy could not be saved. Nothing was deleted.' }
+            : current)
+          return false
+        }
         setData((current) => ({
           ...current,
           sessions: current.sessions.filter((session) => session.id !== sessionId),
@@ -3217,6 +3548,11 @@ function App() {
         if (!isValidBackup(parsed)) {
           throw new Error('Invalid Fitness Hub backup')
         }
+        if (storeRecoveryCopy('before-import') === 'error') {
+          void haptics.reject()
+          setBackupMessage({ target: 'import', text: 'Recovery copy failed. Nothing imported.', error: true })
+          return
+        }
         setData(normalizeData(parsed))
         void haptics.confirm()
         setBackupMessage({ target: 'import', text: 'Backup imported.' })
@@ -3239,6 +3575,12 @@ function App() {
       confirmLabel: 'Reset',
       danger: true,
       onConfirm: () => {
+        if (storeRecoveryCopy('before-reset') === 'error') {
+          setConfirmDialog((current) => current
+            ? { ...current, message: 'Recovery copy could not be saved. Nothing was reset.' }
+            : current)
+          return false
+        }
         setData(buildInitialData())
         setConfirmDialog(null)
       },
@@ -3368,6 +3710,126 @@ function App() {
           Changes are not being saved. Export a backup before closing the app.
         </p>
       )}
+      {recoveryDialog &&
+        (() => {
+          if (recoveryDialog.mode === 'list') {
+            const statusLabel =
+              recoveryStore.copies.length === 0
+                ? 'No copies yet'
+                : !cloudUser
+                  ? 'Saved on this device'
+                  : recoverySyncStatus === 'syncing'
+                    ? 'Syncing copies…'
+                    : recoverySyncStatus === 'synced'
+                      ? 'Cloud synced'
+                      : recoverySyncStatus === 'error'
+                        ? 'Cloud sync paused'
+                        : 'Saved on this device'
+            const statusClass = cloudUser ? recoverySyncStatus : 'device-only'
+            return (
+              <Dialog title="Recovery copies">
+                <p className="dialog-help">
+                  Fitness Hub keeps the three most recent copies after completed workouts and before risky changes.
+                </p>
+                <div className="account-status recovery-status">
+                  <span className={`sync-status ${statusClass}`} aria-live="polite">
+                    <i aria-hidden="true" />
+                    {statusLabel}
+                  </span>
+                  <small>
+                    {cloudUser
+                      ? 'Available on your other signed-in devices.'
+                      : 'Sign in to sync copies to your other devices.'}
+                  </small>
+                  {recoveryLocalError && (
+                    <span className="cloud-error" role="alert">Device storage is full or unavailable.</span>
+                  )}
+                  {recoveryError && !recoveryLocalError && (
+                    <span className="cloud-error" role="alert">
+                      {recoverySyncStatus === 'error'
+                        ? 'Cloud sync paused. Device copies are still safe.'
+                        : recoveryError}
+                    </span>
+                  )}
+                </div>
+                {recoveryMessage && <p className="dialog-help recovery-message" role="status">{recoveryMessage}</p>}
+                <div className="choice-list">
+                  <button className="choice" type="button" onClick={createManualRecoveryCopy}>
+                    <Icon name="plus" size={18} />
+                    <span>Create copy now</span>
+                  </button>
+                  {recoveryStore.copies.map((copy) => (
+                    <button
+                      className="choice recovery-choice"
+                      type="button"
+                      key={copy.id}
+                      onClick={() => setRecoveryDialog({ mode: 'details', id: copy.id })}
+                    >
+                      <span className="recovery-choice-main">
+                        <strong>{recoveryReasonLabel(copy.reason)}</strong>
+                        <small>{formatAbsolute(copy.createdAt)}</small>
+                      </span>
+                      <Icon name="forward" size={18} />
+                    </button>
+                  ))}
+                </div>
+                {recoveryStore.copies.length === 0 && (
+                  <p className="dialog-help recovery-empty">Create one now or complete a workout.</p>
+                )}
+                <button className="choice-cancel" type="button" onClick={() => setRecoveryDialog(null)}>
+                  Close
+                </button>
+              </Dialog>
+            )
+          }
+
+          const copy = recoveryStore.copies.find((candidate) => candidate.id === recoveryDialog.id)
+          if (!copy) {
+            return (
+              <Dialog title="Recovery copy">
+                <p className="dialog-help">This copy is no longer available.</p>
+                <button className="choice-cancel" type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
+                  Back
+                </button>
+              </Dialog>
+            )
+          }
+
+          const copyData = normalizeData(copy.data)
+          const historyCount = copyData.sessions.length
+          const routineCount = copyData.templates.length
+          const alreadyCurrent = recoveryCopyIsCurrent(copy)
+          return (
+            <Dialog title="Recovery copy">
+              <div className="recovery-detail">
+                <strong>{recoveryReasonLabel(copy.reason)}</strong>
+                <span>{formatAbsolute(copy.createdAt)}</span>
+                <small>
+                  {routineCount} {routineCount === 1 ? 'routine' : 'routines'} · {historyCount}{' '}
+                  {historyCount === 1 ? 'history entry' : 'history entries'}
+                </small>
+              </div>
+              <p className="dialog-help">Restoring replaces your current data. A copy of it is saved first.</p>
+              <div className="dialog-actions">
+                <button type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
+                  Back
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  disabled={alreadyCurrent}
+                  onClick={() => restoreRecoveryCopy(copy)}
+                >
+                  {alreadyCurrent ? 'Already current' : 'Restore'}
+                </button>
+              </div>
+              <button className="choice failed recovery-delete" type="button" onClick={() => confirmRecoveryCopyDeletion(copy)}>
+                <Icon name="trash" size={18} />
+                <span>Delete copy</span>
+              </button>
+            </Dialog>
+          )
+        })()}
       {authDialog && (
         <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'}>
           <label className="ex-field">
@@ -3675,15 +4137,22 @@ function App() {
         <Dialog title={confirmDialog.title}>
           <p className="dialog-help">{confirmDialog.message}</p>
           <div className="dialog-actions">
-            <button type="button" onClick={() => setConfirmDialog(null)}>
+            <button
+              type="button"
+              onClick={() => {
+                const onCancel = confirmDialog.onCancel
+                setConfirmDialog(null)
+                onCancel?.()
+              }}
+            >
               Cancel
             </button>
             <button
               className={confirmDialog.danger ? 'danger-action' : 'primary-action'}
               type="button"
               onClick={() => {
-                confirmDialog.onConfirm()
-                void haptics.confirm()
+                const confirmed = confirmDialog.onConfirm()
+                void (confirmed === false ? haptics.reject() : haptics.confirm())
               }}
             >
               {confirmDialog.confirmLabel}
