@@ -1,24 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Vector-only splash mark derived from public/app-icon.svg. Keeping the artwork as paths avoids
-     Android selecting and enlarging a density-specific launcher PNG on high-resolution screens. -->
+<!-- Generated from brand/fitness-hub-logo.svg (c334a3dfd5bd9cd9). Do not edit. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="288dp"
     android:height="288dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#F4F5F8"
-        android:pathData="M28.5,45.25L30.5,45.25A3,3 0,0 1,33.5 48.25L33.5,59.75A3,3 0,0 1,30.5 62.75L28.5,62.75A3,3 0,0 1,25.5 59.75L25.5,48.25A3,3 0,0 1,28.5 45.25Z" />
-    <path
-        android:fillColor="#F4F5F8"
-        android:pathData="M38,40.5L40,40.5A3,3 0,0 1,43 43.5L43,64.5A3,3 0,0 1,40 67.5L38,67.5A3,3 0,0 1,35 64.5L35,43.5A3,3 0,0 1,38 40.5Z" />
-    <path
-        android:fillColor="#6074F3"
-        android:pathData="M47.5,50L60.5,50A3,3 0,0 1,63.5 53L63.5,55A3,3 0,0 1,60.5 58L47.5,58A3,3 0,0 1,44.5 55L44.5,53A3,3 0,0 1,47.5 50Z" />
-    <path
-        android:fillColor="#F4F5F8"
-        android:pathData="M68,40.5L70,40.5A3,3 0,0 1,73 43.5L73,64.5A3,3 0,0 1,70 67.5L68,67.5A3,3 0,0 1,65 64.5L65,43.5A3,3 0,0 1,68 40.5Z" />
-    <path
-        android:fillColor="#F4F5F8"
-        android:pathData="M77.5,45.25L79.5,45.25A3,3 0,0 1,82.5 48.25L82.5,59.75A3,3 0,0 1,79.5 62.75L77.5,62.75A3,3 0,0 1,74.5 59.75L74.5,48.25A3,3 0,0 1,77.5 45.25Z" />
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group
+        android:pivotX="512"
+        android:pivotY="512"
+        android:scaleX="0.7"
+        android:scaleY="0.7">
+        <path android:fillColor="#F4F5F8" android:pathData="M148,388 H196 A32,32 0 0 1 228,420 V604 A32,32 0 0 1 196,636 H148 A32,32 0 0 1 116,604 V420 A32,32 0 0 1 148,388 Z" />
+        <path android:fillColor="#F4F5F8" android:pathData="M278,322 H326 A32,32 0 0 1 358,354 V670 A32,32 0 0 1 326,702 H278 A32,32 0 0 1 246,670 V354 A32,32 0 0 1 278,322 Z" />
+        <path android:fillColor="#6074F3" android:pathData="M408,456 H616 A32,32 0 0 1 648,488 V536 A32,32 0 0 1 616,568 H408 A32,32 0 0 1 376,536 V488 A32,32 0 0 1 408,456 Z" />
+        <path android:fillColor="#F4F5F8" android:pathData="M698,322 H746 A32,32 0 0 1 778,354 V670 A32,32 0 0 1 746,702 H698 A32,32 0 0 1 666,670 V354 A32,32 0 0 1 698,322 Z" />
+        <path android:fillColor="#F4F5F8" android:pathData="M828,388 H876 A32,32 0 0 1 908,420 V604 A32,32 0 0 1 876,636 H828 A32,32 0 0 1 796,604 V420 A32,32 0 0 1 828,388 Z" />
+    </group>
 </vector>

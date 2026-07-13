@@ -6,9 +6,12 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'brand/**'
       - 'capacitor.config.ts'
       - 'package.json'
       - 'package-lock.json'
+      - 'public/**'
+      - 'scripts/sync-brand-assets.mjs'
       - '.github/workflows/android.yml'
 
 permissions:

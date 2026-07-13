@@ -71,6 +71,9 @@ npm run android:sync
 npm run android:open
 ```
 
+The original vector logo lives at `brand/fitness-hub-logo.svg`. Do not edit copied icons by hand.
+After an intentional brand change, run `npm run brand:sync`; tests and builds reject stale copies.
+
 ## Project map
 
 - `src/App.tsx` — app state, screens, and interactions.
@@ -79,6 +82,8 @@ npm run android:open
 - `src/recovery.ts` — bounded, validated recovery-copy rules and device storage.
 - `src/*.css` — the shared design system and screen styles.
 - `android/` — the Capacitor app and native Android plugins.
+- `brand/` — the protected master SVG and the rules for generated logo assets.
+- `scripts/sync-brand-assets.mjs` — rebuilds and verifies every web and Android logo asset.
 - `supabase/` — repeatable SQL migrations for cloud recovery storage and security.
 - `tests/` — unit and phone-layout browser tests.
 - `HANDOFF.md` — product rules, architecture, decisions, and current status.

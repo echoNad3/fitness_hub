@@ -173,8 +173,8 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 ## 6. Tech stack & architecture
 
 - **Vite 8 + React 19 + TypeScript**, plain CSS. Data in **localStorage**. Lint: `oxlint`.
-  PWA generation uses `vite-plugin-pwa` + Workbox; install icons come from the deterministic
-  `public/app-icon.svg` via `@vite-pwa/assets-generator`.
+  PWA generation uses `vite-plugin-pwa` + Workbox. Every install icon is generated from the
+  protected `brand/fitness-hub-logo.svg` by the repository's brand pipeline.
 - **Capacitor 8 + Android** for the native wrapper. A **custom `RestAlarm` plugin** schedules an
   exact AlarmManager alarm (`setExactAndAllowWhileIdle`) at the moment the timer ends;
   `RestVibrationReceiver` then plays **one continuous 5s maximum-amplitude vibration — vibration
@@ -230,11 +230,11 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 | `.github/workflows/android.yml` | Android CI: on native/config/dependency changes, test, Capacitor sync, compile/publish a debug APK with short release notes and a SHA-256 checksum, then trigger Pages to refresh release metadata. Web-only changes deploy without manufacturing a new APK update. |
 | `.github/workflows/keepalive.yml` | Twice-weekly Supabase REST query so the free-tier project never idles 7 days and gets paused. |
 | `capacitor.config.ts` / `android/` | Capacitor app identity/config plus the generated and customized Android Studio project. |
-| `scripts/generate-android-assets.mjs` / `resources/` | Rebuild branded Android launcher icons and legacy splash images from the Fitness Hub SVG sources. Android 12+ uses `drawable/splash_logo.xml`, a true vector derived from `public/app-icon.svg`, not a launcher PNG. |
+| `brand/fitness-hub-logo.svg` / `AGENTS.md` | The owner's original SVG and the mandatory rule that it is the only editable logo source. The approved geometry is pinned so an accidental redraw fails the build. |
+| `scripts/sync-brand-assets.mjs` | The single brand pipeline. It generates and pixel-verifies web icons, Android fallback PNGs, the Android 12+ splash vector, adaptive launcher vector, and monochrome notification vector. |
 | `vite.config.ts` | Vite base path plus PWA manifest and Workbox precache configuration. |
-| `pwa-assets.config.ts` | Deterministic generation settings for Android, Windows, and Apple install icons. |
-| `public/app-icon.svg` + generated icon files | Fitness Hub favicon, home-screen, Apple touch, and maskable install assets. |
-| `index.html` | Page shell. |
+| `public/app-icon.svg` + generated icon files | Generated Fitness Hub favicon, home-screen, Apple touch, and maskable install assets. Never edit these copies directly. |
+| `index.html` | Page shell. Its boot screen loads the generated SVG instead of carrying another hand-copied logo. |
 | `.claude/launch.json` | Dev-server config for the preview tooling (`npm run dev`, port 5173). |
 
 **Data model** (`AppData` in `src/App.tsx`):
@@ -342,6 +342,14 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **Protected vector brand pipeline (2026-07-13):** the owner's supplied SVG now lives unchanged at
+  `brand/fitness-hub-logo.svg` as the only source. `npm run brand:sync` deterministically rebuilds
+  every web/PWA/Android logo asset. `npm run brand:check` runs inside tests and builds, pins the
+  approved geometry, rejects stale raster pixels or hand-copied vectors, and is documented for future
+  agents in `AGENTS.md`. Android 12+ splash and adaptive launchers use generated vector drawables;
+  only old OS-required surfaces remain generated PNG/ICO. The web boot screen loads the SVG directly.
+  Source equality, generated assets, unit tests, lint, web build, and Capacitor sync are verified;
+  the CI-built APK still needs the final visual launch check on the Pixel 9 Pro XL.
 - `719f054` **Automatic cloud recovery copies:** three validated device/cloud copies, safe restore
   and deletion, cross-device deletion records, Settings UI, Supabase RLS migration, fail-closed
   destructive paths, responsive coverage, and a reliable Windows/CI Playwright runner.
@@ -426,7 +434,8 @@ live in the commit messages and the feature list below.
   (1) `public/app-icon.svg` replaced with the user's final barbell mark (equal-thickness bars on
   `#252730`); `resources/android-foreground.svg` redrawn to match; every generated asset rebuilt
   via `npm run generate-pwa-assets` + `npm run generate-android-assets` (favicon, PWA/apple icons,
-  Android launchers, splash screens — splash composes the mark on `#252730`, no black flash).
+  Android launchers, splash screens — splash composes the mark on `#252730`, no black flash). The
+  2026-07-13 protected vector pipeline above later replaced those duplicated/manual sources.
   (2) **Stable debug signing:** `android/app/debug-signing.p12` (PKCS12, alias `fitnesshub`,
   password `android`, committed on purpose — debug-only key) is wired into
   `build.gradle signingConfigs.debug`. Before this, every CI run signed with a random key, so
@@ -805,6 +814,8 @@ already work for any number of workouts.
 ```sh
 npm install        # if node_modules missing
 npm run dev        # Vite dev server on http://localhost:5173
+npm run brand:sync # Rebuild every logo asset from the protected master SVG
+npm run brand:check # Verify no logo output has drifted or been replaced
 npm test           # Node-native domain, validation, storage, and timer tests
 npm run test:e2e   # Phone-layout browser smoke tests (local Chrome; CI installs Chromium)
 npm run security:rls # Confirm anonymous clients cannot read current or recovery data

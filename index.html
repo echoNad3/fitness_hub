@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" href="%BASE_URL%favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%app-icon.svg" sizes="any" />
+    <link rel="preload" href="%BASE_URL%app-icon.svg" as="image" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon-180x180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#252730" />
@@ -28,8 +29,9 @@
         place-items: center;
         background: #252730;
       }
-      #app-boot svg {
-        width: 108px;
+      #app-boot img {
+        width: 140px;
+        height: 140px;
         animation: app-boot-pulse 1.6s ease-in-out infinite;
       }
       @keyframes app-boot-pulse {
@@ -42,7 +44,7 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        #app-boot svg {
+        #app-boot img {
           animation: none;
         }
       }
@@ -51,13 +53,7 @@
   <body>
     <div id="root">
       <div id="app-boot" aria-hidden="true">
-        <svg viewBox="0 0 792 380" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="66" width="112" height="248" rx="32" fill="#F4F5F8" />
-          <rect x="130" y="0" width="112" height="380" rx="32" fill="#F4F5F8" />
-          <rect x="260" y="134" width="272" height="112" rx="32" fill="#6074F3" />
-          <rect x="550" y="0" width="112" height="380" rx="32" fill="#F4F5F8" />
-          <rect x="680" y="66" width="112" height="248" rx="32" fill="#F4F5F8" />
-        </svg>
+        <img src="%BASE_URL%app-icon.svg" alt="" width="140" height="140" />
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
