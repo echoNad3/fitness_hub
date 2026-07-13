@@ -348,8 +348,9 @@ live in the commit messages and the feature list below.
   approved geometry, rejects stale raster pixels or hand-copied vectors, and is documented for future
   agents in `AGENTS.md`. Android 12+ splash and adaptive launchers use generated vector drawables;
   only old OS-required surfaces remain generated PNG/ICO. The web boot screen loads the SVG directly.
-  Source equality, generated assets, unit tests, lint, web build, and Capacitor sync are verified;
-  the CI-built APK still needs the final visual launch check on the Pixel 9 Pro XL.
+  Source equality, generated assets, unit tests, lint, web build, Capacitor sync, Linux brand checks,
+  and the Android resource/APK compile are verified. Release `android-v65` is published and live
+  updater metadata reports build 65; only the final visual launch check on the Pixel 9 Pro XL remains.
 - `719f054` **Automatic cloud recovery copies:** three validated device/cloud copies, safe restore
   and deletion, cross-device deletion records, Settings UI, Supabase RLS migration, fail-closed
   destructive paths, responsive coverage, and a reliable Windows/CI Playwright runner.
