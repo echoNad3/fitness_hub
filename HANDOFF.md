@@ -222,6 +222,7 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 | `src/ErrorBoundary.tsx` | Top-level React error boundary (wraps `App` in `main.tsx`); shows a Reload screen instead of a blank page if a render throws. Saved data stays in `localStorage`. |
 | `src/apkVersion.ts` | Reads and caches deployed `android-release.json` metadata for the home tile/dialog, with the GitHub API only as a fallback. |
 | `src/pwaUpdates.ts` | Registers the Workbox service worker, actively checks for a new UI bundle on startup/focus/visibility/online plus every five minutes, and activates it silently. The visible page adopts it on its next real load instead of being forcibly reloaded. |
+| `src/launchScreen.ts` / `LaunchScreenPlugin.java` | Version-safe bridge for releasing the one native Android system splash after React mounts. New APKs use the custom correctly timed controller; auto-updated web bundles fall back to the old Capacitor plugin only inside older APKs. |
 | `tests/*.test.ts` | Node-native unit tests for domain behavior, backup/data validation, storage failures, timer restoration, History paging, and recovery-copy rules. |
 | `tests/e2e/responsive-smoke.spec.ts` / `playwright.config.ts` | Browser smoke tests at 360×800 and 412×915 for home, dialogs, Settings/recovery, workout/edit mode, overflow, and a 120-workout History. |
 | `scripts/run-e2e.mjs` | Starts and closes Vite programmatically around Playwright, so `npm run test:e2e` exits cleanly on Windows and CI. |
@@ -342,6 +343,16 @@ use minutes+seconds (`m:ss`). Never render three units such as hours+minutes+sec
 
 Git history (newest first); each commit is a clean restore point. Entries are summaries — details
 live in the commit messages and the feature list below.
+- **Single-install sharp Android launch (2026-07-13):** physical build 65 showed that vector source
+  quality alone did not remove the slight blur. The launch path still installed Android's splash
+  once in `MainActivity` and again later from `@capacitor/splash-screen`, then faded the composed
+  splash for 150ms. The dependency and second installer are removed. `MainActivity` now owns one
+  system splash installed before `super.onCreate`, holds it through a tiny `LaunchScreenPlugin`, and
+  removes it directly after React mounts. The generated splash vector also bakes its safe-area size
+  into integer path coordinates instead of asking Android to apply a runtime group scale. A static
+  regression test enforces the single installer and keeps an older-APK fallback so live web updates
+  cannot trap build 65 or earlier behind their legacy splash. Local tests, lint, build, and Capacitor
+  sync pass; native compilation and the final Pixel 9 Pro XL visual check require the next CI APK.
 - **Protected vector brand pipeline (2026-07-13):** the owner's supplied SVG now lives unchanged at
   `brand/fitness-hub-logo.svg` as the only source. `npm run brand:sync` deterministically rebuilds
   every web/PWA/Android logo asset. `npm run brand:check` runs inside tests and builds, pins the
@@ -402,14 +413,14 @@ live in the commit messages and the feature list below.
   `setExactAndAllowWhileIdle` because `setAlarmClock` put a system alarm icon + ring time on the
   lock screen; the notification's countdown moved from the tiny header clock to a big custom
   `Chronometer` content view (static "Time remaining" text removed). Native change → new APK.
-- **Seamless launch (splash fix):** Android 12+ ignores the legacy `@drawable/splash` image. The
+- **Seamless launch (splash fix, superseded by the single-install controller above):** Android 12+
+  ignores the legacy `@drawable/splash` image. The
   launch theme explicitly sets `windowSplashScreenBackground`, `windowSplashScreenAnimatedIcon`
   to the resolution-independent `@drawable/splash_logo` vector (never a mipmap PNG),
   Android 13+ `windowSplashScreenBehavior=icon_preferred`, and `postSplashScreenTheme`; `MainActivity`
-  calls `SplashScreen.installSplashScreen(this)` before `super.onCreate()`. Added
-  `@capacitor/splash-screen` with `launchAutoHide: false`
-  (`capacitor.config.ts`): the native splash stays up until `App` mounts and calls
-  `SplashScreen.hide()` (ErrorBoundary also hides it on a crash so the reload screen shows). The
+  calls `SplashScreen.installSplashScreen(this)` before `super.onCreate()`. The earlier
+  `@capacitor/splash-screen` hold/hide layer was removed after build 65 because it installed the
+  splash a second time; the custom native controller above now owns the hold and release. The
   `index.html` boot screen shows the barbell logo (gentle pulse, reduced-motion aware) instead of
   a spinner, so launch is logo-on-`#252730` from tap to menu. Native change → needs an APK
   reinstall; old APKs without the plugin reject the hide call harmlessly.

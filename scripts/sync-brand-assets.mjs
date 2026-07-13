@@ -82,13 +82,45 @@ function roundedRectPath({ x, y, width, height, rx }) {
   ].join(' ')
 }
 
-function androidVector(sizeDp, { scale = safeAreaScale, monochrome = false } = {}) {
-  const paths = approvedArtwork.mark
+function scaleRectAroundCenter(rect, scale) {
+  const left = Math.round(512 + (rect.x - 512) * scale)
+  const top = Math.round(512 + (rect.y - 512) * scale)
+  const right = Math.round(512 + (rect.x + rect.width - 512) * scale)
+  const bottom = Math.round(512 + (rect.y + rect.height - 512) * scale)
+  return {
+    ...rect,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    rx: Math.round(rect.rx * scale),
+  }
+}
+
+function androidVector(
+  sizeDp,
+  { scale = safeAreaScale, monochrome = false, bakeScale = false } = {},
+) {
+  const mark = bakeScale
+    ? approvedArtwork.mark.map((rect) => scaleRectAroundCenter(rect, scale))
+    : approvedArtwork.mark
+  const paths = mark
     .map(
       (rect) =>
         `        <path android:fillColor="${monochrome ? '#FFFFFFFF' : rect.fill}" android:pathData="${roundedRectPath(rect)}" />`,
     )
     .join('\n')
+
+  const renderedPaths =
+    bakeScale || scale === 1
+      ? paths.replace(/^ {8}/gm, '    ')
+      : `    <group
+        android:pivotX="512"
+        android:pivotY="512"
+        android:scaleX="${scale}"
+        android:scaleY="${scale}">
+${paths}
+    </group>`
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <!-- ${generatedNotice} -->
@@ -97,13 +129,7 @@ function androidVector(sizeDp, { scale = safeAreaScale, monochrome = false } = {
     android:height="${sizeDp}dp"
     android:viewportWidth="1024"
     android:viewportHeight="1024">
-    <group
-        android:pivotX="512"
-        android:pivotY="512"
-        android:scaleX="${scale}"
-        android:scaleY="${scale}">
-${paths}
-    </group>
+${renderedPaths}
 </vector>
 `
 }
@@ -150,7 +176,10 @@ function makeIco(png) {
 
 const textOutputs = new Map([
   ['public/app-icon.svg', canonicalSvg],
-  ['android/app/src/main/res/drawable/splash_logo.xml', androidVector(288)],
+  [
+    'android/app/src/main/res/drawable/splash_logo.xml',
+    androidVector(288, { bakeScale: true }),
+  ],
   [
     'android/app/src/main/res/drawable/ic_stat_fitness.xml',
     androidVector(24, { scale: 1, monochrome: true }),

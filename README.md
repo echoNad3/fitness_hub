@@ -43,6 +43,9 @@ The installed Android app adds locked-screen rest alerts, native haptics, and an
 Web-interface updates activate in the background and are used on the next app load; they do not
 reload an open workout. Native Android changes still require a new APK.
 
+Android's system splash is installed once by the native activity and held until the interface is
+ready. Its logo is a generated vector; there is no bitmap or second splash layer on modern Android.
+
 The current GitHub workflow publishes a debug APK for sideloaded testing. It needs private release
 signing before the APK is treated as a public production release. Each release also includes short
 notes and a SHA-256 checksum so the downloaded APK can be verified.

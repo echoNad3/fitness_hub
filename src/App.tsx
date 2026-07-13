@@ -41,7 +41,6 @@ import {
 import { isRecord, isValidBackup, isValidSessions, isValidTemplates, repairTemplateLinks } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
-import { SplashScreen } from '@capacitor/splash-screen'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
 import { fetchLatestApk, readCachedLatestApk, type LatestApk } from './apkVersion'
 import { AppUpdater, type AppUpdateState } from './appUpdater'
@@ -49,6 +48,7 @@ import { isDownloadedBuildInstallable, nextDisplayedDownloadProgress } from './a
 import { formatTimerDuration, formatWorkoutDuration } from './timeFormat'
 import { getStored, removeStored, setStored } from './storage'
 import { haptics } from './haptics'
+import { hideLaunchScreen } from './launchScreen'
 import { checkForAppUpdate } from './pwaUpdates'
 import { parseStoredRestTimer } from './restTimerState'
 import {
@@ -1071,12 +1071,10 @@ function App() {
     return () => window.clearTimeout(id)
   }, [recoveryMessage])
 
-  // The native splash stays up (launchAutoHide: false) until the real UI has mounted, so launch is
-  // logo-on-background the whole way. Old APKs without the plugin reject the call — ignored.
+  // Keep the one native launch window up until the real UI has mounted. The helper falls back to
+  // Capacitor's old splash plugin when this web bundle runs inside an older APK.
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      void SplashScreen.hide({ fadeOutDuration: 150 }).catch(() => undefined)
-    }
+    void hideLaunchScreen()
   }, [])
 
   useEffect(() => {

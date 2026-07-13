@@ -5,15 +5,9 @@
     android:height="24dp"
     android:viewportWidth="1024"
     android:viewportHeight="1024">
-    <group
-        android:pivotX="512"
-        android:pivotY="512"
-        android:scaleX="1"
-        android:scaleY="1">
-        <path android:fillColor="#FFFFFFFF" android:pathData="M148,388 H196 A32,32 0 0 1 228,420 V604 A32,32 0 0 1 196,636 H148 A32,32 0 0 1 116,604 V420 A32,32 0 0 1 148,388 Z" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M278,322 H326 A32,32 0 0 1 358,354 V670 A32,32 0 0 1 326,702 H278 A32,32 0 0 1 246,670 V354 A32,32 0 0 1 278,322 Z" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M408,456 H616 A32,32 0 0 1 648,488 V536 A32,32 0 0 1 616,568 H408 A32,32 0 0 1 376,536 V488 A32,32 0 0 1 408,456 Z" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M698,322 H746 A32,32 0 0 1 778,354 V670 A32,32 0 0 1 746,702 H698 A32,32 0 0 1 666,670 V354 A32,32 0 0 1 698,322 Z" />
-        <path android:fillColor="#FFFFFFFF" android:pathData="M828,388 H876 A32,32 0 0 1 908,420 V604 A32,32 0 0 1 876,636 H828 A32,32 0 0 1 796,604 V420 A32,32 0 0 1 828,388 Z" />
-    </group>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M148,388 H196 A32,32 0 0 1 228,420 V604 A32,32 0 0 1 196,636 H148 A32,32 0 0 1 116,604 V420 A32,32 0 0 1 148,388 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M278,322 H326 A32,32 0 0 1 358,354 V670 A32,32 0 0 1 326,702 H278 A32,32 0 0 1 246,670 V354 A32,32 0 0 1 278,322 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M408,456 H616 A32,32 0 0 1 648,488 V536 A32,32 0 0 1 616,568 H408 A32,32 0 0 1 376,536 V488 A32,32 0 0 1 408,456 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M698,322 H746 A32,32 0 0 1 778,354 V670 A32,32 0 0 1 746,702 H698 A32,32 0 0 1 666,670 V354 A32,32 0 0 1 698,322 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M828,388 H876 A32,32 0 0 1 908,420 V604 A32,32 0 0 1 876,636 H828 A32,32 0 0 1 796,604 V420 A32,32 0 0 1 828,388 Z" />
 </vector>

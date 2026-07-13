@@ -1,6 +1,5 @@
 import { Component, type ReactNode } from 'react'
-import { Capacitor } from '@capacitor/core'
-import { SplashScreen } from '@capacitor/splash-screen'
+import { hideLaunchScreen } from './launchScreen'
 
 type Props = { children: ReactNode }
 type State = { failed: boolean }
@@ -17,9 +16,7 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch() {
     // The native splash is held until App mounts; if App crashed instead, drop the splash so the
     // reload screen below is visible.
-    if (Capacitor.isNativePlatform()) {
-      void SplashScreen.hide().catch(() => undefined)
-    }
+    void hideLaunchScreen()
   }
 
   render() {

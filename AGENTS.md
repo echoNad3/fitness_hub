@@ -10,5 +10,7 @@
 - Run `npm run brand:check` after any change involving branding, launch screens, icons, or build files.
 - The Android 12+ splash must keep using `@drawable/splash_logo`, and adaptive launchers must keep
   using `@drawable/ic_launcher_foreground`.
+- Android launch installs the system splash exactly once in `MainActivity`, before `super.onCreate`.
+  Do not re-add `@capacitor/splash-screen` or another late splash installer.
 - The Android notification mark is the generated monochrome `@drawable/ic_stat_fitness`; do not
   redraw it separately.

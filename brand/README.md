@@ -16,6 +16,9 @@ native Android vector artwork. `npm test` and `npm run build` reject stale or su
 The Android notification icon uses the same geometry in monochrome because Android small icons are
 silhouettes. It is generated too, not a separate drawing.
 
+The Android splash generator bakes its safe-area size into integer vector coordinates. Do not add a
+runtime scale transform or a bitmap/fade overlay around it.
+
 Some operating-system icon slots require PNG or ICO files. Those are allowed only when this pipeline
 generates them directly from the master SVG. App-controlled surfaces should use the SVG or generated
 Android vector drawable.
