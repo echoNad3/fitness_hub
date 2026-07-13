@@ -351,8 +351,9 @@ live in the commit messages and the feature list below.
   removes it directly after React mounts. The generated splash vector also bakes its safe-area size
   into integer path coordinates instead of asking Android to apply a runtime group scale. A static
   regression test enforces the single installer and keeps an older-APK fallback so live web updates
-  cannot trap build 65 or earlier behind their legacy splash. Local tests, lint, build, and Capacitor
-  sync pass; native compilation and the final Pixel 9 Pro XL visual check require the next CI APK.
+  cannot trap build 65 or earlier behind their legacy splash. Local and CI tests, lint, build,
+  Capacitor sync, Java/resource compilation, APK publication, and updater metadata are verified.
+  Release `android-v66` is live; only its final visual launch check on the Pixel 9 Pro XL remains.
 - **Protected vector brand pipeline (2026-07-13):** the owner's supplied SVG now lives unchanged at
   `brand/fitness-hub-logo.svg` as the only source. `npm run brand:sync` deterministically rebuilds
   every web/PWA/Android logo asset. `npm run brand:check` runs inside tests and builds, pins the
