@@ -352,8 +352,9 @@ live in the commit messages and the feature list below.
   Android keeps the vector-rendered surface instead of making the softened bitmap copy. Older Android
   versions retain the generated static vector. The protected brand pipeline, repository rules, and
   launch regression test enforce this split. All 43 unit tests, brand validation, lint, web build,
-  and Capacitor sync pass locally; Android resource/APK compilation and the physical Pixel visual
-  check belong to the next CI release.
+  and Capacitor sync pass locally. Android CI compiled the Java/resources and APK, release
+  `android-v67` is live with its checksum, Pages deployment succeeded, and live updater metadata
+  reports build 67. Only the physical Pixel 9 Pro XL visual check remains.
 - **Single-install Android launch (2026-07-13):** physical build 65 showed that vector source
   quality alone did not remove the slight blur. The launch path still installed Android's splash
   once in `MainActivity` and again later from `@capacitor/splash-screen`, then faded the composed
