@@ -1,0 +1,66 @@
+:root {
+  /* Edit app colours here. Native launch colours are checked against this file. */
+  --bg: #252730;
+  --surface: #30323d;
+  --surface-2: #363844;
+  --surface-3: #414351;
+  --raised: #494b59;
+  --text: #f4f5f8;
+  --muted: #aab2c0;
+  --quiet: #8b93a0;
+  --accent: #6074f3;
+  --accent-text: #91a0ff;
+  --success: #51cf7b;
+  --danger: #f2767d;
+  --warning: #f4cb59;
+  --focus: #d9e0ef;
+  --white: #ffffff;
+  --success-ink: #0b2d18;
+  --danger-ink: #4b1116;
+  --warning-ink: #30280a;
+  --success-copy: #cdeed8;
+  --success-copy-soft: #cdebd5;
+  --danger-copy: #f7ccd0;
+
+  --line: rgba(255, 255, 255, 0.065);
+  --line-soft: rgba(255, 255, 255, 0.045);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --glass-035: rgba(255, 255, 255, 0.035);
+  --glass-04: rgba(255, 255, 255, 0.04);
+  --glass-05: rgba(255, 255, 255, 0.05);
+  --glass-07: rgba(255, 255, 255, 0.07);
+  --glass-09: rgba(255, 255, 255, 0.09);
+  --glass-12: rgba(255, 255, 255, 0.12);
+  --glass-14: rgba(255, 255, 255, 0.14);
+  --white-82: rgba(255, 255, 255, 0.82);
+  --scrim: rgba(3, 7, 12, 0.76);
+  --workout-header: rgba(37, 39, 48, 0.94);
+  --workout-mask-clear: rgba(34, 37, 46, 0);
+  --timer-backdrop: rgba(20, 21, 27, 0.5);
+  --raised-40: rgba(73, 75, 89, 0.4);
+  --raised-72: rgba(73, 75, 89, 0.72);
+
+  --accent-soft: rgba(96, 116, 243, 0.16);
+  --accent-line: rgba(96, 116, 243, 0.42);
+  --accent-line-strong: rgba(96, 116, 243, 0.45);
+  --success-soft: rgba(81, 207, 123, 0.12);
+  --success-line-soft: rgba(81, 207, 123, 0.26);
+  --success-line: rgba(81, 207, 123, 0.42);
+  --danger-soft: rgba(242, 118, 125, 0.12);
+  --danger-line-soft: rgba(242, 118, 125, 0.26);
+  --danger-line: rgba(242, 118, 125, 0.42);
+  --danger-line-muted: rgba(242, 118, 125, 0.3);
+  --warning-soft: rgba(244, 203, 89, 0.14);
+  --warning-line: rgba(244, 203, 89, 0.42);
+  --page-glow: rgba(96, 116, 243, 0.08);
+  --shadow: 0 16px 32px rgba(0, 0, 0, 0.26);
+  --soft-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+
+  --muscle-chest: #955a6d;
+  --muscle-back: #617292;
+  --muscle-shoulders: #5f8169;
+  --muscle-biceps: #639a9e;
+  --muscle-triceps: #aa7a5a;
+  --muscle-core: #b797a6;
+  --muscle-legs: #9476a3;
+}

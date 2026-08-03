@@ -1,0 +1,552 @@
+/* Shared page chrome — History, Settings, and other Page screens */
+
+.page {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  min-height: 100svh;
+  padding: calc(14px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 82% -8%, var(--page-glow), transparent 30%),
+    var(--bg);
+}
+
+.page-head {
+  padding: 4px 0 6px;
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-head h1 {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+}
+
+.hist-list,
+.set-list {
+  display: grid;
+  gap: 9px;
+}
+
+.hist-load-more {
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.hist-load-more small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+}
+
+.hist-card {
+  scroll-margin-top: calc(70px + env(safe-area-inset-top));
+  border-radius: var(--radius-card);
+  transition: box-shadow 200ms ease;
+}
+
+.hist-open {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.hist-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hist-main strong {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+}
+
+.hist-main small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+.hist-chip {
+  padding: 5px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--glass-05);
+  border: 1px solid var(--line);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-chip.done,
+.hist-chip.ended-early,
+.hist-chip.unfinished {
+  width: 92px;
+  height: var(--tap);
+  padding: 5px 4px;
+  align-content: center;
+  display: grid;
+  gap: 1px;
+  justify-items: center;
+  border-color: transparent;
+}
+
+.hist-chip.done {
+  color: var(--success-ink);
+  background: var(--success);
+}
+
+.hist-chip.ended-early {
+  color: var(--warning-ink);
+  background: var(--warning);
+}
+
+.hist-chip.unfinished {
+  color: var(--danger-ink);
+  background: var(--danger);
+}
+
+.hist-chip em {
+  font-style: normal;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  opacity: 0.82;
+}
+
+.hist-ago {
+  color: var(--quiet) !important;
+  font-size: var(--fs-caption) !important;
+}
+
+.hist-card.highlight {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Headline stats: total workouts, completion rate, weekly average, average length. Two per row —
+   four across forces the uppercase captions past the viewport on narrow phones. */
+.hist-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.hist-stat {
+  min-height: 66px;
+  padding: 10px 8px;
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.hist-stat strong {
+  font-size: var(--fs-heading);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hist-stat strong.good {
+  color: var(--success);
+}
+
+.hist-stat span {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Last-28-days tracker (today first / top-left, 4 rows × 7 columns) */
+
+.hist-tracker {
+  display: grid;
+  gap: 8px;
+  padding: 12px 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.hist-tracker-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.hist-tracker-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-align: center;
+}
+
+.hist-day {
+  height: 46px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--glass-07);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.hist-seg {
+  flex: 1;
+  border-radius: 3px;
+}
+
+.hist-seg.done {
+  background: var(--success);
+}
+
+.hist-seg.ended-early {
+  background: var(--warning);
+}
+
+.hist-seg.unfinished {
+  background: var(--danger);
+}
+
+.hist-day.has {
+  cursor: pointer;
+  padding: 3px;
+  background: var(--glass-05);
+}
+
+.hist-day.has:active {
+  transform: scale(0.95);
+}
+
+.hist-day:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.hist-tracker-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+
+.hist-tracker-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.hist-tracker-legend .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.hist-tracker-legend .dot.done {
+  background: var(--success);
+}
+
+.hist-tracker-legend .dot.ended-early {
+  background: var(--warning);
+}
+
+.hist-tracker-legend .dot.unfinished {
+  background: var(--danger);
+}
+
+.hist-tracker-ends {
+  margin-left: auto;
+  color: var(--quiet);
+}
+
+.set-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.set-row svg {
+  color: var(--muted);
+}
+
+.set-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.set-main strong {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+}
+
+.set-main small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.3;
+}
+
+/* Inline failure note on a Settings row (e.g. a backup that couldn't be read). */
+.set-main small.set-note-error {
+  color: var(--danger);
+}
+
+.set-row.danger {
+  border-color: var(--danger-line-muted);
+}
+
+.set-row.danger strong,
+.set-row.danger svg {
+  color: var(--danger);
+}
+
+.backup-file-input {
+  display: none;
+}
+
+.set-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.set-stepper > strong {
+  min-width: 42px;
+  text-align: center;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rest editor: −/+ (each ±10s) on the sides with the minutes/seconds windows centered between them.
+   Value is stored as total seconds, so stepping rolls over (55s + 10s → 1m 05s) automatically. */
+.rest-stepper {
+  gap: 16px;
+}
+
+.rest-mmss {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.set-rest-field {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.set-rest-field input {
+  width: 46px;
+  padding: 7px 2px;
+  text-align: center;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.set-rest-field input::-webkit-outer-spin-button,
+.set-rest-field input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.set-rest-field input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.set-rest-field span {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+/* Grey buttons with a bright-blue symbol. The −/+ stay the app's accent (not a full blue fill, which
+   was too much colour), but read clearly thanks to a lighter raised surface, an accent-tinted border,
+   and a slightly bolder/larger glyph. */
+.set-stepper button {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-text);
+  background: var(--raised);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+/* Slightly larger, bolder glyph so the blue −/+ read clearly on the grey button. */
+.set-stepper button svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.4;
+}
+
+.set-stepper button:active {
+  transform: scale(0.95);
+}
+
+.set-stepper button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.hist-open,
+.set-row {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.hist-open:active,
+.set-row:active {
+  transform: scale(0.98);
+}
+
+.hist-open:focus-visible,
+.set-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hist-open,
+  .set-row {
+    transition: none;
+  }
+}
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+}
+
+.sync-status i {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.sync-status.checking,
+.sync-status.syncing {
+  color: var(--accent-text);
+}
+
+.sync-status.synced {
+  color: var(--success);
+}
+
+.sync-status.error {
+  color: var(--danger);
+}
+
+.sync-status.conflict {
+  color: var(--warning);
+}
+
+/* Reused outside sync too (the Android tile/dialog): a newer APK is ready to install. */
+.sync-status.update {
+  color: var(--accent-text);
+}
+
+.cloud-error {
+  color: var(--danger);
+  font-size: var(--fs-caption);
+  line-height: 1.35;
+}
+
+.auth-error {
+  color: var(--danger);
+  font-size: var(--fs-meta);
+  line-height: 1.3;
+}
+
+/* The quiet text links under the sign-in fields: mode switch on the left, forgot-password on the
+   right. One row so they read as secondary actions, clearly apart from the Cancel/Sign in pair. */
+.auth-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-switch {
+  padding: 6px 0;
+  color: var(--accent-text);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.auth-switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

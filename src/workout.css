@@ -1,0 +1,636 @@
+/* Workout (session) screen — Phase 1 redesign.
+   Muscle-group colors are applied inline per row (see muscleColor in App.tsx);
+   the rules below own layout, surfaces, and the semantic done/failed colors. */
+
+.ws-screen {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  min-height: 100svh;
+  padding: 0 14px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 82% -8%, var(--page-glow), transparent 30%),
+    var(--bg);
+}
+
+.ws-screen.editing {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+.ws-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -14px 6px;
+  padding: calc(12px + env(safe-area-inset-top)) 14px 12px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  background: var(--workout-header);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+
+.ws-back {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.ws-head-title {
+  min-width: 0;
+  text-align: center;
+}
+
+.ws-head-title strong {
+  display: block;
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-head-title span {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+
+/* Every displayed exercise has a result — the header celebrates quietly in the done colour. */
+.ws-head-title span.complete {
+  color: var(--success);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ws-head-title span.ended-early {
+  color: var(--warning);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ws-head-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ws-end-workout {
+  width: 100%;
+  height: 54px;
+  margin-top: 2px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.ws-end-workout svg {
+  color: var(--warning);
+}
+
+.ws-rail {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 5px;
+}
+
+.ws-rail i {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--glass-12);
+  transition: background-color 220ms ease;
+}
+
+.ws-rail i.done {
+  background: var(--success);
+}
+
+.ws-rail i.failed {
+  background: var(--danger);
+}
+
+.ws-list {
+  display: grid;
+  gap: 10px;
+}
+
+/* Exercise item: one element that morphs between collapsed row and expanded card, so expand /
+   collapse reads as real height growth (grid-template-rows 0fr -> 1fr) rather than a swap. */
+.ws-item {
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--muscle-color) 22%, transparent);
+  border-radius: var(--radius-card);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    border-radius 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.ws-item.open {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--muscle-color) 47%, transparent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.ws-item.is-done:not(.open) {
+  opacity: 0.6;
+}
+
+.ws-item-head {
+  width: 100%;
+  min-height: 66px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ws-item-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease;
+}
+
+.ws-item.open .ws-item-body {
+  grid-template-rows: 1fr;
+}
+
+.ws-item-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ws-item-body-content {
+  display: grid;
+  gap: 13px;
+  padding: 0 16px 16px;
+}
+
+.ws-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--quiet);
+}
+
+.ws-num {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Emphasis on the active exercise's name — weight only, so the layout doesn't shift on expand. */
+.ws-item.open .ws-name {
+  font-weight: var(--fw-bold);
+}
+
+.ws-meta {
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-chip {
+  width: 56px;
+  padding: 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ws-chip.done {
+  color: var(--success-ink);
+  background: var(--success);
+}
+
+.ws-chip.failed {
+  color: var(--danger-ink);
+  background: var(--danger);
+}
+
+.ws-cat {
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Optional per-exercise note ("grip felt off") — one quiet line between the facts and guidance. */
+.ws-note {
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  line-height: 1.35;
+}
+
+.ws-guide {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  align-items: center;
+  padding: 10px 12px;
+  color: var(--text);
+  text-align: left;
+  background: var(--raised-40);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+}
+
+.ws-guide svg {
+  opacity: 0.85;
+}
+
+.ws-guide.increase {
+  color: var(--success-copy);
+  background: var(--success-soft);
+  border-color: var(--success-line-soft);
+}
+
+.ws-guide.repeat {
+  color: var(--danger-copy);
+  background: var(--danger-soft);
+  border-color: var(--danger-line-soft);
+}
+
+.ws-guide.none {
+  color: var(--muted);
+}
+
+.ws-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ws-fact {
+  min-height: 50px;
+  padding: 9px 12px;
+  display: grid;
+  gap: 3px;
+  color: var(--text);
+  text-align: left;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.ws-fact span {
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+}
+
+.ws-fact strong {
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-step {
+  display: grid;
+  grid-template-columns: 56px 1fr 56px;
+  gap: 8px;
+}
+
+.ws-stepbtn {
+  height: 54px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-text);
+  background: var(--raised);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-control);
+}
+
+/* Bolder blue glyph so the −/+ read clearly on the grey button. */
+.ws-stepbtn svg {
+  stroke-width: 2.4;
+}
+
+.ws-weight {
+  height: 54px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1px;
+  color: var(--text);
+  background: var(--timer-backdrop);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.ws-weight strong {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The "Increase weight by?" prompt is two lines ("Increase" / "weight by?"). It's a question, not
+   the weight value, so it steps down to label size — two lines at the value's size crowded the box.
+   Selector matches ".ws-weight strong" in specificity, or that value rule silently wins. */
+.ws-weight strong.ws-weight-prompt {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+  text-align: center;
+}
+
+.ws-weight span {
+  color: var(--muted);
+  font-size: var(--fs-caption);
+}
+
+.ws-result {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ws-resultbtn {
+  height: 52px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: var(--glass-035);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+}
+
+.ws-resultbtn.done {
+  color: var(--success-copy-soft);
+  border-color: var(--success-line);
+}
+
+.ws-resultbtn.failed {
+  color: var(--danger-copy);
+  border-color: var(--danger-line);
+}
+
+.ws-resultbtn.done.sel {
+  color: var(--success-ink);
+  background: var(--success);
+  border-color: transparent;
+}
+
+.ws-resultbtn.failed.sel {
+  color: var(--danger-ink);
+  background: var(--danger);
+  border-color: transparent;
+}
+
+.ws-swap {
+  width: 100%;
+  height: var(--tap);
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.ws-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  margin: 4px -14px 0;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  background: linear-gradient(180deg, var(--workout-mask-clear), var(--bg) 26%);
+}
+
+.ws-dock::after {
+  content: '';
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: max(8px, env(safe-area-inset-bottom));
+  pointer-events: none;
+  background: var(--bg);
+}
+
+.ws-dock-start {
+  grid-column: 1 / -1;
+  height: 54px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--soft-shadow);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.ws-dock-time {
+  position: relative;
+  overflow: hidden;
+  height: 54px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--soft-shadow);
+  animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Thin drain bar along the bottom of the running timer — a glance shows how much rest is left
+   without reading the number. Width animates linearly between the 1s countdown ticks. */
+.ws-dock-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: var(--glass-07);
+  pointer-events: none;
+}
+
+.ws-dock-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 999px 999px 0;
+  transition: width 1000ms linear;
+}
+
+.ws-dock-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-weight: var(--fw-semibold);
+}
+
+.ws-dock-start strong,
+.ws-dock-time strong {
+  font-size: var(--fs-heading);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cancel and "+10s" share one look and one size — equal widths, per the layout standard. */
+.ws-dock-cancel {
+  height: 54px;
+  min-width: 88px;
+  padding: 0 12px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-dock-note {
+  grid-column: 1 / -1;
+  padding: 0 4px 2px;
+  color: var(--danger);
+  font-size: var(--fs-caption);
+  line-height: 1.35;
+}
+
+.ws-dock.pulse .ws-dock-start {
+  color: var(--success-ink);
+  background: var(--success);
+  border-color: transparent;
+}
+
+.ws-dock.pulse .ws-dock-start .ws-dock-left {
+  color: var(--success-ink);
+}
+
+.ws-item-head,
+.ws-guide,
+.ws-stepbtn,
+.ws-weight,
+.ws-resultbtn,
+.ws-swap,
+.ws-end-workout,
+.ws-back,
+.ws-dock-start,
+.ws-dock-cancel {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.ws-item:not(.open) .ws-item-head:active,
+.ws-guide:active,
+.ws-weight:active,
+.ws-resultbtn:active,
+.ws-swap:active,
+.ws-end-workout:active,
+.ws-dock-start:active,
+.ws-dock-cancel:active {
+  transform: scale(0.98);
+}
+
+/* Small/icon controls press slightly deeper — one standard with the editor steppers and pills. */
+.ws-stepbtn:active,
+.ws-back:active {
+  transform: scale(0.95);
+}
+
+.ws-back:focus-visible,
+.ws-item-head:focus-visible,
+.ws-guide:focus-visible,
+.ws-stepbtn:focus-visible,
+.ws-weight:focus-visible,
+.ws-resultbtn:focus-visible,
+.ws-swap:focus-visible,
+.ws-end-workout:focus-visible,
+.ws-dock-start:focus-visible,
+.ws-dock-cancel:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-item-head,
+  .ws-guide,
+  .ws-stepbtn,
+  .ws-weight,
+  .ws-resultbtn,
+  .ws-swap,
+  .ws-end-workout,
+  .ws-back,
+  .ws-dock-start,
+  .ws-dock-cancel {
+    transition: none;
+  }
+}

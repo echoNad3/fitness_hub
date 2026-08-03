@@ -1,0 +1,5055 @@
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useId } from 'react'
+import { lazy, Suspense } from 'react'
+import type { ChangeEvent, ReactNode } from 'react'
+import './App.css'
+import './workout.css'
+import './home.css'
+import './chrome.css'
+import './edit.css'
+import './analysis.css'
+import {
+  deleteCloudRecoverySnapshots,
+  loadCloudRecoveryDeletedIds,
+  loadCloudRecoverySnapshots,
+  loadCloudState,
+  saveCloudRecoverySnapshots,
+  saveCloudRecoveryDeletedIds,
+  saveCloudState,
+  supabase,
+  type CloudState,
+} from './cloud'
+import {
+  chooseSyncDirection,
+  hasMeaningfulLocalData,
+  initialLocalTimestamp,
+  isMeaningfulChange,
+  nextLocalTimestamp,
+  parseCloudTimestamp,
+} from './cloudSync'
+import {
+  MAX_WORKOUT_DURATION_SECONDS,
+  clampRestValue,
+  nextPendingId,
+  restSecondsRemaining,
+  REST_STEP_SECONDS,
+  resultGuidance,
+  resultStreak,
+  toggleResult,
+  WORKOUT_DURATION_STEP_SECONDS,
+  workoutDurationSeconds,
+} from './domain'
+import { isRecord, isValidBackup, isValidSessions, isValidTemplates, repairTemplateLinks } from './dataValidation'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
+import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
+import { fetchLatestApk, readCachedLatestApk, type LatestApk } from './apkVersion'
+import { AppUpdater, type AppUpdateState } from './appUpdater'
+import { isDownloadedBuildInstallable, nextDisplayedDownloadProgress } from './appUpdateLogic'
+import { formatTimerDuration, formatWorkoutDuration } from './timeFormat'
+import { getStored, removeStored, setStored } from './storage'
+import { haptics } from './haptics'
+import {
+  backupByteLength,
+  backupFilename,
+  hasNativeBackupFiles,
+  MAX_BACKUP_BYTES,
+  normalizeBackupContents,
+  openNativeBackupFile,
+  saveBackupFile,
+} from './backupFiles'
+import { hideLaunchScreen } from './launchScreen'
+import { checkForAppUpdate } from './pwaUpdates'
+import { parseStoredRestTimer } from './restTimerState'
+import {
+  addRecoverySnapshot,
+  automaticRecoveryDue,
+  createRecoverySnapshot,
+  deleteRecoverySnapshot,
+  loadRecoveryStore,
+  mergeRecoverySnapshots,
+  normalizeRecoverySnapshots,
+  persistRecoveryStore,
+  recoveryDataHash,
+  recoveryReasonLabel,
+  isProtectedRecoveryReason,
+  type RecoveryReason,
+  type RecoverySnapshot,
+  type RecoveryStore,
+} from './recovery'
+import {
+  HISTORY_PAGE_SIZE,
+  clampHistoryCount,
+  historyCountForIndex,
+  nextHistoryCount,
+} from './historyPagination'
+import type { ExerciseVariant, PreviousResult, ResultStatus, WorkoutId } from './workoutTypes'
+import { categoryLabel, muscleColor, muscleColorStyle } from './workoutPresentation'
+import { useHoldStepper } from './useHoldStepper'
+
+const WorkoutEditorList = lazy(() => import('./WorkoutEditorList'))
+const ProgressAnalysisScreen = lazy(() => import('./ProgressAnalysisScreen'))
+
+// A group is a single exercise slot. `variants` always holds exactly one exercise now (swaps are no
+// longer nested); the swap feature is expressed with `linkId` instead. Kept as an array so the session
+// storage (entries keyed by variant id) and the many variant helpers stay unchanged.
+type ExerciseGroup = {
+  id: string
+  activeVariantId: string
+  variants: ExerciseVariant[]
+  // Rest countdown length for this exercise (seconds). Per-exercise, edited in the workout editor.
+  restSeconds: number
+  // Hidden exercises are dimmed in edit mode and skipped on the workout screen.
+  hidden?: boolean
+  // Two exercises sharing a `linkId` are a swap pair: only the visible (non-hidden) one shows on the
+  // workout screen, at the position of whichever pair member sits higher in the list, with a
+  // "Swap with …" button to flip which is visible.
+  linkId?: string
+}
+
+type WorkoutTemplate = {
+  id: WorkoutId
+  name: string
+  groups: ExerciseGroup[]
+}
+
+type SessionExercise = {
+  weight: number
+  setup?: string
+  sets?: number
+  reps?: number
+  // Snapshotted because a future Total/Per hand edit must not rewrite old progress loads.
+  // Legacy sessions omit it and fall back to the exercise's current setting.
+  perHand?: boolean
+  result?: ResultStatus
+  // "Increase weight?" confirmation stage (only for exercises whose last result was a success).
+  // increaseResolved: the user has confirmed/declined the increase for this session, so the card
+  // shows normally. increaseDelta: the pending amount to add while that stage is open (undefined =
+  // the "Increase weight by?" prompt before any amount is chosen).
+  increaseResolved?: boolean
+  increaseDelta?: number
+}
+
+type SessionGroup = {
+  activeVariantId: string
+  entries: Record<string, SessionExercise>
+}
+
+type WorkoutSession = {
+  id: string
+  workoutId: WorkoutId
+  createdAt: number
+  // Set when the workout is completed or explicitly ended early, so History can show its duration.
+  finishedAt?: number
+  // Explicitly closing a partial workout is different from abandoning it: History keeps the time
+  // and shows an amber "Ended early" state instead of the red "Unfinished" state.
+  endedEarly?: true
+  groupEntries: Record<string, SessionGroup>
+}
+
+type AppData = {
+  sessions: WorkoutSession[]
+  variantPrefs: Record<string, string>
+  templates: WorkoutTemplate[]
+  baselineResults: Record<string, PreviousResult>
+  expandedBySession: Record<string, string>
+  scrollBySession: Record<string, number>
+  currentSessionByWorkout: Partial<Record<WorkoutId, string>>
+  restSeconds: number
+}
+
+type Screen =
+  | { name: 'main' }
+  | { name: 'global-history' }
+  | { name: 'progress-analysis' }
+  | { name: 'settings' }
+  | { name: 'session'; workoutId: WorkoutId; sessionId: string }
+
+type WeightDialog = {
+  sessionId: string
+  groupId: string
+  variantId: string
+  value: string
+  // When set, the dialog edits the pending "increase weight by" amount instead of the absolute weight.
+  increase?: boolean
+}
+
+type PreviousDialog = {
+  workoutId: WorkoutId
+  sessionId: string
+  groupId: string
+  variantId: string
+}
+
+// Picking which other exercise to link the given one to (for a swap pair).
+type LinkDialog = {
+  workoutId: WorkoutId
+  groupId: string
+}
+
+type DurationDialog = {
+  sessionId: string
+  hours: string
+  minutes: string
+  error: string
+}
+
+type WorkoutSummaryDialog = {
+  sessionId: string
+  kind: 'complete' | 'ended-early'
+  finishedAt: number
+}
+
+type AuthDialog = {
+  mode: 'in' | 'up'
+  email: string
+  password: string
+  error: string
+  note: string
+  busy: boolean
+}
+
+// Setting a new password: 'change' from the account dialog, 'recovery' after a reset-email link.
+type PasswordDialog = {
+  mode: 'change' | 'recovery'
+  value: string
+  error: string
+  busy: boolean
+}
+
+type CloudUser = {
+  id: string
+  email: string
+}
+
+type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'conflict'
+type RecoverySyncStatus = 'device-only' | 'syncing' | 'synced' | 'error'
+type RecoveryDialog = { mode: 'list' } | { mode: 'details'; id: string }
+type AppUpdateUiState =
+  | AppUpdateState
+  | { status: 'checking' | 'unsupported'; progress: number; detail?: string; build?: number }
+
+const STORAGE_KEY = 'fitness-hub-v1'
+const LOCAL_UPDATED_KEY = 'fitness-hub-v1-updated-at'
+// The account this device last synced with. Lets us tell a continuation (same account → auto
+// last-write-wins) from a first sign-in to an account that already has data while this device holds
+// its own unsynced changes (→ ask the user which to keep instead of silently overwriting one).
+const SYNCED_ACCOUNT_KEY = 'fitness-hub-v1-synced-account'
+// When this device last completed a successful cloud sync (push or pull), for the account UI.
+const LAST_SYNCED_KEY = 'fitness-hub-v1-last-synced'
+const REST_TIMER_KEY = 'fitness-hub-rest-timer'
+// Where password-reset emails send the user to set a new password (the live web app).
+const PUBLIC_APP_URL = 'https://echonad3.github.io/fitness_hub/'
+const APK_DOWNLOAD_URL = 'https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk'
+const SYNC_DEBOUNCE_MS = 900
+const DEFAULT_REST_SECONDS = 90
+
+const defaultWorkouts: WorkoutTemplate[] = [
+  {
+    id: 'workout-a',
+    name: 'Workout A',
+    groups: [
+      singleExercise({
+        id: 'incline-db-chest-press',
+        name: 'Incline Dumbbell Press',
+        category: 'CHEST',
+        setup: '20°',
+        sets: 4,
+        reps: 7,
+        weight: 32,
+        perHand: true,
+        lastResult: 'failure',
+      }, 120),
+      singleExercise({
+        id: 'chest-supported-row-machine',
+        name: 'Machine Row',
+        category: 'BACK',
+        setup: '5-top',
+        sets: 4,
+        reps: 7,
+        weight: 46.25,
+        perHand: false,
+        lastResult: 'failure',
+      }, 120),
+      singleExercise({
+        id: 'cable-lateral-raise',
+        name: 'Cable Lateral Raise',
+        category: 'SHOULDERS',
+        setup: 'bottom',
+        sets: 3,
+        reps: 15,
+        weight: 2.5,
+        perHand: false,
+        lastResult: 'failure',
+      }, 90),
+      singleExercise({
+        id: 'technogym-preacher-curl-machine',
+        name: 'Machine Preacher Curl',
+        category: 'BICEPS',
+        setup: '6-top',
+        sets: 3,
+        reps: 11,
+        weight: 15,
+        perHand: false,
+        lastResult: 'success',
+      }, 90),
+      singleExercise({
+        id: 'overhead-cable-triceps-extension',
+        name: 'Overhead Cable Extension',
+        category: 'TRICEPS',
+        setup: '15',
+        sets: 3,
+        reps: 11,
+        weight: 12.5,
+        perHand: false,
+        lastResult: 'failure',
+      }, 90),
+      singleExercise({
+        id: 'ab-wheel',
+        name: 'Ab Wheel Rollout',
+        category: 'CORE',
+        setup: '',
+        sets: 3,
+        reps: 11,
+        weight: 0,
+        perHand: false,
+        lastResult: 'failure',
+      }, 90),
+    ],
+  },
+  {
+    id: 'workout-b',
+    name: 'Workout B',
+    groups: [
+      singleExercise({
+        id: 'weighted-dips',
+        name: 'Weighted Dip',
+        category: 'TRICEPS',
+        setup: '',
+        sets: 4,
+        reps: 7,
+        weight: 16.25,
+        perHand: false,
+        lastResult: 'failure',
+      }, 120),
+      singleExercise({
+        id: 'technogym-lat-pulldown',
+        name: 'Machine Lat Pulldown',
+        category: 'BACK',
+        setup: '7-top',
+        sets: 4,
+        reps: 7,
+        weight: 46.25,
+        perHand: false,
+        lastResult: 'failure',
+      }, 120),
+      singleExercise({
+        id: 'overhead-db-shoulder-press',
+        name: 'Dumbbell Overhead Press',
+        category: 'SHOULDERS',
+        setup: '',
+        sets: 3,
+        reps: 9,
+        weight: 20,
+        perHand: true,
+        lastResult: 'failure',
+      }, 90),
+      singleExercise(
+        {
+          id: 'seated-cable-chest-fly',
+          name: 'Cable Fly',
+          category: 'CHEST',
+          setup: '16',
+          sets: 3,
+          reps: 11,
+          weight: 7.5,
+          perHand: false,
+          lastResult: 'failure',
+        },
+        90,
+        { linkId: 'link-chest-fly' },
+      ),
+      singleExercise(
+        {
+          id: 'pec-deck-machine-chest-fly',
+          name: 'Machine Fly',
+          category: 'CHEST',
+          setup: '9',
+          sets: 3,
+          reps: 11,
+          weight: 10,
+          perHand: false,
+          lastResult: 'success',
+        },
+        90,
+        { linkId: 'link-chest-fly', hidden: true },
+      ),
+      singleExercise(
+        {
+          id: 'reverse-cable-flyes',
+          name: 'Reverse Cable Fly',
+          category: 'SHOULDERS',
+          setup: '22',
+          sets: 3,
+          reps: 11,
+          weight: 2.5,
+          perHand: false,
+          lastResult: 'failure',
+        },
+        90,
+        { linkId: 'link-reverse-fly' },
+      ),
+      singleExercise(
+        {
+          id: 'reverse-pec-deck-machine',
+          name: 'Reverse Machine Fly',
+          category: 'SHOULDERS',
+          setup: '3',
+          sets: 3,
+          reps: 11,
+          weight: 10,
+          perHand: false,
+          lastResult: 'success',
+        },
+        90,
+        { linkId: 'link-reverse-fly', hidden: true },
+      ),
+      singleExercise({
+        id: 'bulgarian-split-squat',
+        name: 'Bulgarian Split Squat',
+        category: 'LEGS',
+        setup: '',
+        sets: 3,
+        reps: 11,
+        weight: 0,
+        perHand: false,
+        lastResult: 'failure',
+      }, 90),
+    ],
+  },
+]
+
+function singleExercise(
+  variant: ExerciseVariant,
+  restSeconds = DEFAULT_REST_SECONDS,
+  extra?: { hidden?: boolean; linkId?: string },
+): ExerciseGroup {
+  return {
+    id: variant.id,
+    activeVariantId: variant.id,
+    variants: [variant],
+    restSeconds,
+    ...extra,
+  }
+}
+
+function Icon({ name, size = 20 }: { name: string; size?: number }) {
+  const props = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  }
+
+  switch (name) {
+    case 'back':
+      return (
+        <svg {...props}>
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+      )
+    case 'forward':
+      return (
+        <svg {...props}>
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      )
+    case 'trash':
+      return (
+        <svg {...props}>
+          <path d="M4 7h16" />
+          <path d="M9 7V4h6v3" />
+          <path d="M6 7l1 13h10l1-13" />
+          <path d="M10 11v6M14 11v6" />
+        </svg>
+      )
+    case 'download':
+      return (
+        <svg {...props}>
+          <path d="M12 3v12" />
+          <path d="M7 10l5 5 5-5" />
+          <path d="M5 21h14" />
+        </svg>
+      )
+    case 'upload':
+      return (
+        <svg {...props}>
+          <path d="M12 21V9" />
+          <path d="M7 8l5-5 5 5" />
+          <path d="M5 21h14" />
+        </svg>
+      )
+    case 'cloud':
+      return (
+        <svg {...props}>
+          <path d="M7 18h10.5a3.5 3.5 0 0 0 0-7 5 5 0 0 0-9.8-1.2A3.6 3.6 0 0 0 7 18z" />
+        </svg>
+      )
+    case 'up':
+      return (
+        <svg {...props}>
+          <path d="M6 15l6-6 6 6" />
+        </svg>
+      )
+    case 'down':
+      return (
+        <svg {...props}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      )
+    case 'edit':
+      return (
+        <svg {...props}>
+          <path d="M4 20h4L19 9l-4-4L4 16z" />
+          <path d="M14 6l4 4" />
+        </svg>
+      )
+    case 'flag':
+      return (
+        <svg {...props}>
+          <path d="M7 21V4" />
+          <path d="M7 5h10l-1.5 3L17 11H7" />
+        </svg>
+      )
+    case 'minus':
+      return (
+        <svg {...props}>
+          <path d="M5 12h14" />
+        </svg>
+      )
+    case 'plus':
+      return (
+        <svg {...props}>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      )
+    case 'check':
+      return (
+        <svg {...props}>
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      )
+    case 'arrow-up':
+      return (
+        <svg {...props}>
+          <path d="M12 19V5M5 12l7-7 7 7" />
+        </svg>
+      )
+    case 'repeat':
+      return (
+        <svg {...props}>
+          <path d="M17 1l4 4-4 4" />
+          <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+          <path d="M7 23l-4-4 4-4" />
+          <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+        </svg>
+      )
+    case 'clock':
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      )
+    case 'play':
+      return (
+        <svg {...props} fill="currentColor" stroke="none">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      )
+    case 'history':
+      return (
+        <svg {...props}>
+          <path d="M3 3v5h5" />
+          <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+          <path d="M12 7v5l4 2" />
+        </svg>
+      )
+    case 'chart':
+      return (
+        <svg {...props}>
+          <path d="M4 19V5" />
+          <path d="M4 19h16" />
+          <path d="M6.5 15.5l4-4 3 2 5-6" />
+        </svg>
+      )
+    case 'settings':
+      return (
+        <svg {...props}>
+          <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
+          <path d="M1 14h6M9 8h6M17 16h6" />
+        </svg>
+      )
+    case 'bell':
+      return (
+        <svg {...props}>
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+        </svg>
+      )
+    case 'close':
+      return (
+        <svg {...props}>
+          <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
+      )
+    case 'eye':
+      return (
+        <svg {...props}>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      )
+    case 'eye-off':
+      return (
+        <svg {...props}>
+          <path d="M17.94 17.94A10.9 10.9 0 0 1 12 19c-6.5 0-10-7-10-7a20 20 0 0 1 5.06-5.94" />
+          <path d="M9.9 5.24A10.5 10.5 0 0 1 12 5c6.5 0 10 7 10 7a20 20 0 0 1-3.22 4.31" />
+          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+          <path d="M3 3l18 18" />
+        </svg>
+      )
+    case 'grip':
+      return (
+        <svg {...props} fill="currentColor" stroke="none">
+          <circle cx="9" cy="6" r="1.6" />
+          <circle cx="15" cy="6" r="1.6" />
+          <circle cx="9" cy="12" r="1.6" />
+          <circle cx="15" cy="12" r="1.6" />
+          <circle cx="9" cy="18" r="1.6" />
+          <circle cx="15" cy="18" r="1.6" />
+        </svg>
+      )
+    default:
+      return null
+  }
+}
+
+// Password field with an eye toggle to reveal what's being typed. Used by every password entry
+// (sign in, create account, change/reset password).
+function PasswordInput({
+  value,
+  autoComplete,
+  onChange,
+}: {
+  value: string
+  autoComplete: string
+  onChange: (value: string) => void
+}) {
+  const [show, setShow] = useState(false)
+
+  return (
+    <span className="pw-field">
+      <input
+        className="number-input text-input"
+        type={show ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <button
+        className="pw-toggle"
+        type="button"
+        aria-label={show ? 'Hide password' : 'Show password'}
+        aria-pressed={show}
+        onClick={() => {
+          setShow((current) => !current)
+          void haptics.selection()
+        }}
+      >
+        <Icon name={show ? 'eye-off' : 'eye'} size={19} />
+      </button>
+    </span>
+  )
+}
+
+function DurationEditor({
+  dialog,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  dialog: DurationDialog
+  onChange: (next: DurationDialog) => void
+  onCancel: () => void
+  onSave: () => void
+}) {
+  const hoursRef = useRef(dialog.hours)
+  const minutesRef = useRef(dialog.minutes)
+  hoursRef.current = dialog.hours
+  minutesRef.current = dialog.minutes
+  const holdStepper = useHoldStepper()
+
+  const step = (delta: number) => {
+    const hours = Number.parseInt(hoursRef.current, 10)
+    const minutes = Number.parseInt(minutesRef.current, 10)
+    const current =
+      (Number.isFinite(hours) ? Math.max(0, hours) : 0) * 60 * 60 +
+      (Number.isFinite(minutes) ? Math.max(0, minutes) : 0) * 60
+    const next = Math.min(23 * 60 * 60 + 59 * 60, Math.max(10 * 60, current + delta))
+    if (next === current) return false
+    const nextHours = String(Math.floor(next / 3600))
+    const nextMinutes = String(Math.floor((next % 3600) / 60))
+    hoursRef.current = nextHours
+    minutesRef.current = nextMinutes
+    onChange({ ...dialog, hours: nextHours, minutes: nextMinutes, error: '' })
+    return true
+  }
+
+  return (
+    <Dialog title="Edit duration">
+      <div className="set-stepper rest-stepper">
+        <button type="button" aria-label="Decrease duration" {...holdStepper.bind(() => step(-WORKOUT_DURATION_STEP_SECONDS))}>
+          <Icon name="minus" size={18} />
+        </button>
+        <div className="rest-mmss">
+          <label className="set-rest-field">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              step="1"
+              value={dialog.hours}
+              aria-label="Duration hours"
+              onChange={(event) => onChange({ ...dialog, hours: event.target.value, error: '' })}
+            />
+            <span>h</span>
+          </label>
+          <label className="set-rest-field">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="59"
+              step="1"
+              value={dialog.minutes}
+              aria-label="Duration minutes"
+              onChange={(event) => onChange({ ...dialog, minutes: event.target.value, error: '' })}
+            />
+            <span>m</span>
+          </label>
+        </div>
+        <button type="button" aria-label="Increase duration" {...holdStepper.bind(() => step(WORKOUT_DURATION_STEP_SECONDS))}>
+          <Icon name="plus" size={18} />
+        </button>
+      </div>
+      {dialog.error && <p className="auth-error" role="alert">{dialog.error}</p>}
+      <div className="dialog-actions">
+        <button type="button" onClick={onCancel}>Cancel</button>
+        <button className="primary-action" type="button" onClick={onSave}>Save</button>
+      </div>
+    </Dialog>
+  )
+}
+
+function App() {
+  const [data, setData] = useState<AppData>(loadData)
+  templatesRef = data.templates
+  const [screen, setScreenState] = useState<Screen>(loadScreen)
+  const [screenStack, setScreenStack] = useState<Screen[]>([])
+  const [weightDialog, setWeightDialog] = useState<WeightDialog | null>(null)
+  const [previousDialog, setPreviousDialog] = useState<PreviousDialog | null>(null)
+  const [linkDialog, setLinkDialog] = useState<LinkDialog | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const [editDirty, setEditDirty] = useState(false)
+  const [cloudUser, setCloudUser] = useState<CloudUser | null>(null)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
+  const [syncConflict, setSyncConflict] = useState<{ remote: CloudState; remoteUpdatedAt: number } | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string
+    message: string
+    confirmLabel: string
+    cancelLabel?: string
+    danger?: boolean
+    warning?: boolean
+    onConfirm: () => boolean | void
+    onCancel?: () => void
+  } | null>(null)
+  const [workoutSummaryDialog, setWorkoutSummaryDialog] = useState<WorkoutSummaryDialog | null>(null)
+  const [historyOptionsSessionId, setHistoryOptionsSessionId] = useState<string | null>(null)
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_PAGE_SIZE)
+  const [durationDialog, setDurationDialog] = useState<DurationDialog | null>(null)
+  const [syncError, setSyncError] = useState('')
+  const [syncAttempt, setSyncAttempt] = useState(0)
+  const [cloudActionBusy, setCloudActionBusy] = useState(false)
+  const [cloudActionError, setCloudActionError] = useState('')
+  const [authDialog, setAuthDialog] = useState<AuthDialog | null>(null)
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false)
+  const [apkDialogOpen, setApkDialogOpen] = useState(false)
+  const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
+  // When this device last completed a successful sync — shown on the home account row.
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
+    const stored = Number(getStored(LAST_SYNCED_KEY))
+    return Number.isFinite(stored) && stored > 0 ? stored : null
+  })
+  const [initialRestTimer] = useState(() => parseStoredRestTimer(getStored(REST_TIMER_KEY), Date.now()))
+  const [restSeconds, setRestSeconds] = useState(() =>
+    initialRestTimer
+      ? restSecondsRemaining(initialRestTimer.endsAt, Date.now())
+      : DEFAULT_REST_SECONDS,
+  )
+  // Length the running countdown started from — drives the dock's drain bar. Kept separately from
+  // the active exercise's rest so tapping another exercise mid-rest doesn't skew the bar.
+  const [restDuration, setRestDuration] = useState(initialRestTimer?.duration ?? DEFAULT_REST_SECONDS)
+  const [restRunning, setRestRunning] = useState(Boolean(initialRestTimer))
+  const [restEndsAt, setRestEndsAt] = useState<number | null>(initialRestTimer?.endsAt ?? null)
+  const [restPulse, setRestPulse] = useState(false)
+  const [restNotificationMessage, setRestNotificationMessage] = useState('')
+  const [vibrationMessage, setVibrationMessage] = useState('')
+  // Inline result note for the Export/Import backup rows (shown in place of the row subtitle, like
+  // the Test vibration row) — the app never uses browser alert/confirm popups.
+  const [backupMessage, setBackupMessage] = useState<{ target: 'export' | 'import'; text: string; error?: boolean } | null>(null)
+  const [backupBusy, setBackupBusy] = useState<'export' | 'import' | null>(null)
+  const [recoveryStore, setRecoveryStore] = useState<RecoveryStore>(() => loadRecoveryStore(isValidBackup))
+  const [recoveryDialog, setRecoveryDialog] = useState<RecoveryDialog | null>(null)
+  const [recoverySyncStatus, setRecoverySyncStatus] = useState<RecoverySyncStatus>('device-only')
+  const [recoveryError, setRecoveryError] = useState('')
+  const [recoveryLocalError, setRecoveryLocalError] = useState(false)
+  const [recoveryMessage, setRecoveryMessage] = useState('')
+  const [storageError, setStorageError] = useState(false)
+  const [latestApk, setLatestApk] = useState<LatestApk | null>(readCachedLatestApk)
+  const [appUpdateState, setAppUpdateState] = useState<AppUpdateUiState>({ status: 'checking', progress: 0 })
+  const [displayedDownloadProgress, setDisplayedDownloadProgress] = useState(0)
+  // The build number of the installed APK (native only; CI stamps it into versionCode). Null on the
+  // web and on APKs older than the stamping change — those can't tell which build they are.
+  const [installedBuild, setInstalledBuild] = useState<number | null>(null)
+  const [startDialogOpen, setStartDialogOpen] = useState(false)
+  const [highlightSession, setHighlightSession] = useState<string | null>(null)
+  const backupInputRef = useRef<HTMLInputElement>(null)
+  const scrollTimer = useRef<number | null>(null)
+  const pulseTimer = useRef<number | null>(null)
+  const downloadStartedAtRef = useRef<number | null>(null)
+  const downloadReadyTimerRef = useRef<number | null>(null)
+  const restAlertStartedRef = useRef(false)
+  const restAlarmActionRef = useRef(0)
+  const restAlarmQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const restEndsAtRef = useRef(restEndsAt)
+  restEndsAtRef.current = restEndsAt
+  const restDurationRef = useRef(restDuration)
+  restDurationRef.current = restDuration
+  const syncTimer = useRef<number | null>(null)
+  const recoverySyncTimer = useRef<number | null>(null)
+  const recoverySyncRunningRef = useRef(false)
+  const recoverySyncQueuedRef = useRef(false)
+  const recoveryRevisionRef = useRef(0)
+  const manualSyncPendingRef = useRef(false)
+  const scrollPositionsRef = useRef(data.scrollBySession)
+  scrollPositionsRef.current = data.scrollBySession
+  const expandedRef = useRef<string | null>(null)
+  const holdStepper = useHoldStepper()
+  // Mirror the current screen into a ref so the (mount-only) popstate handler can read it.
+  const screenRef = useRef(screen)
+  screenRef.current = screen
+  // Dismissable "back layers" stacked on top of a screen: edit mode and any open dialog. The back
+  // gesture closes the topmost one before leaving the screen. We mirror their open-state into refs
+  // and a count so the mount-only history handler can read the latest values.
+  const dialogOpen =
+    weightDialog !== null ||
+    previousDialog !== null ||
+    linkDialog !== null ||
+    authDialog !== null ||
+    passwordDialog !== null ||
+    accountDialogOpen ||
+    apkDialogOpen ||
+    confirmDialog !== null ||
+    workoutSummaryDialog !== null ||
+    historyOptionsSessionId !== null ||
+    durationDialog !== null ||
+    recoveryDialog !== null ||
+    syncConflict !== null ||
+    startDialogOpen
+  const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
+  const editModeRef = useRef(editMode)
+  editModeRef.current = editMode
+  const editDirtyRef = useRef(editDirty)
+  editDirtyRef.current = editDirty
+  // Pre-edit snapshot of the routine + sessions, so discarding edit mode can roll them back.
+  const editSnapshotRef = useRef<{ templates: WorkoutTemplate[]; sessions: WorkoutSession[] } | null>(null)
+  const dialogOpenRef = useRef(dialogOpen)
+  dialogOpenRef.current = dialogOpen
+  const syncConflictRef = useRef(syncConflict)
+  syncConflictRef.current = syncConflict
+  const overlayBuffersRef = useRef(0)
+  const closingOverlayViaPopstateRef = useRef(false)
+  const ignorePopstateRef = useRef(0)
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const cloudUserRef = useRef(cloudUser)
+  cloudUserRef.current = cloudUser
+  const recoveryStoreRef = useRef(recoveryStore)
+  recoveryStoreRef.current = recoveryStore
+  const lastPersistedDataRef = useRef(data)
+  const applyingRemoteTimestampRef = useRef<number | null>(null)
+  const syncReadyRef = useRef(false)
+  const queueCloudPushRef = useRef<() => void>(() => undefined)
+  const queueRecoverySyncRef = useRef<() => void>(() => undefined)
+  const [initialSyncTimestamp] = useState(() => {
+    const initialData = buildInitialData()
+    return initialLocalTimestamp(
+      getStored(LOCAL_UPDATED_KEY),
+      hasMeaningfulLocalData(data, initialData),
+      Date.now(),
+    )
+  })
+  const localUpdatedAtRef = useRef(initialSyncTimestamp)
+
+  // Record a completed sync (push or pull) for the "last synced" label on the account row.
+  const markSynced = () => {
+    const now = Date.now()
+    setLastSyncedAt(now)
+    setStored(LAST_SYNCED_KEY, String(now))
+  }
+
+  const finishManualSync = (success: boolean) => {
+    if (!manualSyncPendingRef.current) {
+      return false
+    }
+    manualSyncPendingRef.current = false
+    void (success ? haptics.confirm() : haptics.reject())
+    return true
+  }
+
+  queueCloudPushRef.current = () => {
+    const user = cloudUserRef.current
+    if (!supabase || !user || !syncReadyRef.current) {
+      return
+    }
+
+    if (syncTimer.current !== null) {
+      window.clearTimeout(syncTimer.current)
+    }
+
+    setSyncStatus('syncing')
+    setSyncError('')
+    syncTimer.current = window.setTimeout(async () => {
+      const activeUser = cloudUserRef.current
+      if (!activeUser || activeUser.id !== user.id || !syncReadyRef.current) {
+        return
+      }
+
+      const payload = dataRef.current
+      const pushedAt = localUpdatedAtRef.current
+      try {
+        await saveCloudState(user.id, payload, pushedAt)
+        if (cloudUserRef.current?.id !== user.id) {
+          return
+        }
+
+        markSynced()
+        finishManualSync(true)
+        if (localUpdatedAtRef.current > pushedAt) {
+          queueCloudPushRef.current()
+        } else {
+          setSyncStatus('synced')
+        }
+      } catch (error) {
+        if (cloudUserRef.current?.id === user.id) {
+          setSyncStatus('error')
+          setSyncError(errorMessage(error))
+        }
+        if (!finishManualSync(false)) {
+          void haptics.reject()
+        }
+      }
+    }, SYNC_DEBOUNCE_MS)
+  }
+
+  const applyRecoveryStore = (next: RecoveryStore, changedLocally: boolean) => {
+    const persisted = persistRecoveryStore(next)
+    setRecoveryLocalError(!persisted)
+    if (!persisted) return false
+
+    recoveryStoreRef.current = next
+    setRecoveryStore(next)
+    if (changedLocally) {
+      setRecoveryError('')
+      recoveryRevisionRef.current += 1
+      queueRecoverySyncRef.current()
+    }
+    return true
+  }
+
+  const storeRecoveryCopy = (
+    reason: RecoveryReason,
+    sourceData: AppData = dataRef.current,
+  ) => {
+    try {
+      const snapshot = createRecoverySnapshot(sourceData, reason, { id: createId(), now: Date.now() })
+      const result = addRecoverySnapshot(recoveryStoreRef.current, snapshot)
+      if (!result.created) return 'unchanged' as const
+      if (!applyRecoveryStore(result.store, true)) {
+        setRecoveryError('Recovery copy could not be saved on this device.')
+        return 'error' as const
+      }
+      return 'created' as const
+    } catch (error) {
+      setRecoveryError(errorMessage(error))
+      return 'error' as const
+    }
+  }
+
+  const syncRecoveryCopies = async () => {
+    const user = cloudUserRef.current
+    if (!supabase || !user) {
+      setRecoverySyncStatus('device-only')
+      return
+    }
+    if (recoverySyncRunningRef.current) {
+      recoverySyncQueuedRef.current = true
+      return
+    }
+
+    recoverySyncRunningRef.current = true
+    recoverySyncQueuedRef.current = false
+    setRecoverySyncStatus('syncing')
+    setRecoveryError('')
+    const revision = recoveryRevisionRef.current
+    const local = recoveryStoreRef.current
+
+    try {
+      const [remoteRaw, remoteDeletedIds] = await Promise.all([
+        loadCloudRecoverySnapshots(user.id),
+        loadCloudRecoveryDeletedIds(user.id),
+      ])
+      const remote = normalizeRecoverySnapshots(remoteRaw, isValidBackup)
+      const knownDeletedIds = [...new Set([...remoteDeletedIds, ...local.deletedIds])]
+      const merged = mergeRecoverySnapshots(local.copies, remote, knownDeletedIds)
+      const keptIds = new Set(merged.copies.map((copy) => copy.id))
+      const remoteIds = remoteRaw.flatMap((value) =>
+        isRecord(value) && typeof value.id === 'string' ? [value.id] : [],
+      )
+      const deleteIds = [...new Set([
+        ...knownDeletedIds,
+        ...merged.prunedIds,
+        ...remoteIds.filter((id) => !keptIds.has(id)),
+      ])]
+
+      await saveCloudRecoverySnapshots(user.id, merged.copies)
+      await saveCloudRecoveryDeletedIds(user.id, deleteIds)
+      await deleteCloudRecoverySnapshots(user.id, deleteIds)
+      if (cloudUserRef.current?.id !== user.id) return
+
+      const changedWhileSyncing = recoveryRevisionRef.current !== revision
+      const current = recoveryStoreRef.current
+      const currentMerged = mergeRecoverySnapshots(current.copies, merged.copies, current.deletedIds)
+      const stored = applyRecoveryStore(
+        {
+          copies: currentMerged.copies,
+          deletedIds: changedWhileSyncing
+            ? [...new Set([...current.deletedIds, ...currentMerged.prunedIds])]
+            : [],
+        },
+        false,
+      )
+      if (!stored) throw new Error('Recovery copies could not be saved on this device.')
+
+      if (changedWhileSyncing) {
+        recoverySyncQueuedRef.current = true
+      } else {
+        setRecoverySyncStatus('synced')
+      }
+    } catch (error) {
+      if (cloudUserRef.current?.id === user.id) {
+        setRecoverySyncStatus('error')
+        setRecoveryError(errorMessage(error))
+      }
+    } finally {
+      recoverySyncRunningRef.current = false
+      if (recoverySyncQueuedRef.current && cloudUserRef.current?.id === user.id) {
+        recoverySyncQueuedRef.current = false
+        queueRecoverySyncRef.current()
+      }
+    }
+  }
+
+  queueRecoverySyncRef.current = () => {
+    if (!supabase || !cloudUserRef.current) {
+      setRecoverySyncStatus('device-only')
+      return
+    }
+    if (recoverySyncTimer.current !== null) window.clearTimeout(recoverySyncTimer.current)
+    setRecoverySyncStatus('syncing')
+    recoverySyncTimer.current = window.setTimeout(() => {
+      recoverySyncTimer.current = null
+      void syncRecoveryCopies()
+    }, 450)
+  }
+
+  // Inline Settings notes (vibration test, backup results) clear themselves after a few seconds, so
+  // the rows return to their normal descriptions without needing a dismiss control.
+  useEffect(() => {
+    if (!vibrationMessage) {
+      return
+    }
+    const id = window.setTimeout(() => setVibrationMessage(''), 5000)
+    return () => window.clearTimeout(id)
+  }, [vibrationMessage])
+
+  useEffect(() => {
+    if (!backupMessage) {
+      return
+    }
+    const id = window.setTimeout(() => setBackupMessage(null), 5000)
+    return () => window.clearTimeout(id)
+  }, [backupMessage])
+
+  useEffect(() => {
+    if (!recoveryMessage) return
+    const id = window.setTimeout(() => setRecoveryMessage(''), 5000)
+    return () => window.clearTimeout(id)
+  }, [recoveryMessage])
+
+  // Keep the one native launch window up until the real UI has mounted. The helper falls back to
+  // Capacitor's old splash plugin when this web bundle runs inside an older APK.
+  useEffect(() => {
+    void hideLaunchScreen()
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    let lastCheck = 0
+
+    const refreshVersionInfo = (force = false) => {
+      const now = Date.now()
+      if (!force && now - lastCheck < 30_000) return
+      lastCheck = now
+
+      void fetchLatestApk().then((latest) => {
+        if (active && latest) setLatestApk(latest)
+      })
+
+      if (Capacitor.isNativePlatform()) {
+        void CapacitorApp.getInfo()
+          .then((info) => {
+            const build = Number(info.build)
+            if (active && Number.isFinite(build) && build > 0) setInstalledBuild(build)
+          })
+          .catch(() => undefined)
+      }
+    }
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshVersionInfo()
+    }
+
+    refreshVersionInfo(true)
+    window.addEventListener('focus', refreshWhenVisible)
+    window.addEventListener('online', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+
+    const nativeStateListener = Capacitor.isNativePlatform()
+      ? CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            refreshVersionInfo(true)
+            checkForAppUpdate(true)
+          }
+        })
+      : null
+
+    return () => {
+      active = false
+      window.removeEventListener('focus', refreshWhenVisible)
+      window.removeEventListener('online', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      if (nativeStateListener) void nativeStateListener.then((listener) => listener.remove())
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!apkDialogOpen || !Capacitor.isNativePlatform()) {
+      return
+    }
+    let active = true
+    let unsupported = false
+    const poll = async () => {
+      if (unsupported) return
+      try {
+        const state = await AppUpdater.getStatus()
+        if (active) applyAppUpdateState(state)
+      } catch {
+        unsupported = true
+        if (active) setAppUpdateState({ status: 'unsupported', progress: 0 })
+      }
+    }
+    void poll()
+    const intervalId = window.setInterval(() => void poll(), 150)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [apkDialogOpen])
+
+  useEffect(() => {
+    if (appUpdateState.status === 'ready') {
+      setDisplayedDownloadProgress(100)
+      return
+    }
+    if (appUpdateState.status !== 'downloading') {
+      return
+    }
+
+    const target = Math.min(100, Math.max(0, appUpdateState.progress))
+    const intervalId = window.setInterval(() => {
+      setDisplayedDownloadProgress((current) => {
+        if (current >= target) {
+          window.clearInterval(intervalId)
+          return current
+        }
+        return nextDisplayedDownloadProgress(current, target)
+      })
+    }, 40)
+    return () => window.clearInterval(intervalId)
+  }, [appUpdateState.progress, appUpdateState.status])
+
+  useEffect(() => {
+    setStorageError(!setStored(STORAGE_KEY, JSON.stringify(data)))
+
+    const previous = lastPersistedDataRef.current
+    if (previous === data) {
+      return
+    }
+    lastPersistedDataRef.current = data
+
+    const remoteTimestamp = applyingRemoteTimestampRef.current
+    if (remoteTimestamp !== null) {
+      applyingRemoteTimestampRef.current = null
+      localUpdatedAtRef.current = remoteTimestamp
+      setStored(LOCAL_UPDATED_KEY, String(remoteTimestamp))
+      return
+    }
+
+    // Pure UI bookkeeping (scroll position, expanded exercise) persists locally above but must not
+    // advance the sync timestamp or upload — see isMeaningfulChange for why.
+    if (!isMeaningfulChange(previous, data)) {
+      return
+    }
+
+    const completedNow = data.sessions.some((session) => {
+      const prior = previous.sessions.find((candidate) => candidate.id === session.id)
+      return session.finishedAt !== undefined && prior?.finishedAt === undefined
+    })
+    if (completedNow && automaticRecoveryDue(recoveryStoreRef.current.copies, Date.now())) {
+      storeRecoveryCopy('automatic', data)
+    }
+
+    const updatedAt = nextLocalTimestamp(localUpdatedAtRef.current, Date.now())
+    localUpdatedAtRef.current = updatedAt
+    setStored(LOCAL_UPDATED_KEY, String(updatedAt))
+    queueCloudPushRef.current()
+  }, [data])
+
+  useEffect(() => {
+    if (localUpdatedAtRef.current > 0 && !getStored(LOCAL_UPDATED_KEY)) {
+      setStored(LOCAL_UPDATED_KEY, String(localUpdatedAtRef.current))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (
+      recoveryStoreRef.current.copies.length === 0 &&
+      hasMeaningfulLocalData(dataRef.current, buildInitialData())
+    ) {
+      storeRecoveryCopy('automatic', dataRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!supabase) {
+      return
+    }
+    let active = true
+    const updateCloudUser = (user: { id: string; email?: string | null } | undefined) => {
+      setCloudUser(user ? { id: user.id, email: user.email ?? 'Unknown email' } : null)
+    }
+
+    supabase.auth.getSession().then(({ data: sessionData }) => {
+      if (active) {
+        updateCloudUser(sessionData.session?.user)
+      }
+    })
+    const { data: authSub } = supabase.auth.onAuthStateChange((event, session) => {
+      updateCloudUser(session?.user)
+      // Arriving via a password-reset email link: Supabase signs the user in with a recovery
+      // session and fires this event — prompt straight away for the new password.
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordDialog({ mode: 'recovery', value: '', error: '', busy: false })
+      }
+    })
+    return () => {
+      active = false
+      authSub.subscription.unsubscribe()
+    }
+  }, [])
+
+  const cloudUserId = cloudUser?.id
+  useEffect(() => {
+    syncReadyRef.current = false
+    if (syncTimer.current !== null) {
+      window.clearTimeout(syncTimer.current)
+      syncTimer.current = null
+    }
+
+    if (!cloudUserId || !supabase) {
+      setSyncStatus('idle')
+      setSyncError('')
+      setSyncConflict(null)
+      return
+    }
+
+    let cancelled = false
+    setSyncStatus('checking')
+    setSyncError('')
+    setSyncConflict(null)
+
+    const syncOnSignIn = async () => {
+      try {
+        const remote = await loadCloudState(cloudUserId)
+        if (cancelled) {
+          return
+        }
+
+        const remoteUpdatedAt = remote ? parseCloudTimestamp(remote.updatedAt) : null
+        if (remote && remoteUpdatedAt === null) {
+          throw new Error('Cloud data has an invalid timestamp. Local data was not changed.')
+        }
+
+        // First sign-in to an account that already holds data, while this device has its own
+        // unsynced changes (it was never synced with this account): don't silently overwrite either
+        // side — let the user choose. Continuations (this device already synced this account) and
+        // non-meaningful local data fall through to the normal last-write-wins below.
+        const syncedAccount = getStored(SYNCED_ACCOUNT_KEY)
+        const localMeaningful = hasMeaningfulLocalData(dataRef.current, buildInitialData())
+        if (remote && remoteUpdatedAt !== null && localMeaningful && syncedAccount !== cloudUserId) {
+          if (!isValidBackup(remote.data)) {
+            throw new Error('Cloud data is invalid. Local data was not changed.')
+          }
+          setSyncConflict({ remote, remoteUpdatedAt })
+          setSyncStatus('conflict')
+          manualSyncPendingRef.current = false
+          return
+        }
+
+        const localUpdatedAt = localUpdatedAtRef.current
+        const syncDirection = chooseSyncDirection(remoteUpdatedAt, localUpdatedAt)
+        if (remote && remoteUpdatedAt !== null && syncDirection === 'pull') {
+          if (!isValidBackup(remote.data)) {
+            throw new Error('Cloud data is invalid. Local data was not changed.')
+          }
+
+          if (hasMeaningfulLocalData(dataRef.current, buildInitialData())) {
+            if (storeRecoveryCopy('before-cloud-replace', dataRef.current) === 'error') {
+              throw new Error('Recovery copy could not be saved. Device data was not changed.')
+            }
+          }
+
+          applyingRemoteTimestampRef.current = remoteUpdatedAt
+          localUpdatedAtRef.current = remoteUpdatedAt
+          setStored(LOCAL_UPDATED_KEY, String(remoteUpdatedAt))
+          setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
+          syncReadyRef.current = true
+          setData(normalizeData(remote.data))
+          setSyncStatus('synced')
+          markSynced()
+          finishManualSync(true)
+          return
+        }
+
+        if (syncDirection === 'none') {
+          setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
+          syncReadyRef.current = true
+          setSyncStatus('synced')
+          markSynced()
+          finishManualSync(true)
+          return
+        }
+
+        // Preserve the timestamp of the actual local edit. Bumping it merely because the app
+        // checked the cloud makes two idle devices repeatedly overwrite identical data.
+        const pushedAt = localUpdatedAt > 0 ? localUpdatedAt : Date.now()
+        localUpdatedAtRef.current = pushedAt
+        setStored(LOCAL_UPDATED_KEY, String(pushedAt))
+        if (remote && isValidBackup(remote.data)) {
+          if (storeRecoveryCopy('before-cloud-replace', normalizeData(remote.data)) === 'error') {
+            throw new Error('Recovery copy could not be saved. Account data was not changed.')
+          }
+        }
+        await saveCloudState(cloudUserId, dataRef.current, pushedAt)
+        if (cancelled) {
+          return
+        }
+
+        setStored(SYNCED_ACCOUNT_KEY, cloudUserId)
+        syncReadyRef.current = true
+        markSynced()
+        finishManualSync(true)
+        if (localUpdatedAtRef.current > pushedAt) {
+          queueCloudPushRef.current()
+        } else {
+          setSyncStatus('synced')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSyncStatus('error')
+          setSyncError(errorMessage(error))
+          if (!finishManualSync(false)) {
+            void haptics.reject()
+          }
+        }
+      }
+    }
+
+    void syncOnSignIn()
+    return () => {
+      cancelled = true
+    }
+  }, [cloudUserId, syncAttempt])
+
+  useEffect(() => {
+    if (!cloudUserId || !supabase) {
+      if (recoverySyncTimer.current !== null) {
+        window.clearTimeout(recoverySyncTimer.current)
+        recoverySyncTimer.current = null
+      }
+      setRecoverySyncStatus('device-only')
+      setRecoveryError('')
+      return
+    }
+    queueRecoverySyncRef.current()
+  }, [cloudUserId, syncAttempt])
+
+  useEffect(() => {
+    if (!supabase) {
+      return
+    }
+
+    let lastCheck = Date.now()
+    const reconcile = (force = false) => {
+      if (!cloudUserRef.current || document.visibilityState !== 'visible') {
+        return
+      }
+      const now = Date.now()
+      if (!force && now - lastCheck < 30_000) {
+        return
+      }
+      lastCheck = now
+      setSyncAttempt((current) => current + 1)
+    }
+    const reconcileWhenVisible = () => reconcile()
+    const reconcileWhenOnline = () => reconcile(true)
+
+    window.addEventListener('focus', reconcileWhenVisible)
+    window.addEventListener('online', reconcileWhenOnline)
+    document.addEventListener('visibilitychange', reconcileWhenVisible)
+    const intervalId = window.setInterval(reconcileWhenVisible, 5 * 60 * 1000)
+    return () => {
+      window.removeEventListener('focus', reconcileWhenVisible)
+      window.removeEventListener('online', reconcileWhenOnline)
+      document.removeEventListener('visibilitychange', reconcileWhenVisible)
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    window.history.replaceState({ fitnessHub: true }, '')
+
+    const handlePopState = () => {
+      // History entries consumed by the overlay sync effect (closing a dialog/edit mode via a
+      // Cancel/Done tap) must not also pop a screen — skip them.
+      if (ignorePopstateRef.current > 0) {
+        ignorePopstateRef.current -= 1
+        return
+      }
+
+      // A back layer (open dialog, then edit mode) is dismissed before the screen changes.
+      if (overlayBuffersRef.current > 0) {
+        closingOverlayViaPopstateRef.current = true
+        if (dialogOpenRef.current) {
+          closeAllDialogs()
+        } else if (editModeRef.current) {
+          // Leaving edit mode via the cross / back gesture. If changes were made, keep edit mode open
+          // (restore the consumed history entry) and show a styled confirm on top; otherwise exit.
+          if (editDirtyRef.current) {
+            closingOverlayViaPopstateRef.current = false
+            window.history.pushState({ fitnessHub: true, overlay: true }, '')
+            setConfirmDialog({
+              title: 'Discard changes?',
+              message: 'Your workout edits will be lost.',
+              confirmLabel: 'Discard',
+              danger: true,
+              onConfirm: () => {
+                if (editSnapshotRef.current) {
+                  const snapshot = editSnapshotRef.current
+                  setData((current) => ({ ...current, templates: snapshot.templates, sessions: snapshot.sessions }))
+                }
+                setEditMode(false)
+                editSnapshotRef.current = null
+                setConfirmDialog(null)
+              },
+            })
+            return
+          }
+          setEditMode(false)
+          editSnapshotRef.current = null
+        }
+        return
+      }
+
+      setScreenStack((currentStack) => {
+        if (currentStack.length > 0) {
+          const previous = currentStack[currentStack.length - 1]
+          setScreenState(previous)
+          return currentStack.slice(0, -1)
+        }
+
+        // Empty stack: only the main menu lets the back press exit the app. From anywhere else,
+        // fall back to the menu (and keep a history entry to consume) rather than exiting.
+        if (screenRef.current.name !== 'main') {
+          window.history.pushState({ fitnessHub: true }, '')
+          setScreenState({ name: 'main' })
+        }
+        return currentStack
+      })
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    // On Android, Capacitor's hardware/gesture back does NOT navigate web history by default — it
+    // just exits the app. Handle it explicitly: step back through history (which fires the popstate
+    // handler above to close a dialog/edit layer or return to the menu); only the bare menu exits.
+    let removeBackButton: (() => void) | undefined
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.addListener('backButton', () => {
+        if (overlayBuffersRef.current > 0 || screenRef.current.name !== 'main') {
+          window.history.back()
+        } else {
+          void CapacitorApp.exitApp()
+        }
+      }).then((handle) => {
+        removeBackButton = () => void handle.remove()
+      })
+    }
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      removeBackButton?.()
+    }
+  }, [])
+
+  // Keep the browser history in sync with the open back layers (edit mode / dialogs). Opening a
+  // layer pushes a history entry so the back gesture has something to consume; closing one via the
+  // UI (Cancel/Done) steps that entry back off so the history stays aligned with what's on screen.
+  useEffect(() => {
+    const pushed = overlayBuffersRef.current
+    if (overlayCount > pushed) {
+      for (let i = pushed; i < overlayCount; i += 1) {
+        window.history.pushState({ fitnessHub: true, overlay: true }, '')
+      }
+      overlayBuffersRef.current = overlayCount
+      return
+    }
+    if (overlayCount < pushed) {
+      const toConsume = pushed - overlayCount
+      overlayBuffersRef.current = overlayCount
+      if (closingOverlayViaPopstateRef.current) {
+        // The back gesture already removed the entry; just clear the flag.
+        closingOverlayViaPopstateRef.current = false
+      } else {
+        // Closed via the UI: remove the matching history entries ourselves.
+        ignorePopstateRef.current += toConsume
+        for (let i = 0; i < toConsume; i += 1) {
+          window.history.back()
+        }
+      }
+    }
+  }, [overlayCount])
+
+  useEffect(() => {
+    if (!restRunning || restEndsAt === null) {
+      return
+    }
+
+    const updateTimer = () => {
+      const remaining = restSecondsRemaining(restEndsAt, Date.now())
+      if (remaining <= 3 && !restAlertStartedRef.current) {
+        restAlertStartedRef.current = true
+        void haptics.timerFinished()
+      }
+      if (remaining === 0) {
+        restEndsAtRef.current = null
+        setRestRunning(false)
+        setRestEndsAt(null)
+        setRestSeconds(data.restSeconds)
+        removeStored(REST_TIMER_KEY)
+        triggerRestDone()
+        return
+      }
+      setRestSeconds(remaining)
+    }
+
+    updateTimer()
+    const intervalId = window.setInterval(updateTimer, 1000)
+
+    return () => window.clearInterval(intervalId)
+  }, [data.restSeconds, restEndsAt, restRunning])
+
+  useEffect(() => {
+    if (screen.name !== 'session') {
+      return
+    }
+
+    const savedY = scrollPositionsRef.current[screen.sessionId] ?? 0
+    const restoreId = window.setTimeout(() => window.scrollTo({ top: savedY }), 0)
+
+    const saveScroll = () => {
+      if (scrollTimer.current !== null) {
+        window.clearTimeout(scrollTimer.current)
+      }
+
+      scrollTimer.current = window.setTimeout(() => {
+        const y = Math.round(window.scrollY)
+        setData((current) => ({
+          ...current,
+          scrollBySession: {
+            ...current.scrollBySession,
+            [screen.sessionId]: y,
+          },
+        }))
+      }, 300)
+    }
+
+    window.addEventListener('scroll', saveScroll, { passive: true })
+
+    return () => {
+      window.clearTimeout(restoreId)
+      window.removeEventListener('scroll', saveScroll)
+      if (scrollTimer.current !== null) {
+        window.clearTimeout(scrollTimer.current)
+      }
+    }
+  }, [screen])
+
+  // Smoothly bring the active exercise into view when it changes — e.g. after Done/Failed
+  // auto-advances to the next pending exercise, or when expanding a different one. Skips the first
+  // run per session so it doesn't fight the saved-scroll restore on entry.
+  useEffect(() => {
+    if (screen.name !== 'session') {
+      expandedRef.current = null
+      return
+    }
+    const expanded = data.expandedBySession[screen.sessionId] ?? null
+    const previous = expandedRef.current
+    expandedRef.current = expanded
+    if (expanded && previous !== null && previous !== expanded) {
+      // Wait for the expand/collapse height animation to settle, then scroll only if the item isn't
+      // already on screen (block:'nearest'). 'center' moved the view on every tap — even when the
+      // item was visible — and fought the growing card, which read as jitter on a near-fitting list.
+      const id = window.setTimeout(() => {
+        document.getElementById(`exercise-${expanded}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 210)
+      return () => window.clearTimeout(id)
+    }
+  }, [data.expandedBySession, screen])
+
+  useEffect(() => {
+    return () => {
+      if (pulseTimer.current !== null) {
+        window.clearTimeout(pulseTimer.current)
+      }
+      if (syncTimer.current !== null) {
+        window.clearTimeout(syncTimer.current)
+      }
+      if (recoverySyncTimer.current !== null) {
+        window.clearTimeout(recoverySyncTimer.current)
+      }
+      if (downloadReadyTimerRef.current !== null) {
+        window.clearTimeout(downloadReadyTimerRef.current)
+      }
+    }
+  }, [])
+
+  const sortedSessions = useMemo(
+    () => [...data.sessions].sort((a, b) => b.createdAt - a.createdAt),
+    [data.sessions],
+  )
+  const historyOptionsSession = historyOptionsSessionId
+    ? data.sessions.find((session) => session.id === historyOptionsSessionId) ?? null
+    : null
+
+  const reorderGroups = (workoutId: WorkoutId, activeId: string, overId: string) => {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    const oldIndex = workout?.groups.findIndex((group) => group.id === activeId) ?? -1
+    const newIndex = workout?.groups.findIndex((group) => group.id === overId) ?? -1
+    if (oldIndex < 0 || newIndex < 0) {
+      return
+    }
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const groups = [...template.groups]
+        const [moved] = groups.splice(oldIndex, 1)
+        groups.splice(newIndex, 0, moved)
+        return { ...template, groups }
+      }),
+    }))
+    void haptics.dragDrop()
+  }
+
+  // Cancel the "choose which data to keep" prompt: undo the sign-in attempt entirely by signing out,
+  // so the app returns to exactly the state it was in before this account was tried. Local data is
+  // never touched by the conflict flow, so nothing is lost.
+  const cancelSyncConflict = async () => {
+    manualSyncPendingRef.current = false
+    setSyncConflict(null)
+    setSyncStatus('idle')
+    setSyncError('')
+    if (supabase) {
+      await supabase.auth.signOut().catch(() => undefined)
+    }
+    setCloudUser(null)
+  }
+
+  const resolveSyncConflict = async (keep: 'account' | 'device') => {
+    const conflict = syncConflict
+    const userId = cloudUserId
+    if (!conflict || !userId) {
+      return
+    }
+    setSyncConflict(null)
+    setSyncStatus('checking')
+    setSyncError('')
+    try {
+      if (keep === 'account') {
+        if (hasMeaningfulLocalData(dataRef.current, buildInitialData())) {
+          if (storeRecoveryCopy('before-cloud-replace', dataRef.current) === 'error') {
+            throw new Error('Recovery copy could not be saved. Device data was not changed.')
+          }
+        }
+        applyingRemoteTimestampRef.current = conflict.remoteUpdatedAt
+        localUpdatedAtRef.current = conflict.remoteUpdatedAt
+        setStored(LOCAL_UPDATED_KEY, String(conflict.remoteUpdatedAt))
+        syncReadyRef.current = true
+        setStored(SYNCED_ACCOUNT_KEY, userId)
+        setData(normalizeData(conflict.remote.data))
+        setSyncStatus('synced')
+        markSynced()
+        void haptics.confirm()
+      } else {
+        if (storeRecoveryCopy('before-cloud-replace', normalizeData(conflict.remote.data)) === 'error') {
+          throw new Error('Recovery copy could not be saved. Account data was not changed.')
+        }
+        const pushedAt = Math.max(localUpdatedAtRef.current, Date.now())
+        localUpdatedAtRef.current = pushedAt
+        setStored(LOCAL_UPDATED_KEY, String(pushedAt))
+        await saveCloudState(userId, dataRef.current, pushedAt)
+        syncReadyRef.current = true
+        setStored(SYNCED_ACCOUNT_KEY, userId)
+        setSyncStatus('synced')
+        markSynced()
+        void haptics.confirm()
+      }
+    } catch (error) {
+      setSyncStatus('error')
+      setSyncError(errorMessage(error))
+      void haptics.reject()
+    }
+  }
+
+  const navigate = (nextScreen: Screen) => {
+    setScreenStack((currentStack) => [...currentStack, screen])
+    setScreenState(nextScreen)
+    window.history.pushState({ fitnessHub: true }, '')
+  }
+
+  const goBack = (fallback: Screen) => {
+    // Drive the in-app back button through browser history so it behaves identically to the
+    // Android back gesture / browser back: history.back() fires popstate, which pops the stack.
+    // This keeps the navigation stack and the history stack in sync (the previous split path
+    // let them drift, which made the back gesture stop working).
+    if (screenStack.length > 0) {
+      window.history.back()
+    } else {
+      setScreenState(fallback)
+    }
+  }
+
+  const closeAllDialogs = () => {
+    setWeightDialog(null)
+    setPreviousDialog(null)
+    setLinkDialog(null)
+    setAuthDialog(null)
+    setPasswordDialog(null)
+    setAccountDialogOpen(false)
+    setApkDialogOpen(false)
+    setStartDialogOpen(false)
+    setConfirmDialog(null)
+    setWorkoutSummaryDialog(null)
+    setHistoryOptionsSessionId(null)
+    setDurationDialog(null)
+    setRecoveryDialog(null)
+    if (syncConflictRef.current) {
+      setSyncConflict(null)
+      setSyncStatus('idle')
+      setSyncError('')
+      if (supabase) {
+        void supabase.auth.signOut().catch(() => undefined)
+      }
+      setCloudUser(null)
+    }
+  }
+
+  const scrollToSession = (sessionId: string) => {
+    const index = sortedSessions.findIndex((session) => session.id === sessionId)
+    setHistoryVisibleCount((current) => Math.max(current, historyCountForIndex(index, sortedSessions.length)))
+    window.setTimeout(() => {
+      const card = document.getElementById(`hist-${sessionId}`)
+      card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightSession(sessionId)
+      window.setTimeout(() => {
+        setHighlightSession((current) => (current === sessionId ? null : current))
+      }, 1800)
+    }, 0)
+  }
+
+  const openDurationEditor = (session: WorkoutSession) => {
+    if (session.finishedAt === undefined || session.finishedAt <= session.createdAt) return
+    const totalMinutes = Math.min(
+      23 * 60 + 59,
+      Math.max(10, Math.round((session.finishedAt - session.createdAt) / 60_000)),
+    )
+    setHistoryOptionsSessionId(null)
+    setDurationDialog({
+      sessionId: session.id,
+      hours: String(Math.floor(totalMinutes / 60)),
+      minutes: String(totalMinutes % 60),
+      error: '',
+    })
+  }
+
+  const saveDuration = () => {
+    if (!durationDialog) return
+    const hours = Number(durationDialog.hours)
+    const minutes = Number(durationDialog.minutes)
+    const totalSeconds = workoutDurationSeconds(hours, minutes)
+    if (totalSeconds === null) {
+      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 10 minutes to 23 hours 59 minutes.' })
+      void haptics.reject()
+      return
+    }
+    setData((current) => ({
+      ...current,
+      sessions: current.sessions.map((session) =>
+        session.id === durationDialog.sessionId
+          ? { ...session, finishedAt: session.createdAt + totalSeconds * 1000 }
+          : session,
+      ),
+    }))
+    setDurationDialog(null)
+    void haptics.confirm()
+  }
+
+  // Schedule (or reschedule) the native locked-screen alarm for the given end time, surfacing the
+  // outdated-APK / failure states under the dock. Shared by starting and extending the rest timer.
+  const enqueueRestAlarm = <T,>(operation: () => Promise<T>) => {
+    const result = restAlarmQueueRef.current.then(operation, operation)
+    restAlarmQueueRef.current = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  const startRestAlarm = (endsAt: number) => {
+    const actionId = ++restAlarmActionRef.current
+    setRestNotificationMessage('')
+    void enqueueRestAlarm(() => scheduleRestNotification(endsAt)).then((result) => {
+      if (actionId !== restAlarmActionRef.current) {
+        return
+      }
+      if (result.status === 'outdated') {
+        setRestNotificationMessage(
+          'Update the Android app for locked-screen rest alerts. The timer still works.',
+        )
+        void haptics.reject()
+      } else if (result.status === 'failed') {
+        if (result.detail) {
+          console.warn('Rest alarm failed:', result.detail)
+        }
+        setRestNotificationMessage('Locked-screen rest alert unavailable. The timer still works.')
+        void haptics.reject()
+      }
+    })
+  }
+
+  // "+10s" while resting: push the end time out without restarting, and re-arm the native alarm.
+  const extendRest = () => {
+    const currentEndsAt = restEndsAtRef.current
+    if (!restRunning || currentEndsAt === null) {
+      return
+    }
+    const endsAt = currentEndsAt + REST_STEP_SECONDS * 1000
+    const duration = restDurationRef.current + REST_STEP_SECONDS
+    restEndsAtRef.current = endsAt
+    restDurationRef.current = duration
+    restAlertStartedRef.current = false
+    haptics.cancelTimerAlert()
+    setRestEndsAt(endsAt)
+    setRestSeconds(restSecondsRemaining(endsAt, Date.now()))
+    setRestDuration(duration)
+    if (!setStored(REST_TIMER_KEY, JSON.stringify({ endsAt, duration }))) {
+      setStorageError(true)
+    }
+    void haptics.selection()
+    startRestAlarm(endsAt)
+  }
+
+  const triggerRestDone = () => {
+    setRestPulse(true)
+
+    if (pulseTimer.current !== null) {
+      window.clearTimeout(pulseTimer.current)
+    }
+
+    pulseTimer.current = window.setTimeout(() => setRestPulse(false), 1100)
+  }
+
+  // Version facts shared by the Android tile and its dialog. `updateAvailable`/`upToDate` can only
+  // be decided inside the native app on a build-stamped APK; everywhere else they stay false.
+  const apkStatus = () => {
+    const native = Capacitor.isNativePlatform()
+    const build = latestApk?.build ?? null
+    const released = latestApk?.publishedAt != null ? formatRelative(latestApk.publishedAt) : null
+    return {
+      native,
+      build,
+      released,
+      updateAvailable: native && build !== null && installedBuild !== null && build > installedBuild,
+      upToDate: native && build !== null && installedBuild !== null && build <= installedBuild,
+    }
+  }
+
+  const applyAppUpdateState = (state: AppUpdateUiState) => {
+    if (state.status !== 'ready' || downloadStartedAtRef.current === null) {
+      setAppUpdateState(state)
+      return
+    }
+
+    if (downloadReadyTimerRef.current !== null) {
+      return
+    }
+
+    // A small APK can complete between two DownloadManager samples. Keep the real 100% target on
+    // screen briefly so the interpolated bar/value can visibly reach it before Install replaces it.
+    setAppUpdateState({ status: 'downloading', progress: 100, build: state.build })
+    downloadReadyTimerRef.current = window.setTimeout(() => {
+      downloadReadyTimerRef.current = null
+      downloadStartedAtRef.current = null
+      setAppUpdateState(state)
+    }, 1200)
+  }
+
+  const startAppUpdate = async () => {
+    if (downloadReadyTimerRef.current !== null) {
+      window.clearTimeout(downloadReadyTimerRef.current)
+      downloadReadyTimerRef.current = null
+    }
+    downloadStartedAtRef.current = Date.now()
+    setDisplayedDownloadProgress(0)
+    setAppUpdateState({ status: 'downloading', progress: 0 })
+    try {
+      const state = await AppUpdater.download({ url: APK_DOWNLOAD_URL })
+      applyAppUpdateState(state)
+      if (state.status === 'downloading' || state.status === 'ready') {
+        void haptics.confirm()
+      } else {
+        void haptics.reject()
+      }
+    } catch {
+      setAppUpdateState({ status: 'failed', progress: 0, detail: 'Could not start the download.' })
+      void haptics.reject()
+    }
+  }
+
+  const installAppUpdate = async () => {
+    try {
+      const state = await AppUpdater.install()
+      setAppUpdateState(state)
+      if (state.status === 'installing') {
+        void haptics.confirm()
+      } else if (state.status === 'failed' || state.status === 'permission-required') {
+        void haptics.reject()
+      }
+    } catch {
+      setAppUpdateState({ status: 'failed', progress: 100, detail: 'Could not open the installer.' })
+      void haptics.reject()
+    }
+  }
+
+  // The Android app tile — same size and styling as the other tiles. It opens an explainer dialog
+  // (what the app is, version status, download button) rather than downloading straight away. The
+  // subtitle mirrors the account tile: a status dot when the state is known.
+  const renderApkTile = () => {
+    const { native, build, updateAvailable, upToDate } = apkStatus()
+
+    return (
+      <button className={`home-tile${updateAvailable ? ' update' : ''}`} type="button" onClick={() => setApkDialogOpen(true)}>
+        <span className="home-tile-icon"><Icon name="download" size={22} /></span>
+        <span className="home-tile-text">
+          <span>Android</span>
+          {updateAvailable ? (
+            <small className="home-tile-status">
+              <span className="sync-status update">
+                <i aria-hidden="true" />
+                Update available
+              </span>
+            </small>
+          ) : upToDate ? (
+            <small className="home-tile-status">
+              <span className="sync-status synced">
+                <i aria-hidden="true" />
+                Up to date
+              </span>
+            </small>
+          ) : (
+            <small>
+              {native
+                ? installedBuild !== null
+                  ? `Installed · Build ${installedBuild}`
+                  : 'Installed'
+                : build !== null
+                  ? `Build ${build} available`
+                  : 'Download'}
+            </small>
+          )}
+        </span>
+      </button>
+    )
+  }
+
+  const renderMain = () => {
+    const latest = sortedSessions[0]
+    const resumable = latest && !isSessionClosed(latest) ? latest : undefined
+    const lastWorkoutId = latest?.workoutId
+    const suggestedId: WorkoutId = lastWorkoutId === 'workout-a' ? 'workout-b' : 'workout-a'
+    const otherWorkouts = data.templates.filter((template) => template.id !== suggestedId)
+    const sessionCount = data.sessions.length
+
+    return (
+      <main className="home" aria-label="Fitness Hub">
+        <header className="home-top">
+          <h1>Fitness Hub</h1>
+          <p className="home-sub">{formatMenuDate()}</p>
+        </header>
+
+        {resumable && (
+          <button
+            className="home-resume"
+            type="button"
+            onClick={() => openSession(resumable.workoutId, resumable.id)}
+          >
+            <span className="home-resume-row">
+              <strong>Resume workout</strong>
+              <Icon name="play" size={24} />
+            </span>
+            <span className="home-resume-sub">
+              {getWorkout(resumable.workoutId).name} · {countDone(resumable)} of{' '}
+              {displayedGroups(getWorkout(resumable.workoutId).groups).length} done
+            </span>
+            <span className="home-rail" aria-hidden="true">
+              {displayedGroups(getWorkout(resumable.workoutId).groups).map(({ group }) => {
+                const groupEntry = resumable.groupEntries[group.id]
+                const result = groupEntry?.entries[group.activeVariantId]?.result
+                return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
+              })}
+            </span>
+          </button>
+        )}
+
+        <button className="home-start-primary" type="button" onClick={() => setStartDialogOpen(true)}>
+          <span className="home-start-main">
+            <strong>Start workout</strong>
+            <small>Up next · {getWorkout(suggestedId).name}</small>
+          </span>
+          <Icon name="forward" size={24} />
+        </button>
+
+        <div className="home-tiles">
+          {supabase &&
+            (cloudUser ? (
+              <button className="home-tile" type="button" onClick={() => setAccountDialogOpen(true)}>
+                <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
+                <span className="home-tile-text">
+                  <span>Account</span>
+                  <small className="home-tile-status">
+                    <span className={`sync-status ${syncStatus}`}>
+                      <i aria-hidden="true" />
+                      {syncStatusLabel(syncStatus)}
+                    </span>
+                  </small>
+                </span>
+              </button>
+            ) : (
+              <button
+                className="home-tile"
+                type="button"
+                onClick={() => setAuthDialog({ mode: 'in', email: '', password: '', error: '', note: '', busy: false })}
+              >
+                <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
+                <span className="home-tile-text">
+                  <span>Sign in</span>
+                  <small>Sync across devices</small>
+                </span>
+              </button>
+            ))}
+
+          {renderApkTile()}
+
+          <div className="home-bottom-tiles">
+            <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
+              <span className="home-tile-icon"><Icon name="history" size={22} /></span>
+              <span className="home-tile-text">
+                <span>History</span>
+                <small>{sessionCount} {sessionCount === 1 ? 'workout' : 'workouts'}</small>
+              </span>
+            </button>
+
+            <button className="home-tile" type="button" onClick={() => navigate({ name: 'settings' })}>
+              <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
+              <span className="home-tile-text">
+                <span>Settings</span>
+                <small>Timer and backups</small>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {startDialogOpen && (
+          <Dialog title="Start workout">
+            <div className="start-sheet">
+              <button
+                className="start-next"
+                type="button"
+                onClick={() => {
+                  setStartDialogOpen(false)
+                  startSession(suggestedId)
+                }}
+              >
+                <span className="start-next-main">
+                  <small>Up next</small>
+                  <strong>{getWorkout(suggestedId).name}</strong>
+                </span>
+                <Icon name="play" size={22} />
+              </button>
+
+              {otherWorkouts.length > 0 && (
+                <>
+                  <p className="start-or">Other workouts</p>
+                  {otherWorkouts.map((workout) => (
+                    <button
+                      key={workout.id}
+                      className="start-other"
+                      type="button"
+                      onClick={() => {
+                        setStartDialogOpen(false)
+                        startSession(workout.id)
+                      }}
+                    >
+                      <span>{workout.name}</span>
+                      <Icon name="forward" size={18} />
+                    </button>
+                  ))}
+                </>
+              )}
+
+              <button className="choice-cancel" type="button" onClick={() => setStartDialogOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </Dialog>
+        )}
+      </main>
+    )
+  }
+
+  const renderHistory = (sessions: WorkoutSession[], onBack: () => void, title = 'History') => {
+    const tracker = buildTrackerDays(sessions)
+    // Headline stats over all recorded sessions (the list is sorted newest-first).
+    const totalCount = sessions.length
+    const finishedCount = sessions.filter(isSessionFinished).length
+    const completionRate = totalCount > 0 ? Math.round((finishedCount / totalCount) * 100) : 0
+    const oldest = sessions[sessions.length - 1]
+    const spanWeeks = oldest ? Math.max(1, (Date.now() - oldest.createdAt) / (7 * 24 * 60 * 60 * 1000)) : 1
+    const perWeek = (totalCount / spanWeeks).toFixed(1)
+    const durations = sessions
+      .filter(
+        (session) =>
+          session.finishedAt !== undefined &&
+          session.finishedAt > session.createdAt &&
+          session.finishedAt - session.createdAt <= MAX_WORKOUT_DURATION_SECONDS * 1000,
+      )
+      .map((session) => (session.finishedAt as number) - session.createdAt)
+    const avgLength =
+      durations.length > 0
+        ? formatWorkoutDuration(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+        : '—'
+    const visibleCount = clampHistoryCount(historyVisibleCount, sessions.length)
+    const visibleSessions = sessions.slice(0, visibleCount)
+
+    return (
+      <Page title={title} onBack={onBack}>
+        {sessions.length === 0 ? (
+          <EmptyState text="No workouts yet." />
+        ) : (
+          <>
+            <button
+              className="hist-analysis-link"
+              type="button"
+              onClick={() => navigate({ name: 'progress-analysis' })}
+            >
+              <Icon name="chart" size={22} />
+              <span className="hist-analysis-copy">
+                <strong>Progress</strong>
+                <small>Track load and estimated 1RM</small>
+              </span>
+              <Icon name="forward" size={18} />
+            </button>
+
+            <div className="hist-stats" aria-label="Workout stats">
+              <div className="hist-stat">
+                <strong>{totalCount}</strong>
+                <span>Workouts</span>
+              </div>
+              <div className="hist-stat">
+                <strong className="good">{completionRate}%</strong>
+                <span>Completed</span>
+              </div>
+              <div className="hist-stat">
+                <strong>{perWeek}</strong>
+                <span>Per week</span>
+              </div>
+              <div className="hist-stat">
+                <strong>{avgLength}</strong>
+                <span>Avg duration</span>
+              </div>
+            </div>
+
+            <div className="hist-tracker" aria-label="Last 28 days">
+              <div className="hist-tracker-weekdays" aria-hidden="true">
+                {tracker.slice(0, 7).map((day) => (
+                  <span key={day.key}>{day.weekdayLabel}</span>
+                ))}
+              </div>
+              <div className="hist-tracker-row">
+                {tracker.map((day) => {
+                  const latest = day.sessions[0]
+                  const label = day.sessions.length
+                    ? `${day.label} · ${day.sessions.map((s) => sessionStatusLabel(s.status).toLowerCase()).join(', ')}`
+                    : `${day.label} · no workout`
+                  return (
+                    <button
+                      key={day.key}
+                      type="button"
+                      className={`hist-day ${day.sessions.length ? 'has' : 'empty'}`}
+                      disabled={!latest}
+                      aria-label={label}
+                      title={label}
+                      onClick={() => latest && scrollToSession(latest.sessionId)}
+                    >
+                      {day.sessions.map((session, index) => (
+                        <i className={`hist-seg ${session.status}`} key={index} />
+                      ))}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="hist-tracker-legend">
+                <span><i className="dot done" />Completed</span>
+                <span><i className="dot ended-early" />Ended early</span>
+                <span><i className="dot unfinished" />Unfinished</span>
+                <span className="hist-tracker-ends">last 28 days</span>
+              </div>
+            </div>
+
+            <div className="hist-list">
+              {visibleSessions.map((session) => {
+                const workout = getWorkout(session.workoutId)
+                const doneCount = countDone(session)
+                // Count displayed slots (linked pairs collapse, hidden drop) — same base as countDone,
+                // so a finished session actually reads as finished.
+                const total = displayedGroups(workout.groups).length
+                const status = sessionHistoryStatus(session)
+                return (
+                  <article
+                    className={`hist-card ${highlightSession === session.id ? 'highlight' : ''}`}
+                    id={`hist-${session.id}`}
+                    key={session.id}
+                  >
+                    <button className="hist-open" type="button" onClick={() => setHistoryOptionsSessionId(session.id)}>
+                      <span className="hist-main">
+                        <strong>{workout.name}</strong>
+                        <small>{formatHistorySessionLine(session)}</small>
+                        <small className="hist-ago">{formatRelative(session.createdAt)}</small>
+                      </span>
+                      <span className={`hist-chip ${status}`}>
+                        {sessionStatusLabel(status)}
+                        <em>{doneCount}/{total}</em>
+                      </span>
+                    </button>
+                  </article>
+                )
+              })}
+            </div>
+            {visibleCount < sessions.length && (
+              <button
+                className="hist-load-more"
+                type="button"
+                onClick={() => setHistoryVisibleCount((current) => nextHistoryCount(current, sessions.length))}
+              >
+                Show older workouts
+                <small>{visibleCount} of {sessions.length} shown</small>
+              </button>
+            )}
+          </>
+        )}
+      </Page>
+    )
+  }
+
+  const submitAuth = async () => {
+    if (!authDialog || !supabase) {
+      return
+    }
+
+    const email = authDialog.email.trim()
+    const password = authDialog.password
+    if (!email || !password) {
+      setAuthDialog({ ...authDialog, error: 'Enter your email and password.', note: '' })
+      void haptics.reject()
+      return
+    }
+
+    setAuthDialog({ ...authDialog, busy: true, error: '', note: '' })
+
+    if (authDialog.mode === 'in') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+        void haptics.reject()
+      } else {
+        setAuthDialog(null)
+        void haptics.confirm()
+      }
+      return
+    }
+
+    const { data: signUpData, error } = await supabase.auth.signUp({ email, password })
+    if (error) {
+      setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+      void haptics.reject()
+    } else if (signUpData.session) {
+      setAuthDialog(null)
+      void haptics.confirm()
+    } else {
+      setAuthDialog((current) =>
+        current
+          ? { ...current, mode: 'in', password: '', busy: false, error: '', note: 'Check your email to confirm the account, then sign in.' }
+          : current,
+      )
+      void haptics.confirm()
+    }
+  }
+
+  // "Forgot password?" — Supabase emails a reset link that opens the live web app, where the
+  // PASSWORD_RECOVERY handler above prompts for a new password.
+  const sendPasswordReset = async () => {
+    if (!authDialog || !supabase || authDialog.busy) {
+      return
+    }
+
+    const email = authDialog.email.trim()
+    if (!email) {
+      setAuthDialog({ ...authDialog, error: 'Enter your email first.', note: '' })
+      void haptics.reject()
+      return
+    }
+
+    setAuthDialog({ ...authDialog, busy: true, error: '', note: '' })
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: PUBLIC_APP_URL })
+    if (error) {
+      setAuthDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+      void haptics.reject()
+    } else {
+      setAuthDialog((current) =>
+        current
+          ? { ...current, busy: false, error: '', note: `Reset link sent to ${email}. Use it to set a new password.` }
+          : current,
+      )
+      void haptics.confirm()
+    }
+  }
+
+  const submitPassword = async () => {
+    if (!passwordDialog || !supabase || passwordDialog.busy) {
+      return
+    }
+
+    if (passwordDialog.value.length < 6) {
+      setPasswordDialog({ ...passwordDialog, error: 'Password must be at least 6 characters.' })
+      void haptics.reject()
+      return
+    }
+
+    setPasswordDialog({ ...passwordDialog, busy: true, error: '' })
+    const { error } = await supabase.auth.updateUser({ password: passwordDialog.value })
+    if (error) {
+      setPasswordDialog((current) => (current ? { ...current, busy: false, error: error.message } : current))
+      void haptics.reject()
+    } else {
+      setPasswordDialog(null)
+      void haptics.confirm()
+    }
+  }
+
+  const retryCloudSync = () => {
+    setCloudActionError('')
+    manualSyncPendingRef.current = true
+    setSyncAttempt((current) => current + 1)
+  }
+
+  const signOut = async () => {
+    if (!supabase || cloudActionBusy) {
+      return
+    }
+
+    setCloudActionBusy(true)
+    setCloudActionError('')
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      setCloudActionBusy(false)
+      setCloudActionError(`Sign out failed. ${error.message}`)
+      void haptics.reject()
+      return
+    }
+
+    // Forget which account this device last synced with, so signing back in (even to the same
+    // account) re-shows the "choose which data to keep" prompt. This lets the user work locally after
+    // logging out and consciously decide, on re-login, whether to keep those local changes or the
+    // account's data — instead of silently last-write-wins overwriting one of them.
+    setStored(SYNCED_ACCOUNT_KEY, '')
+    manualSyncPendingRef.current = false
+    setCloudActionBusy(false)
+    setCloudUser(null)
+    setAccountDialogOpen(false)
+    void haptics.confirm()
+  }
+
+  const recoveryCountLabel = (() => {
+    const count = recoveryStore.copies.length
+    if (count === 0) return 'No recovery copies yet'
+    const copies = `${count} ${count === 1 ? 'copy' : 'copies'}`
+    if (!cloudUser) return `${copies} on this device`
+    if (recoverySyncStatus === 'syncing') return `${copies} · Syncing…`
+    if (recoverySyncStatus === 'error') return `${copies} · Cloud sync paused`
+    if (recoverySyncStatus === 'synced') return `${copies} · Cloud synced`
+    return `${copies} on this device`
+  })()
+
+  const createManualRecoveryCopy = () => {
+    setRecoveryError('')
+    const result = storeRecoveryCopy('manual')
+    if (result === 'created') {
+      setRecoveryMessage('Recovery copy created.')
+      void haptics.confirm()
+    } else if (result === 'unchanged') {
+      setRecoveryMessage('Latest copy is already current.')
+      void haptics.selection()
+    } else {
+      void haptics.reject()
+    }
+  }
+
+  const recoveryCopyIsCurrent = (copy: RecoverySnapshot) => {
+    try {
+      return recoveryDataHash(dataRef.current).hash === recoveryDataHash(normalizeData(copy.data)).hash
+    } catch {
+      return false
+    }
+  }
+
+  const restoreRecoveryCopy = (copy: RecoverySnapshot) => {
+    setRecoveryDialog(null)
+    setConfirmDialog({
+      title: 'Restore this copy?',
+      message: `${formatAbsolute(copy.createdAt)}. Your current data will be saved first.`,
+      confirmLabel: 'Restore',
+      onCancel: () => setRecoveryDialog({ mode: 'details', id: copy.id }),
+      onConfirm: () => {
+        if (!isValidBackup(copy.data) || storeRecoveryCopy('before-restore') === 'error') {
+          setConfirmDialog(null)
+          setRecoveryDialog({ mode: 'details', id: copy.id })
+          return false
+        }
+        setData(normalizeData(copy.data))
+        setRecoveryMessage('Recovery copy restored.')
+        setConfirmDialog(null)
+      },
+    })
+  }
+
+  const confirmRecoveryCopyDeletion = (copy: RecoverySnapshot) => {
+    setRecoveryDialog(null)
+    setConfirmDialog({
+      title: 'Delete recovery copy?',
+      message: cloudUser
+        ? 'This removes it from this device and your account.'
+        : 'This removes it from this device.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onCancel: () => setRecoveryDialog({ mode: 'details', id: copy.id }),
+      onConfirm: () => {
+        const deleted = applyRecoveryStore(deleteRecoverySnapshot(recoveryStoreRef.current, copy.id), true)
+        if (!deleted) {
+          setRecoveryError('Recovery copy could not be deleted on this device.')
+          setConfirmDialog(null)
+          setRecoveryDialog({ mode: 'details', id: copy.id })
+          return false
+        }
+        setRecoveryMessage('Recovery copy deleted.')
+        setConfirmDialog(null)
+      },
+    })
+  }
+
+  const renderSettings = () => (
+    <Page title="Settings" onBack={() => goBack({ name: 'main' })}>
+      <div className="set-list">
+        <button className="set-row" type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
+          <span className="set-main">
+            <strong>Recovery copies</strong>
+            <small className={recoveryLocalError ? 'set-note-error' : undefined} role="status">
+              {recoveryMessage || (recoveryLocalError ? 'Device save paused' : recoveryCountLabel)}
+            </small>
+          </span>
+          <Icon name="history" />
+        </button>
+
+        <button
+          className="set-row"
+          type="button"
+          disabled={backupBusy !== null}
+          aria-busy={backupBusy === 'export'}
+          onClick={() => void exportData()}
+        >
+          <span className="set-main">
+            <strong>Export backup</strong>
+            <small className={backupMessage?.target === 'export' && backupMessage.error ? 'set-note-error' : undefined} role="status">
+              {backupBusy === 'export'
+                ? 'Saving…'
+                : backupMessage?.target === 'export'
+                  ? backupMessage.text
+                  : 'Save a JSON file to this device'}
+            </small>
+          </span>
+          <Icon name="download" />
+        </button>
+
+        <button
+          className="set-row"
+          type="button"
+          disabled={backupBusy !== null}
+          aria-busy={backupBusy === 'import'}
+          onClick={() => void requestBackupImport()}
+        >
+          <span className="set-main">
+            <strong>Import backup</strong>
+            <small className={backupMessage?.target === 'import' && backupMessage.error ? 'set-note-error' : undefined} role="status">
+              {backupBusy === 'import'
+                ? 'Opening…'
+                : backupMessage?.target === 'import'
+                  ? backupMessage.text
+                  : 'Replace app data from a JSON file'}
+            </small>
+          </span>
+          <Icon name="upload" />
+        </button>
+        <input
+          className="backup-file-input"
+          ref={backupInputRef}
+          type="file"
+          accept="application/json,.json"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={(event) => void importData(event)}
+        />
+
+        <button className="set-row" type="button" onClick={testVibration}>
+          <span className="set-main">
+            <strong>Test rest alert</strong>
+            <small role="status">{vibrationMessage || 'Vibrates for five seconds'}</small>
+          </span>
+          <Icon name="bell" />
+        </button>
+
+        <button className="set-row danger" type="button" onClick={resetData}>
+          <span className="set-main">
+            <strong>Reset workout data</strong>
+            <small>Delete history and workout changes</small>
+          </span>
+          <Icon name="trash" />
+        </button>
+      </div>
+    </Page>
+  )
+
+  const stopRestTimer = (resetTo = data.restSeconds) => {
+    if (!restRunning && restEndsAtRef.current === null) {
+      return
+    }
+    setRestRunning(false)
+    restEndsAtRef.current = null
+    setRestEndsAt(null)
+    setRestSeconds(resetTo)
+    restAlertStartedRef.current = false
+    setRestNotificationMessage('')
+    restAlarmActionRef.current += 1
+    removeStored(REST_TIMER_KEY)
+    haptics.cancelTimerAlert()
+    void enqueueRestAlarm(cancelRestNotification)
+  }
+
+  const requestEndWorkoutEarly = (session: WorkoutSession) => {
+    setConfirmDialog({
+      title: 'End workout early?',
+      message: 'Your workout and elapsed time will be saved.',
+      confirmLabel: 'End workout',
+      cancelLabel: 'Cancel',
+      warning: true,
+      onConfirm: () => {
+        const finishedAt = Date.now()
+        setData((current) => ({
+          ...current,
+          sessions: current.sessions.map((candidate) =>
+            candidate.id === session.id
+              ? { ...candidate, finishedAt, endedEarly: true }
+              : candidate,
+          ),
+          currentSessionByWorkout:
+            current.currentSessionByWorkout[session.workoutId] === session.id
+              ? Object.fromEntries(
+                  Object.entries(current.currentSessionByWorkout).filter(([, value]) => value !== session.id),
+                ) as Partial<Record<WorkoutId, string>>
+              : current.currentSessionByWorkout,
+        }))
+        stopRestTimer()
+        setConfirmDialog(null)
+        setWorkoutSummaryDialog({ sessionId: session.id, kind: 'ended-early', finishedAt })
+      },
+    })
+  }
+
+  const renderSession = (session: WorkoutSession) => {
+    const workout = getWorkout(session.workoutId)
+    // The workout (doing) screen shows collapsed slots (linked pairs merged); edit mode shows every
+    // exercise as its own row.
+    const slots = displayedGroups(workout.groups)
+    // Edit mode may collapse to none; normal mode always keeps one shown exercise open. If the stored
+    // expanded id is no longer a visible slot (e.g. it was just hidden by a swap), fall back to the
+    // first slot.
+    const storedExpanded = data.expandedBySession[session.id]
+    const expandedGroupId = editMode
+      ? storedExpanded ?? ''
+      : (slots.some(({ group }) => group.id === storedExpanded) ? storedExpanded : '') || slots[0]?.group.id || ''
+    const activeGroup = workout.groups.find((group) => group.id === expandedGroupId)
+    const activeRest = clampRestValue(activeGroup?.restSeconds ?? DEFAULT_REST_SECONDS)
+    const doneCount = countDone(session)
+    const sessionStatus = sessionHistoryStatus(session)
+
+    return (
+      <main className={`ws-screen${editMode ? ' editing' : ''}`}>
+        <header className="ws-header">
+          {editMode ? (
+            <button className="ws-back" type="button" aria-label="Discard changes" onClick={() => window.history.back()}>
+              <Icon name="close" />
+            </button>
+          ) : (
+            <button className="ws-back" type="button" aria-label="Back" onClick={() => goBack({ name: 'main' })}>
+              <Icon name="back" />
+            </button>
+          )}
+          <div className="ws-head-title">
+            <strong>{workout.name}</strong>
+            {editMode ? (
+              <span>Editing</span>
+            ) : sessionStatus === 'done' ? (
+              <span className="complete">Workout complete</span>
+            ) : sessionStatus === 'ended-early' ? (
+              <span className="ended-early">Ended early</span>
+            ) : (
+              <span>{`${doneCount}/${slots.length} done`}</span>
+            )}
+          </div>
+          <div className="ws-head-actions">
+            <button
+              className={`ws-back ws-edit-toggle${editMode ? ' saving' : ''}`}
+              type="button"
+              aria-label={editMode ? 'Save changes' : 'Edit workout'}
+              onClick={() => {
+                if (editMode) {
+                  if (editDirty) {
+                    const snapshot = editSnapshotRef.current
+                    if (snapshot) {
+                      const recoveryResult = storeRecoveryCopy('before-workout-edit', {
+                        ...dataRef.current,
+                        templates: snapshot.templates,
+                        sessions: snapshot.sessions,
+                      })
+                      if (recoveryResult === 'error') {
+                        void haptics.reject()
+                        return
+                      }
+                    }
+                    void haptics.confirm()
+                  }
+                  setEditMode(false)
+                  editSnapshotRef.current = null
+                } else {
+                  editSnapshotRef.current = { templates: data.templates, sessions: data.sessions }
+                  setEditDirty(false)
+                  setEditMode(true)
+                }
+              }}
+            >
+              <Icon name={editMode ? 'check' : 'edit'} />
+            </button>
+          </div>
+          <div className="ws-rail" aria-label={`${doneCount} of ${slots.length} exercises done`}>
+            {slots.map(({ group }) => {
+              const groupEntry = session.groupEntries[group.id]
+              const result = groupEntry?.entries[group.activeVariantId]?.result
+              return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
+            })}
+          </div>
+        </header>
+
+        <section className="ws-list" aria-label={`${workout.name} exercises`}>
+          {editMode ? (
+            <Suspense fallback={<p className="ws-editor-loading" role="status">Loading editor…</p>}>
+              <WorkoutEditorList
+                Icon={Icon}
+                onReorder={(activeId, overId) => reorderGroups(workout.id, activeId, overId)}
+                items={workout.groups.map((group) => {
+                  const partner = group.linkId
+                    ? workout.groups.find((other) => other.id !== group.id && other.linkId === group.linkId)
+                    : undefined
+                  return {
+                    id: group.id,
+                    variant: soleVariant(group),
+                    restSeconds: group.restSeconds,
+                    hidden: Boolean(group.hidden),
+                    linkedPartnerName: partner ? soleVariant(partner).name : undefined,
+                    isExpanded: expandedGroupId === group.id,
+                    canRemove:
+                      workout.groups.length > 1 &&
+                      displayedGroups(workout.groups.filter((candidate) => candidate.id !== group.id)).length > 0,
+                    canLink: !group.linkId && workout.groups.some((other) => other.id !== group.id && !other.linkId),
+                    canToggleHidden: Boolean(group.hidden) || Boolean(group.linkId) || slots.length > 1,
+                    onToggle: () => toggleExpand(session.id, group.id),
+                    onVariant: (patch: Partial<ExerciseVariant>) => editVariant(session.id, group.id, group.activeVariantId, patch),
+                    onRest: (value: number) => editGroupRest(group.id, value),
+                    onRemove: () => removeGroup(workout.id, group.id),
+                    onToggleHidden: () => toggleHidden(workout.id, group.id),
+                    onLink: () => setLinkDialog({ workoutId: workout.id, groupId: group.id }),
+                    onUnlink: () => unlinkExercise(workout.id, group.id),
+                  }
+                })}
+              />
+            </Suspense>
+          ) : (
+            slots.map(({ group, partner }, index) =>
+              renderExerciseRow(workout, session, group, partner, expandedGroupId, index),
+            )
+          )}
+          {editMode && (
+            <button
+              className="ws-add"
+              type="button"
+              onClick={() => {
+                addExercise(workout.id, session.id)
+                void haptics.selection()
+              }}
+            >
+              <Icon name="plus" size={18} />
+              Add exercise
+            </button>
+          )}
+        </section>
+
+        {!editMode && sessionStatus === 'unfinished' && (
+          <button
+            className="ws-end-workout"
+            type="button"
+            onClick={() => requestEndWorkoutEarly(session)}
+          >
+            <Icon name="flag" size={18} />
+            End workout early
+          </button>
+        )}
+
+        {!editMode && renderRestTimer(activeRest)}
+      </main>
+    )
+  }
+
+  const renderExerciseRow = (
+    workout: WorkoutTemplate,
+    session: WorkoutSession,
+    group: ExerciseGroup,
+    partner: ExerciseGroup | undefined,
+    expandedGroupId: string,
+    index: number,
+  ) => {
+    const sessionGroup = ensureSessionGroup(session, group, data)
+    const variant = getVariant(group, sessionGroup.activeVariantId)
+    const entry = sessionGroup.entries[variant.id] ?? { weight: variant.weight }
+    const displaySetup = getExerciseSetup(entry, variant)
+    const displaySets = getExerciseSets(entry, variant)
+    const displayReps = getExerciseReps(entry, variant)
+    const previousStreak = getPreviousResultStreak(data, workout.id, session, group.id, variant.id)
+    const previous = previousStreak.result ?? 'missing'
+    const isExpanded = expandedGroupId === group.id
+    const muscle = muscleColor(variant.category)
+    const numLabel = String(index + 1).padStart(2, '0')
+    // "Increase weight?" confirmation: only when last time was a success and it hasn't been resolved
+    // for this session yet. Failed / no-record exercises skip straight to the normal controls.
+    const showIncrease = previous === 'success' && !entry.increaseResolved
+
+    return (
+      <article
+        className={`ws-item${isExpanded ? ' open' : ''}${entry.result ? ' is-done' : ''}`}
+        style={muscleColorStyle(variant.category)}
+        id={`exercise-${group.id}`}
+        key={group.id}
+      >
+        <button
+          className="ws-item-head"
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={() => expandExercise(session.id, group.id)}
+        >
+          <span className="ws-dot" style={{ background: muscle }} aria-hidden="true" />
+          <span className="ws-num">{numLabel}</span>
+          <span className="ws-name">{variant.name}</span>
+          {isExpanded ? (
+            <span className="ws-cat" style={{ color: muscle }}>
+              {categoryLabel(variant.category)}
+            </span>
+          ) : entry.result ? (
+            <span className={`ws-chip ${entry.result === 'success' ? 'done' : 'failed'}`}>{resultLabel(entry.result)}</span>
+          ) : (
+            <span className="ws-meta">{formatTarget(displaySets, displayReps)}</span>
+          )}
+        </button>
+
+        <div className="ws-item-body" aria-hidden={!isExpanded} inert={!isExpanded}>
+          <div className="ws-item-body-inner">
+            <div className="ws-item-body-content">
+              <div className="ws-facts">
+                <div className="ws-fact">
+                  <span>Setup</span>
+                  <strong>{formatSetup(displaySetup)}</strong>
+                </div>
+                <div className="ws-fact">
+                  <span>Target</span>
+                  <strong>{formatTarget(displaySets, displayReps)}</strong>
+                </div>
+              </div>
+
+              {variant.note && <p className="ws-note">{variant.note}</p>}
+
+              <button
+                className={`ws-guide ${guidanceClass(previous)}`}
+                type="button"
+                onClick={() =>
+                  setPreviousDialog({ workoutId: workout.id, sessionId: session.id, groupId: group.id, variantId: variant.id })
+                }
+              >
+                <Icon name={previous === 'success' ? 'arrow-up' : previous === 'failure' ? 'repeat' : 'clock'} size={18} />
+                <span>{resultGuidance(previousStreak)}</span>
+              </button>
+
+              {showIncrease ? (
+                <>
+                  <div className="ws-step" aria-label={`${variant.name} weight increase`}>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="Decrease amount"
+                      {...holdStepper.bind(() => adjustIncrease(session.id, group.id, variant.id, -1))}
+                    >
+                      <Icon name="minus" size={20} />
+                    </button>
+                    <button
+                      className="ws-weight ws-weight-increase"
+                      type="button"
+                      onClick={() =>
+                        setWeightDialog({
+                          sessionId: session.id,
+                          groupId: group.id,
+                          variantId: variant.id,
+                          increase: true,
+                          value: entry.increaseDelta === undefined ? '' : String(entry.increaseDelta),
+                        })
+                      }
+                    >
+                      {entry.increaseDelta === undefined ? (
+                        <strong className="ws-weight-prompt">
+                          Increase
+                          <br />
+                          weight by?
+                        </strong>
+                      ) : (
+                        <strong>{formatWeight(entry.increaseDelta)}</strong>
+                      )}
+                    </button>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="Increase amount"
+                      {...holdStepper.bind(() => adjustIncrease(session.id, group.id, variant.id, 1))}
+                    >
+                      <Icon name="plus" size={20} />
+                    </button>
+                  </div>
+
+                  <div className="ws-result" aria-label={`${variant.name} increase`}>
+                    <button
+                      className="ws-resultbtn done"
+                      type="button"
+                      onClick={() => acceptIncrease(session.id, group.id, variant.id)}
+                    >
+                      Apply
+                    </button>
+                    <button
+                      className="ws-resultbtn"
+                      type="button"
+                      onClick={() => cancelIncrease(session.id, group.id, variant.id)}
+                    >
+                      Keep weight
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="ws-step" aria-label={`${variant.name} weight`}>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="Decrease weight"
+                      {...holdStepper.bind(() => adjustWeight(session.id, group.id, variant.id, -1.25))}
+                    >
+                      <Icon name="minus" size={20} />
+                    </button>
+                    <button
+                      className="ws-weight"
+                      type="button"
+                      onClick={() =>
+                        setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
+                      }
+                    >
+                      <strong>{formatWeight(entry.weight)}</strong>
+                      <span>{variant.perHand ? 'per hand' : 'total'}</span>
+                    </button>
+                    <button
+                      className="ws-stepbtn"
+                      type="button"
+                      aria-label="Increase weight"
+                      {...holdStepper.bind(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
+                    >
+                      <Icon name="plus" size={20} />
+                    </button>
+                  </div>
+
+                  <div className="ws-result" aria-label={`${variant.name} result`}>
+                    <button
+                      className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
+                      type="button"
+                      aria-pressed={entry.result === 'success'}
+                      onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
+                    >
+                      Done
+                    </button>
+                    <button
+                      className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
+                      type="button"
+                      aria-pressed={entry.result === 'failure'}
+                      onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
+                    >
+                      Failed
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {partner && (
+                <button
+                  className="ws-swap"
+                  type="button"
+                  onClick={() => swapLinked(session.id, workout.id, group.id, partner.id)}
+                >
+                  Swap with {soleVariant(partner).name}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </article>
+    )
+  }
+
+  const renderRestTimer = (activeRest: number) => (
+    <section className={`ws-dock${restRunning ? ' running' : ''}${restPulse ? ' pulse' : ''}`} aria-label="Rest timer">
+      {restRunning ? (
+        <>
+          <div className="ws-dock-time">
+            <span className="ws-dock-left">
+              <Icon name="clock" size={18} />
+              Rest
+            </span>
+            <strong>{formatTimer(restSeconds)}</strong>
+            <span className="ws-dock-bar" aria-hidden="true">
+              <i style={{ width: `${Math.max(0, Math.min(100, (restSeconds / Math.max(1, restDuration)) * 100))}%` }} />
+            </span>
+          </div>
+          <button className="ws-dock-cancel ws-dock-extend" type="button" onClick={extendRest}>
+            +10s
+          </button>
+          <button
+            className="ws-dock-cancel"
+            type="button"
+            onClick={() => stopRestTimer(activeRest)}
+          >
+            Stop
+          </button>
+        </>
+      ) : (
+        <button
+          className="ws-dock-start"
+          type="button"
+          onClick={() => {
+            const endsAt = Date.now() + activeRest * 1000
+            restEndsAtRef.current = endsAt
+            restDurationRef.current = activeRest
+            restAlertStartedRef.current = false
+            setRestSeconds(activeRest)
+            setRestDuration(activeRest)
+            setRestEndsAt(endsAt)
+            setRestRunning(true)
+            if (!setStored(REST_TIMER_KEY, JSON.stringify({ endsAt, duration: activeRest }))) {
+              setStorageError(true)
+            }
+            startRestAlarm(endsAt)
+          }}
+        >
+          <span className="ws-dock-left">
+            <Icon name={restPulse ? 'check' : 'clock'} size={18} />
+            {restPulse ? 'Rest done' : 'Rest timer'}
+          </span>
+          <strong>{restPulse ? '' : `Start · ${formatTimer(activeRest)}`}</strong>
+        </button>
+      )}
+      {restNotificationMessage && (
+        <small className="ws-dock-note" role="status">
+          {restNotificationMessage}
+        </small>
+      )}
+    </section>
+  )
+
+  const openSession = (workoutId: WorkoutId, sessionId: string, confirmResume = true) => {
+    setData((current) =>
+      // Re-opening the already-current session isn't a data change — keep the object identity so it
+      // doesn't count as a meaningful edit for sync.
+      current.currentSessionByWorkout[workoutId] === sessionId
+        ? current
+        : {
+            ...current,
+            currentSessionByWorkout: {
+              ...current.currentSessionByWorkout,
+              [workoutId]: sessionId,
+            },
+          },
+    )
+    setEditMode(false)
+    if (confirmResume) void haptics.confirm()
+    navigate({ name: 'session', workoutId, sessionId })
+  }
+
+  const startSession = (workoutId: WorkoutId) => {
+    const sessionId = createId()
+    const session = createSession(workoutId, data, sessionId)
+    setData((current) => ({
+      ...current,
+      sessions: [session, ...current.sessions],
+      currentSessionByWorkout: {
+        ...current.currentSessionByWorkout,
+        [workoutId]: sessionId,
+      },
+      expandedBySession: {
+        ...current.expandedBySession,
+        [sessionId]: displayedGroups(getWorkout(workoutId).groups)[0]?.group.id ?? '',
+      },
+    }))
+    setEditMode(false)
+    void haptics.confirm()
+    navigate({ name: 'session', workoutId, sessionId })
+  }
+
+  const removeGroup = (workoutId: WorkoutId, groupId: string) => {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    if (!workout || workout.groups.length <= 1) {
+      return
+    }
+
+    setConfirmDialog({
+      title: 'Delete exercise?',
+      message: 'This removes it from the workout.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: () => {
+        setEditDirty(true)
+        setData((current) => {
+          const currentWorkout = current.templates.find((template) => template.id === workoutId)
+          const removed = currentWorkout?.groups.find((group) => group.id === groupId)
+          if (!removed || !currentWorkout || currentWorkout.groups.length <= 1) {
+            return current
+          }
+          const removedVariantIds = removed.variants.map((variant) => variant.id)
+          const nextBaselineResults = { ...current.baselineResults }
+          removedVariantIds.forEach((variantId) => delete nextBaselineResults[variantId])
+          return {
+            ...current,
+            templates: current.templates.map((template) =>
+              template.id === workoutId
+                ? {
+                    ...template,
+                    groups: template.groups
+                      .filter((group) => group.id !== groupId)
+                      .map((group) =>
+                        removed.linkId && group.linkId === removed.linkId
+                          ? { ...group, linkId: undefined, hidden: false }
+                          : group,
+                      ),
+                  }
+                : template,
+            ),
+            variantPrefs: removeKey(current.variantPrefs, groupId),
+            baselineResults: nextBaselineResults,
+            expandedBySession: Object.fromEntries(
+              Object.entries(current.expandedBySession).map(([sessionId, expanded]) => [
+                sessionId,
+                expanded === groupId ? '' : expanded,
+              ]),
+            ),
+          }
+        })
+        setConfirmDialog(null)
+      },
+    })
+  }
+
+  // Add a blank exercise to the routine and expand it inline so it can be filled in on the spot.
+  const addExercise = (workoutId: WorkoutId, sessionId: string) => {
+    const variantId = createId()
+    const variant: ExerciseVariant = {
+      id: variantId,
+      name: 'New exercise',
+      category: 'CHEST',
+      setup: '',
+      sets: 3,
+      reps: 10,
+      weight: 0,
+      perHand: false,
+      lastResult: 'missing',
+    }
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) =>
+        template.id === workoutId
+          ? {
+              ...template,
+              groups: [
+                ...template.groups,
+                { id: variantId, activeVariantId: variantId, variants: [variant], restSeconds: current.restSeconds },
+              ],
+            }
+          : template,
+      ),
+      baselineResults: { ...current.baselineResults, [variantId]: 'missing' },
+      expandedBySession: { ...current.expandedBySession, [sessionId]: variantId },
+    }))
+  }
+
+  const deleteSession = (sessionId: string) => {
+    setConfirmDialog({
+      title: 'Delete workout?',
+      message: 'This removes it from history. A protected copy is saved first.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: () => {
+        if (storeRecoveryCopy('before-workout-delete') === 'error') {
+          setConfirmDialog((current) => current
+            ? { ...current, message: 'Recovery copy could not be saved. Nothing was deleted.' }
+            : current)
+          return false
+        }
+        setData((current) => ({
+          ...current,
+          sessions: current.sessions.filter((session) => session.id !== sessionId),
+          expandedBySession: removeKey(current.expandedBySession, sessionId),
+          scrollBySession: removeKey(current.scrollBySession, sessionId),
+          currentSessionByWorkout: Object.fromEntries(
+            Object.entries(current.currentSessionByWorkout).filter(([, value]) => value !== sessionId),
+          ) as Partial<Record<WorkoutId, string>>,
+        }))
+        setConfirmDialog(null)
+      },
+    })
+  }
+
+  const expandExercise = (sessionId: string, groupId: string) => {
+    setData((current) => ({
+      ...current,
+      expandedBySession: {
+        ...current.expandedBySession,
+        [sessionId]: groupId,
+      },
+    }))
+  }
+
+  // Edit mode allows collapsing to none (so the whole list can be seen while reordering).
+  const toggleExpand = (sessionId: string, groupId: string) => {
+    setData((current) => ({
+      ...current,
+      expandedBySession: {
+        ...current.expandedBySession,
+        [sessionId]: current.expandedBySession[sessionId] === groupId ? '' : groupId,
+      },
+    }))
+  }
+
+  // Inline routine edit: update the template variant, and mirror the shared fields into the open
+  // session so the current workout reflects the change too. Marks the routine dirty for save/discard.
+  const editVariant = (sessionId: string, groupId: string, variantId: string, patch: Partial<ExerciseVariant>) => {
+    setEditDirty(true)
+    updateTemplateVariant(variantId, patch)
+    const entryPatch: Partial<SessionExercise> = {}
+    if (patch.setup !== undefined) entryPatch.setup = patch.setup
+    if (patch.sets !== undefined) entryPatch.sets = patch.sets
+    if (patch.reps !== undefined) entryPatch.reps = patch.reps
+    if (patch.weight !== undefined) entryPatch.weight = patch.weight
+    if (patch.perHand !== undefined) entryPatch.perHand = patch.perHand
+    if (Object.keys(entryPatch).length > 0) {
+      updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({ ...entry, ...entryPatch }))
+    }
+  }
+
+  const editGroupRest = (groupId: string, value: number) => {
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => ({
+        ...template,
+        groups: template.groups.map((group) =>
+          group.id === groupId ? { ...group, restSeconds: clampRestValue(value) } : group,
+        ),
+      })),
+    }))
+  }
+
+  // Hide/show an exercise. For a linked pair exactly one member is visible, so toggling one flips its
+  // partner the other way; for a standalone exercise it's a plain hide (removed from the workout).
+  const toggleHidden = (workoutId: WorkoutId, groupId: string) => {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    const target = workout?.groups.find((group) => group.id === groupId)
+    if (
+      !target ||
+      (!target.hidden && !target.linkId && workout && displayedGroups(workout.groups).length <= 1)
+    ) {
+      return
+    }
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const target = template.groups.find((group) => group.id === groupId)
+        if (!target) {
+          return template
+        }
+        const nextHidden = !target.hidden
+        return {
+          ...template,
+          groups: template.groups.map((group) => {
+            if (group.id === groupId) {
+              return { ...group, hidden: nextHidden }
+            }
+            // Keep the partner opposite so a pair always has exactly one visible member.
+            if (target.linkId && group.linkId === target.linkId) {
+              return { ...group, hidden: !nextHidden }
+            }
+            return group
+          }),
+        }
+      }),
+    }))
+    void haptics.selection()
+  }
+
+  // Link the given exercise to another as a swap pair. The one higher in the list stays visible.
+  const linkExercise = (workoutId: WorkoutId, groupId: string, targetId: string) => {
+    const workout = data.templates.find((template) => template.id === workoutId)
+    if (!workout?.groups.some((group) => group.id === groupId) || !workout.groups.some((group) => group.id === targetId)) {
+      return
+    }
+    setLinkDialog(null)
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const linkId = createId()
+        const firstIndex = Math.min(
+          template.groups.findIndex((group) => group.id === groupId),
+          template.groups.findIndex((group) => group.id === targetId),
+        )
+        const topmostId = template.groups[firstIndex]?.id
+        return {
+          ...template,
+          groups: template.groups.map((group) =>
+            group.id === groupId || group.id === targetId
+              ? { ...group, linkId, hidden: group.id !== topmostId }
+              : group,
+          ),
+        }
+      }),
+    }))
+    void haptics.selection()
+  }
+
+  // Unlink an exercise from its pair: both become standalone and visible again.
+  const unlinkExercise = (workoutId: WorkoutId, groupId: string) => {
+    const target = data.templates.find((template) => template.id === workoutId)?.groups.find((group) => group.id === groupId)
+    if (!target?.linkId) {
+      return
+    }
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => {
+        if (template.id !== workoutId) {
+          return template
+        }
+        const target = template.groups.find((group) => group.id === groupId)
+        const linkId = target?.linkId
+        if (!linkId) {
+          return template
+        }
+        return {
+          ...template,
+          groups: template.groups.map((group) =>
+            group.linkId === linkId ? { ...group, linkId: undefined, hidden: false } : group,
+          ),
+        }
+      }),
+    }))
+    void haptics.selection()
+  }
+
+  // Swap which member of a linked pair is visible (used on the workout screen). Move the expanded
+  // state to the newly-visible partner so the slot the user was on stays open.
+  const swapLinked = (sessionId: string, workoutId: WorkoutId, currentId: string, partnerId: string) => {
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) =>
+        template.id === workoutId
+          ? {
+              ...template,
+              groups: template.groups.map((group) => {
+                if (group.id === currentId) {
+                  return { ...group, hidden: true }
+                }
+                if (group.id === partnerId) {
+                  return { ...group, hidden: false }
+                }
+                return group
+              }),
+            }
+          : template,
+      ),
+      expandedBySession: { ...current.expandedBySession, [sessionId]: partnerId },
+    }))
+    void haptics.selection()
+  }
+
+  // Returns whether the weight actually changed, so callers only give haptic feedback for a real
+  // step (a − at 0 kg stays silent, matching every other stepper at its bound).
+  const adjustWeight = (sessionId: string, groupId: string, variantId: string, delta: number): boolean => {
+    const session = dataRef.current.sessions.find((candidate) => candidate.id === sessionId)
+    const currentWeight = session ? getEntry(session, groupId, variantId).weight : 0
+    if (roundWeight(Math.max(0, currentWeight + delta)) === currentWeight) {
+      return false
+    }
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({
+      ...entry,
+      weight: roundWeight(Math.max(0, entry.weight + delta)),
+    }))
+    return true
+  }
+
+  // "Increase weight by?" stage. The first −/+ tap seeds the amount (0 from −, 1.25 from +); after
+  // that it steps by ±1.25 and never goes below 0. Returns whether the amount actually changed, so
+  // taps and hold-repeats give the same per-step feedback as the normal weight stepper.
+  const adjustIncrease = (sessionId: string, groupId: string, variantId: string, direction: 1 | -1): boolean => {
+    const session = dataRef.current.sessions.find((candidate) => candidate.id === sessionId)
+    const current = session ? getEntry(session, groupId, variantId).increaseDelta : undefined
+    const next = roundWeight(current === undefined ? (direction < 0 ? 0 : 1.25) : Math.max(0, current + direction * 1.25))
+    if (next === current) {
+      return false
+    }
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({ ...entry, increaseDelta: next }))
+    return true
+  }
+
+  // Accept the increase: add the chosen amount on top of last session's carried weight and return the
+  // card to its normal state. An unset amount counts as +0 (a deliberate "no change today").
+  const acceptIncrease = (sessionId: string, groupId: string, variantId: string) => {
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({
+      ...entry,
+      weight: roundWeight(entry.weight + (entry.increaseDelta ?? 0)),
+      increaseDelta: undefined,
+      increaseResolved: true,
+    }))
+    void haptics.confirm()
+  }
+
+  // Cancel: ignore any entered amount and keep the carried weight, but still mark the stage resolved
+  // so the normal controls appear. Same feedback tier as Accept — it's the same decision pair.
+  const cancelIncrease = (sessionId: string, groupId: string, variantId: string) => {
+    updateExerciseEntry(sessionId, groupId, variantId, (entry) => ({
+      ...entry,
+      increaseDelta: undefined,
+      increaseResolved: true,
+    }))
+    void haptics.confirm()
+  }
+
+  const setExerciseResult = (sessionId: string, groupId: string, variantId: string, status: ResultStatus) => {
+    const existingSession = dataRef.current.sessions.find((candidate) => candidate.id === sessionId)
+    const existingEntry = existingSession ? getEntry(existingSession, groupId, variantId) : undefined
+    const previewSession =
+      existingSession && existingEntry
+        ? updateSessionEntry(existingSession, groupId, variantId, {
+            ...existingEntry,
+            result: toggleResult(existingEntry.result, status),
+          })
+        : undefined
+    const completedNow =
+      existingSession !== undefined &&
+      previewSession !== undefined &&
+      !isSessionFinished(existingSession) &&
+      isSessionFinished(previewSession)
+    const completionAt = existingSession?.finishedAt ?? Date.now()
+
+    setData((current) => {
+      let updatedSession: WorkoutSession | undefined
+      const sessions = current.sessions.map((session) => {
+        if (session.id !== sessionId) {
+          return session
+        }
+
+        const entry = getEntry(session, groupId, variantId)
+        const nextResult = toggleResult(entry.result, status)
+        const wasFinished = isSessionFinished(session)
+        updatedSession = updateSessionEntry(session, groupId, variantId, {
+          ...entry,
+          result: nextResult,
+        })
+        // Stamp the finish time when this result completes the session, so History can show how
+        // long the workout took. If an ended-early entry is later corrected to complete, preserve
+        // the original recorded duration and promote it from amber to green.
+        const nowFinished = isSessionFinished(updatedSession)
+        if (!wasFinished && nowFinished) {
+          updatedSession = {
+            ...updatedSession,
+            finishedAt: session.finishedAt ?? completionAt,
+            endedEarly: undefined,
+          }
+        } else if (wasFinished && !nowFinished) {
+          updatedSession = { ...updatedSession, finishedAt: undefined, endedEarly: undefined }
+        }
+        return updatedSession
+      })
+
+      const nextExpanded =
+        updatedSession && getEntry(updatedSession, groupId, variantId).result
+          ? getNextPendingGroupId(updatedSession, groupId) ?? groupId
+          : groupId
+
+      return {
+        ...current,
+        sessions,
+        expandedBySession: {
+          ...current.expandedBySession,
+          [sessionId]: nextExpanded,
+        },
+        currentSessionByWorkout: completedNow
+          ? Object.fromEntries(
+              Object.entries(current.currentSessionByWorkout).filter(([, value]) => value !== sessionId),
+            ) as Partial<Record<WorkoutId, string>>
+          : current.currentSessionByWorkout,
+      }
+    })
+    if (completedNow) {
+      stopRestTimer()
+      setWorkoutSummaryDialog({ sessionId, kind: 'complete', finishedAt: completionAt })
+    }
+    void haptics.confirm()
+  }
+
+  const updateExerciseEntry = (
+    sessionId: string,
+    groupId: string,
+    variantId: string,
+    updater: (entry: SessionExercise) => SessionExercise,
+  ) => {
+    setData((current) => ({
+      ...current,
+      sessions: current.sessions.map((session) =>
+        session.id === sessionId ? updateSessionEntry(session, groupId, variantId, updater(getEntry(session, groupId, variantId))) : session,
+      ),
+    }))
+  }
+
+  const updateTemplateVariant = (variantId: string, patch: Partial<ExerciseVariant>) => {
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) => ({
+        ...template,
+        groups: template.groups.map((group) => ({
+          ...group,
+          variants: group.variants.map((variant) => (variant.id === variantId ? { ...variant, ...patch } : variant)),
+        })),
+      })),
+    }))
+  }
+
+  const saveManualWeight = () => {
+    if (!weightDialog) {
+      return
+    }
+
+    const parsed = Number(weightDialog.value)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      void haptics.reject()
+      return
+    }
+
+    const nextWeight = roundWeight(parsed)
+    const session = data.sessions.find((candidate) => candidate.id === weightDialog.sessionId)
+    const currentEntry = session
+      ? getEntry(session, weightDialog.groupId, weightDialog.variantId)
+      : undefined
+    const unchanged = weightDialog.increase
+      ? currentEntry?.increaseDelta === nextWeight
+      : currentEntry?.weight === nextWeight
+    if (!unchanged) {
+      updateExerciseEntry(weightDialog.sessionId, weightDialog.groupId, weightDialog.variantId, (entry) =>
+        weightDialog.increase
+          ? { ...entry, increaseDelta: nextWeight }
+          : { ...entry, weight: nextWeight },
+      )
+    }
+    setWeightDialog(null)
+    if (!unchanged) {
+      void haptics.confirm()
+    }
+  }
+
+  const setPreviousResult = (status: PreviousResult) => {
+    if (!previousDialog) {
+      return
+    }
+
+    const currentSession = data.sessions.find((candidate) => candidate.id === previousDialog.sessionId)
+    if (!currentSession) {
+      setPreviousDialog(null)
+      return
+    }
+    const currentTarget = findPreviousTarget(
+      data,
+      previousDialog.workoutId,
+      currentSession,
+      previousDialog.groupId,
+      previousDialog.variantId,
+    )
+    const currentResult = currentTarget.sessionId
+      ? data.sessions.find((candidate) => candidate.id === currentTarget.sessionId)
+          ?.groupEntries[previousDialog.groupId]?.entries[previousDialog.variantId]?.result ?? 'missing'
+      : data.baselineResults[previousDialog.variantId] ?? 'missing'
+    const currentEntry = currentSession.groupEntries[previousDialog.groupId]?.entries[previousDialog.variantId]
+    const reopensIncrease = Boolean(currentEntry?.increaseResolved || currentEntry?.increaseDelta !== undefined)
+    const changed = currentResult !== status || reopensIncrease
+
+    setData((current) => {
+      const session = current.sessions.find((candidate) => candidate.id === previousDialog.sessionId)
+      if (!session) {
+        return current
+      }
+
+      const target = findPreviousTarget(current, previousDialog.workoutId, session, previousDialog.groupId, previousDialog.variantId)
+
+      // Re-choosing the previous result reopens the "Increase weight?" stage on the current card, so
+      // toggling it away from and back to "done" lets the user increase again (stacking on top of any
+      // increase they already applied). Only clears the increase flags; the weight is preserved.
+      const reopenIncrease = (candidate: WorkoutSession): WorkoutSession => {
+        if (candidate.id !== previousDialog.sessionId) {
+          return candidate
+        }
+        const existing = candidate.groupEntries[previousDialog.groupId]?.entries[previousDialog.variantId]
+        if (!existing) {
+          return candidate
+        }
+        return updateSessionEntry(candidate, previousDialog.groupId, previousDialog.variantId, {
+          ...existing,
+          increaseResolved: false,
+          increaseDelta: undefined,
+        })
+      }
+
+      let sessions = current.sessions
+      if (target.sessionId) {
+        sessions = sessions.map((candidate) => {
+          if (candidate.id !== target.sessionId) {
+            return candidate
+          }
+          const updated = updateSessionEntry(candidate, previousDialog.groupId, previousDialog.variantId, {
+            ...getEntry(candidate, previousDialog.groupId, previousDialog.variantId),
+            result: status === 'missing' ? undefined : status,
+          })
+          if (isSessionFinished(updated)) {
+            return { ...updated, endedEarly: undefined }
+          }
+          return candidate.endedEarly ? updated : { ...updated, finishedAt: undefined }
+        })
+      }
+      sessions = sessions.map(reopenIncrease)
+
+      return {
+        ...current,
+        sessions,
+        baselineResults: target.sessionId
+          ? current.baselineResults
+          : { ...current.baselineResults, [previousDialog.variantId]: status },
+      }
+    })
+
+    setPreviousDialog(null)
+    if (changed) {
+      void haptics.confirm()
+    }
+  }
+
+  const exportData = async () => {
+    if (backupBusy !== null) return
+    setBackupBusy('export')
+    setBackupMessage(null)
+    try {
+      const contents = JSON.stringify(dataRef.current, null, 2)
+      if (backupByteLength(contents) > MAX_BACKUP_BYTES) {
+        void haptics.reject()
+        setBackupMessage({ target: 'export', text: 'Backup is too large to save.', error: true })
+        return
+      }
+      const result = await saveBackupFile(contents, backupFilename())
+      if (result.cancelled) return
+      if (!result.saved) throw new Error('Backup was not saved')
+      void haptics.confirm()
+      setBackupMessage({ target: 'export', text: 'Backup saved.' })
+    } catch {
+      void haptics.reject()
+      setBackupMessage({ target: 'export', text: 'Could not save the backup.', error: true })
+    } finally {
+      setBackupBusy(null)
+    }
+  }
+
+  const prepareBackupImport = (contents: string) => {
+    if (backupByteLength(contents) > MAX_BACKUP_BYTES) {
+      void haptics.reject()
+      setBackupMessage({ target: 'import', text: 'Backup file is too large.', error: true })
+      return
+    }
+    try {
+      const parsed: unknown = JSON.parse(normalizeBackupContents(contents))
+      if (!isValidBackup(parsed)) {
+        throw new Error('Invalid Fitness Hub backup')
+      }
+
+      setConfirmDialog({
+        title: 'Import this backup?',
+        message: 'This replaces your workouts and history. A protected copy is saved first.',
+        confirmLabel: 'Import',
+        warning: true,
+        onConfirm: () => {
+          if (storeRecoveryCopy('before-import') === 'error') {
+            setBackupMessage({ target: 'import', text: 'Recovery copy failed. Nothing was imported.', error: true })
+            setConfirmDialog((current) => current
+              ? { ...current, message: 'A recovery copy could not be saved. Nothing was imported.' }
+              : current)
+            return false
+          }
+          setData(normalizeData(parsed))
+          setBackupMessage({ target: 'import', text: 'Backup imported.' })
+          setConfirmDialog(null)
+        },
+      })
+    } catch {
+      void haptics.reject()
+      setBackupMessage({ target: 'import', text: 'This is not a valid Fitness Hub backup.', error: true })
+    }
+  }
+
+  const requestBackupImport = async () => {
+    if (backupBusy !== null) return
+    setBackupMessage(null)
+    if (!hasNativeBackupFiles()) {
+      backupInputRef.current?.click()
+      return
+    }
+
+    setBackupBusy('import')
+    try {
+      const result = await openNativeBackupFile()
+      if (result.cancelled) return
+      if (typeof result.contents !== 'string') throw new Error('Backup contents are missing')
+      prepareBackupImport(result.contents)
+    } catch {
+      void haptics.reject()
+      setBackupMessage({ target: 'import', text: 'Could not open the backup file.', error: true })
+    } finally {
+      setBackupBusy(null)
+    }
+  }
+
+  const importData = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) {
+      return
+    }
+    setBackupBusy('import')
+    setBackupMessage(null)
+    if (file.size > MAX_BACKUP_BYTES) {
+      void haptics.reject()
+      setBackupMessage({ target: 'import', text: 'Backup file is too large.', error: true })
+      setBackupBusy(null)
+      return
+    }
+
+    try {
+      prepareBackupImport(await file.text())
+    } catch {
+      void haptics.reject()
+      setBackupMessage({ target: 'import', text: 'Could not read the backup file.', error: true })
+    } finally {
+      setBackupBusy(null)
+    }
+  }
+
+  const resetData = () => {
+    setConfirmDialog({
+      title: 'Reset workout data?',
+      message: 'This deletes workout history and routine changes. A protected copy is saved first.',
+      confirmLabel: 'Reset',
+      danger: true,
+      onConfirm: () => {
+        if (storeRecoveryCopy('before-reset') === 'error') {
+          setConfirmDialog((current) => current
+            ? { ...current, message: 'Recovery copy could not be saved. Nothing was reset.' }
+            : current)
+          return false
+        }
+        setData(buildInitialData())
+        setConfirmDialog(null)
+      },
+    })
+  }
+
+  const testVibration = () => {
+    void haptics.timerFinished(true).then((performed) => {
+      setVibrationMessage(performed ? 'Alert started.' : 'Vibration is off or unavailable.')
+    })
+  }
+
+  const returnToHome = () => {
+    setWorkoutSummaryDialog(null)
+    setScreenStack([])
+    setScreenState({ name: 'main' })
+    window.scrollTo({ top: 0 })
+  }
+
+  const renderScreen = () => {
+    if (screen.name === 'global-history') {
+      return renderHistory(sortedSessions, () => goBack({ name: 'main' }))
+    }
+
+    if (screen.name === 'progress-analysis') {
+      return (
+        <Page
+          title="Progress"
+          backLabel="Back to History"
+          onBack={() => goBack({ name: 'global-history' })}
+        >
+          <Suspense fallback={<p className="progress-loading" role="status">Loading analysis…</p>}>
+            <ProgressAnalysisScreen templates={data.templates} sessions={data.sessions} />
+          </Suspense>
+        </Page>
+      )
+    }
+
+    if (screen.name === 'settings') {
+      return renderSettings()
+    }
+
+  if (screen.name === 'session') {
+    const currentSession = data.sessions.find((session) => session.id === screen.sessionId)
+    return (
+      <>
+        {currentSession ? (
+          renderSession(currentSession)
+        ) : (
+          <Page title="Workout unavailable" onBack={() => goBack({ name: 'main' })}>
+            <EmptyState text="This workout was deleted or replaced." />
+          </Page>
+        )}
+        {weightDialog && (
+          <Dialog title={weightDialog.increase ? 'Increase weight by' : 'Edit weight'}>
+            <input
+              className="number-input"
+              inputMode="decimal"
+              type="number"
+              min="0"
+              step="1.25"
+              value={weightDialog.value}
+              onChange={(event) => setWeightDialog({ ...weightDialog, value: event.target.value })}
+            />
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setWeightDialog(null)}>
+                Cancel
+              </button>
+              <button className="primary-action" type="button" onClick={saveManualWeight}>
+                Save
+              </button>
+            </div>
+          </Dialog>
+        )}
+        {previousDialog && (
+          <Dialog title="Last attempt">
+            <p className="dialog-help">Choose what happened last time.</p>
+            <div className="choice-list">
+              <button className="choice done" type="button" onClick={() => setPreviousResult('success')}>
+                <Icon name="arrow-up" size={18} />
+                <span>Done — increase today</span>
+              </button>
+              <button className="choice failed" type="button" onClick={() => setPreviousResult('failure')}>
+                <Icon name="repeat" size={18} />
+                <span>Failed — repeat today</span>
+              </button>
+              <button className="choice" type="button" onClick={() => setPreviousResult('missing')}>
+                <Icon name="clock" size={18} />
+                <span>No attempt</span>
+              </button>
+            </div>
+            <button className="choice-cancel" type="button" onClick={() => setPreviousDialog(null)}>
+              Cancel
+            </button>
+          </Dialog>
+        )}
+        {linkDialog &&
+          (() => {
+            const workout = data.templates.find((template) => template.id === linkDialog.workoutId)
+            const source = workout?.groups.find((group) => group.id === linkDialog.groupId)
+            const candidates = (workout?.groups ?? []).filter(
+              (group) => group.id !== linkDialog.groupId && !group.linkId,
+            )
+            return (
+              <Dialog title="Link exercise">
+                <p className="dialog-help">
+                  Choose the exercise to swap with {source ? soleVariant(source).name : 'this exercise'}.
+                </p>
+                {candidates.length === 0 ? (
+                  <p className="dialog-help">No exercises available.</p>
+                ) : (
+                  <div className="choice-list">
+                    {candidates.map((group) => (
+                      <button
+                        key={group.id}
+                        className="choice"
+                        type="button"
+                        onClick={() => linkExercise(linkDialog.workoutId, linkDialog.groupId, group.id)}
+                      >
+                        <span
+                          className="ws-dot"
+                          style={{ background: muscleColor(soleVariant(group).category) }}
+                          aria-hidden="true"
+                        />
+                        <span>{soleVariant(group).name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button className="choice-cancel" type="button" onClick={() => setLinkDialog(null)}>
+                  Cancel
+                </button>
+              </Dialog>
+            )
+          })()}
+      </>
+    )
+  }
+
+    return renderMain()
+  }
+
+  return (
+    <>
+      {renderScreen()}
+      {storageError && (
+        <p className="storage-warning" role="alert">
+          Changes are not being saved. Export a backup before closing the app.
+        </p>
+      )}
+      {recoveryDialog &&
+        (() => {
+          if (recoveryDialog.mode === 'list') {
+            const statusLabel =
+              recoveryStore.copies.length === 0
+                ? 'No copies yet'
+                : !cloudUser
+                  ? 'Saved on this device'
+                  : recoverySyncStatus === 'syncing'
+                    ? 'Syncing copies…'
+                    : recoverySyncStatus === 'synced'
+                      ? 'Cloud synced'
+                      : recoverySyncStatus === 'error'
+                        ? 'Cloud sync paused'
+                        : 'Saved on this device'
+            const statusClass = cloudUser ? recoverySyncStatus : 'device-only'
+            return (
+              <Dialog title="Recovery copies">
+                <p className="dialog-help">
+                  Automatic copies rotate. Protected copies stay until you delete them.
+                </p>
+                <div className="account-status recovery-status">
+                  <span className={`sync-status ${statusClass}`} aria-live="polite">
+                    <i aria-hidden="true" />
+                    {statusLabel}
+                  </span>
+                  <small>
+                    {cloudUser
+                      ? 'Available on your other signed-in devices.'
+                      : 'Sign in to sync copies to your other devices.'}
+                  </small>
+                  {recoveryLocalError && (
+                    <span className="cloud-error" role="alert">Device storage is full or unavailable.</span>
+                  )}
+                  {recoveryError && !recoveryLocalError && (
+                    <span className="cloud-error" role="alert">
+                      {recoverySyncStatus === 'error'
+                        ? 'Cloud sync paused. Device copies are still safe.'
+                        : recoveryError}
+                    </span>
+                  )}
+                </div>
+                {recoveryMessage && <p className="dialog-help recovery-message" role="status">{recoveryMessage}</p>}
+                <div className="choice-list">
+                  <button className="choice" type="button" onClick={createManualRecoveryCopy}>
+                    <Icon name="plus" size={18} />
+                    <span>Create copy now</span>
+                  </button>
+                  {recoveryStore.copies.map((copy) => (
+                    <button
+                      className="choice recovery-choice"
+                      type="button"
+                      key={copy.id}
+                      onClick={() => setRecoveryDialog({ mode: 'details', id: copy.id })}
+                    >
+                      <span className="recovery-choice-main">
+                        <span className="recovery-choice-title">
+                          <strong>{recoveryReasonLabel(copy.reason)}</strong>
+                          {isProtectedRecoveryReason(copy.reason) && <em>Protected</em>}
+                        </span>
+                        <small>{formatAbsolute(copy.createdAt)}</small>
+                      </span>
+                      <Icon name="forward" size={18} />
+                    </button>
+                  ))}
+                </div>
+                {recoveryStore.copies.length === 0 && (
+                  <p className="dialog-help recovery-empty">Create one now or finish a workout.</p>
+                )}
+                <button className="choice-cancel" type="button" onClick={() => setRecoveryDialog(null)}>
+                  Close
+                </button>
+              </Dialog>
+            )
+          }
+
+          const copy = recoveryStore.copies.find((candidate) => candidate.id === recoveryDialog.id)
+          if (!copy) {
+            return (
+              <Dialog title="Recovery copy">
+                <p className="dialog-help">This copy is no longer available.</p>
+                <button className="choice-cancel" type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
+                  Back
+                </button>
+              </Dialog>
+            )
+          }
+
+          const copyData = normalizeData(copy.data)
+          const historyCount = copyData.sessions.length
+          const routineCount = copyData.templates.length
+          const alreadyCurrent = recoveryCopyIsCurrent(copy)
+          return (
+            <Dialog title="Recovery copy">
+              <div className="recovery-detail">
+                <strong>{recoveryReasonLabel(copy.reason)}</strong>
+                <span>{formatAbsolute(copy.createdAt)}</span>
+                <small>
+                  {isProtectedRecoveryReason(copy.reason) ? 'Protected until deleted' : 'Rotates automatically'}
+                </small>
+                <small>
+                  {routineCount} {routineCount === 1 ? 'routine' : 'routines'} · {historyCount}{' '}
+                  {historyCount === 1 ? 'history entry' : 'history entries'}
+                </small>
+              </div>
+              <p className="dialog-help">Restoring replaces your current data. A copy of it is saved first.</p>
+              <div className="dialog-actions">
+                <button type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
+                  Back
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  disabled={alreadyCurrent}
+                  onClick={() => restoreRecoveryCopy(copy)}
+                >
+                  {alreadyCurrent ? 'Already current' : 'Restore'}
+                </button>
+              </div>
+              <button className="choice failed recovery-delete" type="button" onClick={() => confirmRecoveryCopyDeletion(copy)}>
+                <Icon name="trash" size={18} />
+                <span>Delete copy</span>
+              </button>
+            </Dialog>
+          )
+        })()}
+      {authDialog && (
+        <Dialog title={authDialog.mode === 'in' ? 'Sign in' : 'Create account'}>
+          <label className="ex-field">
+            <span>Email</span>
+            <input
+              className="number-input text-input"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={authDialog.email}
+              onChange={(event) => setAuthDialog({ ...authDialog, email: event.target.value, error: '' })}
+            />
+          </label>
+          <label className="ex-field">
+            <span>Password</span>
+            <PasswordInput
+              autoComplete={authDialog.mode === 'in' ? 'current-password' : 'new-password'}
+              value={authDialog.password}
+              onChange={(value) => setAuthDialog({ ...authDialog, password: value, error: '' })}
+            />
+          </label>
+          <div className="auth-links">
+            <button
+              className="auth-switch"
+              type="button"
+              onClick={() => {
+                setAuthDialog({ ...authDialog, mode: authDialog.mode === 'in' ? 'up' : 'in', error: '', note: '' })
+                void haptics.selection()
+              }}
+            >
+              {authDialog.mode === 'in' ? 'Create account' : 'Sign in instead'}
+            </button>
+            {authDialog.mode === 'in' && (
+              <button className="auth-switch" type="button" disabled={authDialog.busy} onClick={() => void sendPasswordReset()}>
+                Forgot password?
+              </button>
+            )}
+          </div>
+          {authDialog.error && <p className="auth-error" role="alert">{authDialog.error}</p>}
+          {authDialog.note && <p className="dialog-help">{authDialog.note}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setAuthDialog(null)}>
+              Cancel
+            </button>
+            <button className="primary-action" type="button" disabled={authDialog.busy} aria-busy={authDialog.busy} onClick={submitAuth}>
+              {authDialog.busy ? (authDialog.mode === 'in' ? 'Signing in…' : 'Creating…') : authDialog.mode === 'in' ? 'Sign in' : 'Create account'}
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {accountDialogOpen && cloudUser && !passwordDialog && (
+        <Dialog title="Account">
+          <p className="dialog-help">Signed in as {cloudUser.email}</p>
+          <div className="account-status">
+            <span className={`sync-status ${syncStatus}`} aria-live="polite">
+              <i aria-hidden="true" />
+              {syncStatusLabel(syncStatus)}
+            </span>
+            <small>{lastSyncedAt !== null ? `Last synced ${formatRelative(lastSyncedAt)}` : 'Not synced on this device'}</small>
+            {syncStatus === 'error' && syncError && <span className="cloud-error">{syncError}</span>}
+            {cloudActionError && <span className="cloud-error" role="alert">{cloudActionError}</span>}
+          </div>
+          <div className="choice-list">
+            <button className="choice" type="button" onClick={retryCloudSync}>
+              <Icon name="cloud" size={18} />
+              <span>Sync</span>
+            </button>
+            <button
+              className="choice"
+              type="button"
+              onClick={() => setPasswordDialog({ mode: 'change', value: '', error: '', busy: false })}
+            >
+              <Icon name="edit" size={18} />
+              <span>Change password</span>
+            </button>
+            <button className="choice" type="button" disabled={cloudActionBusy} aria-busy={cloudActionBusy} onClick={() => void signOut()}>
+              <Icon name="close" size={18} />
+              <span>{cloudActionBusy ? 'Signing out…' : 'Sign out'}</span>
+            </button>
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => setAccountDialogOpen(false)}>
+            Close
+          </button>
+        </Dialog>
+      )}
+      {apkDialogOpen &&
+        (() => {
+          const { native, build, released, updateAvailable, upToDate } = apkStatus()
+          const nativeUpdater = native && appUpdateState.status !== 'unsupported'
+          const updateBusy = appUpdateState.status === 'checking' || appUpdateState.status === 'downloading'
+          const updateReady = isDownloadedBuildInstallable(appUpdateState, build, installedBuild)
+          const downloadedBuild = appUpdateState.build ?? null
+          const reinstallReady =
+            updateReady && downloadedBuild !== null && installedBuild !== null && downloadedBuild === installedBuild
+          const readyAction = reinstallReady
+            ? `Reinstall build ${downloadedBuild}`
+            : updateReady
+              ? `Install build ${downloadedBuild}`
+              : null
+          const downloadAction = upToDate
+            ? `Download build ${build} again`
+            : build !== null
+              ? `Download build ${build}`
+              : 'Download latest build'
+          return (
+            <Dialog title="Android app">
+              <div className="account-status app-update-status">
+                {updateAvailable ? (
+                  <span className="sync-status update">
+                    <i aria-hidden="true" />
+                    Update available
+                  </span>
+                ) : upToDate ? (
+                  <span className="sync-status synced">
+                    <i aria-hidden="true" />
+                    Up to date
+                  </span>
+                ) : native ? (
+                  <span className="sync-status">
+                    <i aria-hidden="true" />
+                    Installed
+                  </span>
+                ) : (
+                  <span className="sync-status">
+                    <i aria-hidden="true" />
+                    Not installed on this device
+                  </span>
+                )}
+                <div className="app-build-list">
+                  {native && installedBuild !== null && (
+                    <p className="app-build-row">
+                      <span>Installed build</span>
+                      <strong>Build {installedBuild}</strong>
+                    </p>
+                  )}
+                  <p className="app-build-row">
+                    <span>Latest build</span>
+                    <strong>{build !== null ? `Build ${build}` : 'Unavailable'}</strong>
+                    {released && <small>Released {released}</small>}
+                  </p>
+                </div>
+              </div>
+              {nativeUpdater && appUpdateState.status === 'downloading' && (
+                <div className="update-progress" role="status" aria-label={`Downloading ${displayedDownloadProgress}%`}>
+                  <span>Downloading <strong>{displayedDownloadProgress}%</strong></span>
+                  <div
+                    className="update-progress-track"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={displayedDownloadProgress}
+                  >
+                    <i style={{ width: `${displayedDownloadProgress}%` }} />
+                  </div>
+                </div>
+              )}
+              {nativeUpdater && appUpdateState.status === 'ready' && updateReady && (
+                <p className="dialog-help">
+                  {reinstallReady
+                    ? `Build ${downloadedBuild} is already installed. Reinstall only if needed.`
+                    : `Build ${downloadedBuild} is downloaded and ready to install.`}
+                </p>
+              )}
+              {nativeUpdater && appUpdateState.status === 'ready' && !updateReady && (
+                <p className="dialog-help">The saved download is outdated. Download the latest build again.</p>
+              )}
+              {nativeUpdater && appUpdateState.status === 'installing' && (
+                <p className="dialog-help">Installer opened.</p>
+              )}
+              {nativeUpdater && appUpdateState.detail && (
+                <p className={appUpdateState.status === 'failed' ? 'auth-error' : 'dialog-help'} role={appUpdateState.status === 'failed' ? 'alert' : 'status'}>
+                  {appUpdateState.detail}
+                </p>
+              )}
+              <div className="choice-list">
+                {nativeUpdater ? (
+                  <button
+                    className="choice"
+                    type="button"
+                    disabled={updateBusy || appUpdateState.status === 'installing'}
+                    aria-busy={updateBusy}
+                    onClick={() => void (updateReady ? installAppUpdate() : startAppUpdate())}
+                  >
+                    <Icon name={updateReady ? 'forward' : 'download'} size={18} />
+                    <span>
+                      {appUpdateState.status === 'checking'
+                        ? 'Checking…'
+                        : appUpdateState.status === 'downloading'
+                          ? 'Downloading…'
+                          : appUpdateState.status === 'installing'
+                            ? 'Installer opened'
+                            : readyAction ?? downloadAction}
+                    </span>
+                  </button>
+                ) : (
+                  <a
+                    className="choice"
+                    href={APK_DOWNLOAD_URL}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    onClick={() => void haptics.confirm()}
+                  >
+                    <Icon name="download" size={18} />
+                    <span>{native ? 'Download in browser' : build !== null ? `Download build ${build}` : 'Download'}</span>
+                  </a>
+                )}
+              </div>
+              <button className="choice-cancel" type="button" onClick={() => setApkDialogOpen(false)}>
+                Close
+              </button>
+            </Dialog>
+          )
+        })()}
+      {passwordDialog && (
+        <Dialog title={passwordDialog.mode === 'recovery' ? 'Set a new password' : 'Change password'}>
+          <label className="ex-field">
+            <span>New password</span>
+            <PasswordInput
+              autoComplete="new-password"
+              value={passwordDialog.value}
+              onChange={(value) => setPasswordDialog({ ...passwordDialog, value, error: '' })}
+            />
+          </label>
+          {passwordDialog.error && <p className="auth-error" role="alert">{passwordDialog.error}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setPasswordDialog(null)}>
+              Cancel
+            </button>
+            <button className="primary-action" type="button" disabled={passwordDialog.busy} aria-busy={passwordDialog.busy} onClick={() => void submitPassword()}>
+              {passwordDialog.busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {syncConflict && (
+        <Dialog title="Choose data">
+          <p className="dialog-help">
+            Account and device data differ. Choose one; a protected copy of the other is saved first.
+          </p>
+          <div className="choice-list">
+            <button className="choice done" type="button" onClick={() => void resolveSyncConflict('account')}>
+              <Icon name="cloud" size={18} />
+              <span>Use account data</span>
+            </button>
+            <button className="choice" type="button" onClick={() => void resolveSyncConflict('device')}>
+              <Icon name="download" size={18} />
+              <span>Use device data</span>
+            </button>
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => void cancelSyncConflict()}>
+            Cancel and sign out
+          </button>
+        </Dialog>
+      )}
+      {workoutSummaryDialog &&
+        (() => {
+          const session = data.sessions.find((candidate) => candidate.id === workoutSummaryDialog.sessionId)
+          if (!session) return null
+          const total = displayedGroups(getWorkout(session.workoutId).groups).length
+          const doneCount = countDone(session)
+          const duration = formatWorkoutDuration(workoutSummaryDialog.finishedAt - session.createdAt)
+          const complete = workoutSummaryDialog.kind === 'complete'
+
+          return (
+            <Dialog title={complete ? 'Workout complete' : 'Ended early'}>
+              <div className={`workout-summary-mark ${workoutSummaryDialog.kind}`} aria-hidden="true">
+                <span className="workout-summary-icon">
+                  <Icon name={complete ? 'check' : 'flag'} size={28} />
+                </span>
+              </div>
+              <p className="workout-summary-copy">
+                {doneCount}/{total} done · {duration}
+              </p>
+              <div className="dialog-actions">
+                <button type="button" onClick={() => setWorkoutSummaryDialog(null)}>
+                  Stay
+                </button>
+                <button className="primary-action" type="button" onClick={returnToHome}>
+                  Home
+                </button>
+              </div>
+            </Dialog>
+          )
+        })()}
+      {historyOptionsSession && (
+        <Dialog title={getWorkout(historyOptionsSession.workoutId).name}>
+          <div className="dialog-session-meta">
+            <p>{formatHistorySessionLine(historyOptionsSession)}</p>
+            <small>{formatRelative(historyOptionsSession.createdAt)}</small>
+          </div>
+          <div className="choice-list">
+            <button
+              className="choice"
+              type="button"
+              onClick={() => {
+                setHistoryOptionsSessionId(null)
+                openSession(historyOptionsSession.workoutId, historyOptionsSession.id, false)
+              }}
+            >
+              <Icon name="forward" size={18} />
+              <span>Open workout</span>
+            </button>
+            {historyOptionsSession.finishedAt !== undefined && historyOptionsSession.finishedAt > historyOptionsSession.createdAt && (
+              <button className="choice" type="button" onClick={() => openDurationEditor(historyOptionsSession)}>
+                <Icon name="clock" size={18} />
+                <span>Edit duration</span>
+              </button>
+            )}
+            <button
+              className="choice failed"
+              type="button"
+              onClick={() => {
+                setHistoryOptionsSessionId(null)
+                deleteSession(historyOptionsSession.id)
+              }}
+            >
+              <Icon name="trash" size={18} />
+              <span>Delete workout</span>
+            </button>
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => setHistoryOptionsSessionId(null)}>
+            Cancel
+          </button>
+        </Dialog>
+      )}
+      {durationDialog && (
+        <DurationEditor
+          dialog={durationDialog}
+          onChange={setDurationDialog}
+          onCancel={() => setDurationDialog(null)}
+          onSave={saveDuration}
+        />
+      )}
+      {confirmDialog && (
+        <Dialog title={confirmDialog.title}>
+          <p className="dialog-help">{confirmDialog.message}</p>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              onClick={() => {
+                const onCancel = confirmDialog.onCancel
+                setConfirmDialog(null)
+                onCancel?.()
+              }}
+            >
+              {confirmDialog.cancelLabel ?? 'Cancel'}
+            </button>
+            <button
+              className={
+                confirmDialog.danger
+                  ? 'danger-action'
+                  : confirmDialog.warning
+                    ? 'warning-action'
+                    : 'primary-action'
+              }
+              type="button"
+              onClick={() => {
+                const confirmed = confirmDialog.onConfirm()
+                void (confirmed === false ? haptics.reject() : haptics.confirm())
+              }}
+            >
+              {confirmDialog.confirmLabel}
+            </button>
+          </div>
+        </Dialog>
+      )}
+    </>
+  )
+}
+
+function Page({
+  title,
+  backLabel = 'Back',
+  onBack,
+  children,
+}: {
+  title: string
+  backLabel?: string
+  onBack: () => void
+  children: ReactNode
+}) {
+  return (
+    <main className="page">
+      <header className="page-head">
+        <button className="ws-back" type="button" aria-label={backLabel} onClick={onBack}>
+          <Icon name="back" />
+        </button>
+        <h1>{title}</h1>
+      </header>
+      {children}
+    </main>
+  )
+}
+
+function Dialog({ title, children }: { title: string; children: ReactNode }) {
+  const dialogRef = useRef<HTMLElement>(null)
+  const titleId = useId()
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousHtmlOverflow = document.documentElement.style.overflow
+    const previousBodyOverflow = document.body.style.overflow
+    if (!dialog) {
+      return
+    }
+
+    document.documentElement.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
+
+    const focusableSelector =
+      'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+    const frame = window.requestAnimationFrame(() => focusable()[0]?.focus())
+
+    const keepFocusInside = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        window.history.back()
+        return
+      }
+      if (event.key !== 'Tab') {
+        return
+      }
+
+      const controls = focusable()
+      if (controls.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', keepFocusInside)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', keepFocusInside)
+      document.documentElement.style.overflow = previousHtmlOverflow
+      document.body.style.overflow = previousBodyOverflow
+      previouslyFocused?.focus()
+    }
+  }, [])
+
+  // Intentionally no tap-outside-to-close: dialogs are dismissed only via their Cancel button or
+  // Escape/system back (handled by the overlay history sync), so a stray tap can't discard input.
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef} tabIndex={-1}>
+        <h2 id={titleId}>{title}</h2>
+        {children}
+      </section>
+    </div>
+  )
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <p className="empty-state">{text}</p>
+}
+
+function buildInitialData(): AppData {
+  const variantPrefs: Record<string, string> = {}
+  const baselineResults: Record<string, PreviousResult> = {}
+
+  defaultWorkouts.forEach((workout) => {
+    workout.groups.forEach((group) => {
+      variantPrefs[group.id] = group.activeVariantId
+      group.variants.forEach((variant) => {
+        baselineResults[variant.id] = variant.lastResult
+      })
+    })
+  })
+
+  return {
+    sessions: [],
+    variantPrefs,
+    templates: cloneWorkouts(),
+    baselineResults,
+    expandedBySession: {},
+    scrollBySession: {},
+    currentSessionByWorkout: {},
+    restSeconds: DEFAULT_REST_SECONDS,
+  }
+}
+
+function loadData(): AppData {
+  const saved = getStored(STORAGE_KEY)
+  if (!saved) {
+    return buildInitialData()
+  }
+
+  try {
+    return normalizeData(JSON.parse(saved))
+  } catch {
+    return buildInitialData()
+  }
+}
+
+// Always start on the main menu. A cold start (force-stop / closed from recents) reloads the
+// page and lands here; minimizing the app keeps the running React state, so the current screen is
+// preserved on resume without persisting it.
+function loadScreen(): Screen {
+  return { name: 'main' }
+}
+
+function normalizeData(value: unknown): AppData {
+  const base = buildInitialData()
+  if (!isRecord(value)) {
+    return base
+  }
+
+  const partial = value as Partial<AppData>
+  const defaultRest = clampRestValue(
+    typeof partial.restSeconds === 'number' && partial.restSeconds > 0 ? partial.restSeconds : DEFAULT_REST_SECONDS,
+  )
+
+  return {
+    sessions: isValidSessions(partial.sessions) ? (partial.sessions as WorkoutSession[]) : [],
+    variantPrefs: { ...base.variantPrefs, ...(partial.variantPrefs ?? {}) },
+    templates: normalizeTemplates(value, defaultRest),
+    baselineResults: { ...base.baselineResults, ...(partial.baselineResults ?? {}) },
+    expandedBySession: partial.expandedBySession ?? {},
+    scrollBySession: partial.scrollBySession ?? {},
+    currentSessionByWorkout: partial.currentSessionByWorkout ?? {},
+    restSeconds: defaultRest,
+  }
+}
+
+function normalizeTemplates(value: unknown, defaultRest: number): WorkoutTemplate[] {
+  const legacy = value as { templates?: unknown; variantOverrides?: Record<string, Partial<ExerciseVariant>> }
+  const repairedTemplates = repairTemplateLinks(legacy.templates)
+  let templates: WorkoutTemplate[]
+  if (isValidTemplates(repairedTemplates)) {
+    templates = repairedTemplates as WorkoutTemplate[]
+  } else {
+    templates = cloneWorkouts()
+    const overrides = legacy.variantOverrides
+    if (overrides && typeof overrides === 'object') {
+      templates.forEach((template) =>
+        template.groups.forEach((group) =>
+          group.variants.forEach((variant) => {
+            const override = overrides[variant.id]
+            if (override) {
+              Object.assign(variant, override)
+            }
+          }),
+        ),
+      )
+    }
+  }
+
+  // Migrate in per-exercise rest for saves that predate it.
+  return templates.map((template) => ({
+    ...template,
+    groups: template.groups.map((group) => ({
+      ...group,
+      restSeconds: clampRestValue(
+        typeof group.restSeconds === 'number' && group.restSeconds > 0 ? group.restSeconds : defaultRest,
+      ),
+    })),
+  }))
+}
+
+function createSession(workoutId: WorkoutId, data: AppData, sessionId: string): WorkoutSession {
+  const workout = getWorkout(workoutId)
+  const groupEntries: Record<string, SessionGroup> = {}
+
+  workout.groups.forEach((group) => {
+    const activeVariantId = data.variantPrefs[group.id] ?? group.activeVariantId
+    const entries: Record<string, SessionExercise> = {}
+
+    group.variants.forEach((variant) => {
+      entries[variant.id] = createSessionEntry(data, workoutId, variant)
+    })
+
+    groupEntries[group.id] = {
+      activeVariantId,
+      entries,
+    }
+  })
+
+  return {
+    id: sessionId,
+    workoutId,
+    createdAt: Date.now(),
+    groupEntries,
+  }
+}
+
+function createSessionEntry(data: AppData, workoutId: WorkoutId, variant: ExerciseVariant): SessionExercise {
+  return {
+    weight: getLatestWeight(data, workoutId, variant.id) ?? variant.weight,
+    setup: variant.setup,
+    sets: variant.sets,
+    reps: variant.reps,
+    perHand: variant.perHand,
+  }
+}
+
+let templatesRef: WorkoutTemplate[] = defaultWorkouts
+
+function cloneWorkouts(): WorkoutTemplate[] {
+  return structuredClone(defaultWorkouts)
+}
+
+function getWorkout(workoutId: WorkoutId) {
+  return templatesRef.find((workout) => workout.id === workoutId) ?? templatesRef[0]
+}
+
+function getVariant(group: ExerciseGroup, variantId: string) {
+  return group.variants.find((candidate) => candidate.id === variantId) ?? group.variants[0]
+}
+
+// The single exercise a group holds (groups are single-exercise now).
+function soleVariant(group: ExerciseGroup) {
+  return group.variants[0]
+}
+
+// The slots shown on the workout (doing) screen: each linked pair collapses to one slot at its
+// topmost member's position, showing the visible member (with its partner for the Swap button);
+// hidden standalone exercises are dropped.
+function displayedGroups(groups: ExerciseGroup[]): { group: ExerciseGroup; partner?: ExerciseGroup }[] {
+  const seenLinks = new Set<string>()
+  const slots: { group: ExerciseGroup; partner?: ExerciseGroup }[] = []
+  for (const group of groups) {
+    if (group.linkId) {
+      if (seenLinks.has(group.linkId)) {
+        continue
+      }
+      seenLinks.add(group.linkId)
+      const members = groups.filter((candidate) => candidate.linkId === group.linkId)
+      const visible = members.find((candidate) => !candidate.hidden) ?? members[0]
+      slots.push({ group: visible, partner: members.find((candidate) => candidate.id !== visible.id) })
+    } else if (!group.hidden) {
+      slots.push({ group })
+    }
+  }
+  return slots
+}
+
+function ensureSessionGroup(session: WorkoutSession, group: ExerciseGroup, data: AppData): SessionGroup {
+  const existing = session.groupEntries[group.id]
+  if (existing) {
+    return existing
+  }
+
+  const entries: Record<string, SessionExercise> = {}
+  group.variants.forEach((variant) => {
+    entries[variant.id] = createSessionEntry(data, session.workoutId, variant)
+  })
+
+  return {
+    activeVariantId: data.variantPrefs[group.id] ?? group.activeVariantId,
+    entries,
+  }
+}
+
+function getEntry(session: WorkoutSession, groupId: string, variantId: string): SessionExercise {
+  return session.groupEntries[groupId]?.entries[variantId] ?? { weight: 0 }
+}
+
+function getExerciseSetup(entry: SessionExercise, variant: ExerciseVariant) {
+  return entry.setup ?? variant.setup
+}
+
+function getExerciseSets(entry: SessionExercise, variant: ExerciseVariant) {
+  return entry.sets ?? variant.sets
+}
+
+function getExerciseReps(entry: SessionExercise, variant: ExerciseVariant) {
+  return entry.reps ?? variant.reps
+}
+
+function updateSessionEntry(
+  session: WorkoutSession,
+  groupId: string,
+  variantId: string,
+  entry: SessionExercise,
+): WorkoutSession {
+  const groupEntry = session.groupEntries[groupId] ?? {
+    activeVariantId: variantId,
+    entries: {},
+  }
+
+  return {
+    ...session,
+    groupEntries: {
+      ...session.groupEntries,
+      [groupId]: {
+        ...groupEntry,
+        entries: {
+          ...groupEntry.entries,
+          [variantId]: entry,
+        },
+      },
+    },
+  }
+}
+
+function getLatestWeight(data: AppData, workoutId: WorkoutId, variantId: string) {
+  const latest = data.sessions
+    .filter((session) => session.workoutId === workoutId)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .find((session) =>
+      Object.values(session.groupEntries).some((groupEntry) => groupEntry.entries[variantId]?.weight !== undefined),
+    )
+
+  if (!latest) {
+    return null
+  }
+
+  const entry = Object.values(latest.groupEntries).find((groupEntry) => groupEntry.entries[variantId]?.weight !== undefined)
+  return entry?.entries[variantId].weight ?? null
+}
+
+function getPreviousResultStreak(
+  data: AppData,
+  workoutId: WorkoutId,
+  session: WorkoutSession,
+  groupId: string,
+  variantId: string,
+) {
+  const results = data.sessions
+    .filter((candidate) => candidate.workoutId === workoutId && candidate.createdAt < session.createdAt)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .flatMap((candidate) => {
+      const result = candidate.groupEntries[groupId]?.entries[variantId]?.result
+      return result ? [result] : []
+    })
+  const baseline = data.baselineResults[variantId]
+
+  return resultStreak(results, baseline === 'missing' ? undefined : baseline)
+}
+
+function findPreviousTarget(
+  data: AppData,
+  workoutId: WorkoutId,
+  session: WorkoutSession,
+  groupId: string,
+  variantId: string,
+) {
+  // Reach back to the last session where THIS variant was actually performed (has a logged result),
+  // not merely one where an entry exists — every variant gets a carried-forward entry each session, so
+  // matching on the entry alone would always return the immediately-previous session. This is what
+  // makes a swap show its own real last result, even if that was many sessions ago.
+  const previous = data.sessions
+    .filter((candidate) => candidate.workoutId === workoutId && candidate.createdAt < session.createdAt)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .find((candidate) => candidate.groupEntries[groupId]?.entries[variantId]?.result)
+
+  return previous ? { sessionId: previous.id } : { sessionId: null }
+}
+
+// Counts over the displayed slots (a linked pair counts once — the visible member), so progress
+// matches what's actually on the workout screen.
+function countDone(session: WorkoutSession) {
+  return displayedGroups(getWorkout(session.workoutId).groups).filter(({ group }) => {
+    const groupEntry = session.groupEntries[group.id]
+    return Boolean(groupEntry?.entries[group.activeVariantId]?.result)
+  }).length
+}
+
+// A session is completed when every displayed exercise has a logged result (done or failed).
+function isSessionFinished(session: WorkoutSession) {
+  const total = displayedGroups(getWorkout(session.workoutId).groups).length
+  return total > 0 && countDone(session) === total
+}
+
+type SessionHistoryStatus = 'done' | 'ended-early' | 'unfinished'
+
+function sessionHistoryStatus(session: WorkoutSession): SessionHistoryStatus {
+  if (isSessionFinished(session)) {
+    return 'done'
+  }
+  return session.endedEarly ? 'ended-early' : 'unfinished'
+}
+
+function sessionStatusLabel(status: SessionHistoryStatus) {
+  if (status === 'done') return 'Completed'
+  if (status === 'ended-early') return 'Ended early'
+  return 'Unfinished'
+}
+
+function isSessionClosed(session: WorkoutSession) {
+  return sessionHistoryStatus(session) !== 'unfinished'
+}
+
+type DaySession = { status: SessionHistoryStatus; sessionId: string; createdAt: number }
+type DayCell = { key: string; label: string; weekdayLabel: string; sessions: DaySession[] }
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+
+// The last 28 days (4 rows × 7 columns), today first (top-left). Each day holds every session done
+// that day (latest first, matching the history list order) so the cell stacks their colours
+// top-down the same way. The session ids let a tap scroll to that day's entry.
+function buildTrackerDays(sessions: WorkoutSession[]): DayCell[] {
+  const byDay = new Map<string, DaySession[]>()
+  for (const session of sessions) {
+    const key = dayKey(session.createdAt)
+    const arr = byDay.get(key) ?? []
+    arr.push({
+      status: sessionHistoryStatus(session),
+      sessionId: session.id,
+      createdAt: session.createdAt,
+    })
+    byDay.set(key, arr)
+  }
+
+  const today = new Date()
+  const days: DayCell[] = []
+  for (let i = 0; i < 28; i += 1) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - i)
+    const key = dayKey(date.getTime())
+    const label = i === 0 ? 'Today' : new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)
+    const daySessions = (byDay.get(key) ?? []).sort((a, b) => b.createdAt - a.createdAt)
+    days.push({ key, label, weekdayLabel: WEEKDAY_LABELS[date.getDay()], sessions: daySessions })
+  }
+  return days
+}
+
+function dayKey(timestamp: number) {
+  const date = new Date(timestamp)
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
+
+function getNextPendingGroupId(session: WorkoutSession, currentGroupId: string) {
+  // Advance only through the slots actually shown on the workout screen (visible members of linked
+  // pairs, no hidden exercises), in display order.
+  const slots = displayedGroups(getWorkout(session.workoutId).groups)
+  return nextPendingId(slots.map(({ group }) => group.id), currentGroupId, (groupId) => {
+    const group = slots.find(({ group: candidate }) => candidate.id === groupId)?.group
+    if (!group) {
+      return true
+    }
+    const groupEntry = session.groupEntries[group.id]
+    return Boolean(groupEntry?.entries[group.activeVariantId]?.result)
+  })
+}
+
+function guidanceClass(previous: PreviousResult) {
+  if (previous === 'success') {
+    return 'increase'
+  }
+
+  if (previous === 'failure') {
+    return 'repeat'
+  }
+
+  return 'none'
+}
+
+function resultLabel(result: ResultStatus | undefined) {
+  if (result === 'success') {
+    return 'Done'
+  }
+
+  if (result === 'failure') {
+    return 'Failed'
+  }
+
+  return 'Not marked'
+}
+
+function syncStatusLabel(status: SyncStatus) {
+  if (status === 'checking') {
+    return 'Checking…'
+  }
+  if (status === 'syncing') {
+    return 'Syncing…'
+  }
+  if (status === 'synced') {
+    return 'Synced'
+  }
+  if (status === 'error') {
+    return 'Sync paused'
+  }
+  if (status === 'conflict') {
+    return 'Choose data'
+  }
+  return 'Offline'
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error && error.message ? error.message : 'Cloud connection failed.'
+}
+
+function createId() {
+  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function removeKey<T>(record: Record<string, T>, key: string) {
+  const next = { ...record }
+  delete next[key]
+  return next
+}
+
+function roundWeight(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+function formatWeight(value: number) {
+  return `${Number.isInteger(value) ? value.toFixed(0) : value} kg`
+}
+
+function formatSetup(setup: string) {
+  return setup.trim() || '—'
+}
+
+function formatTarget(sets: number, reps: number) {
+  return `${sets}×${reps}`
+}
+
+function formatTimer(seconds: number) {
+  return formatTimerDuration(seconds)
+}
+
+function formatRelative(timestamp: number) {
+  const diff = Date.now() - timestamp
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) {
+    return 'just now'
+  }
+  if (mins < 60) {
+    return plural(mins, 'minute')
+  }
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) {
+    return plural(hours, 'hour')
+  }
+  const days = Math.floor(hours / 24)
+  if (days < 30) {
+    return plural(days, 'day')
+  }
+  const months = Math.floor(days / 30)
+  if (months < 12) {
+    return plural(months, 'month')
+  }
+  return plural(Math.floor(days / 365), 'year')
+}
+
+function plural(count: number, unit: string) {
+  return `${count} ${unit}${count === 1 ? '' : 's'} ago`
+}
+
+function formatHistorySessionLine(session: WorkoutSession) {
+  const duration =
+    session.finishedAt !== undefined && session.finishedAt > session.createdAt
+      ? ` · ${formatWorkoutDuration(session.finishedAt - session.createdAt)}`
+      : ''
+  return `${formatAbsolute(session.createdAt)}${duration}`
+}
+
+// Full weekday + date for the home header — e.g. "Tuesday 2 July".
+function formatMenuDate() {
+  return new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).format(Date.now())
+}
+
+// Weekday, day, month and time — e.g. "Tue 24 Jun, 19:40". Shown alongside the relative label.
+function formatAbsolute(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
+}
+
+export default App

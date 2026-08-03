@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from brand/fitness-hub-logo.svg (c334a3dfd5bd9cd9). Do not edit. Android 12+ keeps animated vectors on a SurfaceView instead of copying them to a bitmap. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/splash_logo_vector">
+    <target
+        android:name="splash_vector_anchor"
+        android:animation="@animator/splash_logo_hold" />
+</animated-vector>

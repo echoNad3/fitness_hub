@@ -1,0 +1,256 @@
+/* Deeper History analysis. It reuses the editor's muscle chips and segmented controls so the same
+   choices have the same dimensions, colors, and press behavior everywhere in the app. */
+
+.hist-analysis-link {
+  width: 100%;
+  min-height: 66px;
+  padding: 10px var(--space-4);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.hist-analysis-link > svg:first-child {
+  color: var(--accent-text);
+}
+
+.hist-analysis-link > svg:last-child {
+  color: var(--muted);
+}
+
+.hist-analysis-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.hist-analysis-copy strong {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+}
+
+.hist-analysis-copy small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+
+.progress-controls,
+.progress-card {
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.progress-filter {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.progress-filter-label {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.progress-controls .ex-muscle {
+  min-height: 36px;
+}
+
+.progress-controls .ex-segment {
+  background: var(--surface-2);
+}
+
+.progress-controls .ex-segment button {
+  font-size: var(--fs-label);
+}
+
+.progress-period {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.progress-card {
+  gap: var(--space-3);
+  overflow: hidden;
+}
+
+.progress-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.progress-card-title {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.progress-card-title strong {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+}
+
+.progress-card-title small,
+.progress-note {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+
+.progress-series-count {
+  flex: none;
+  padding: 5px 8px;
+  color: var(--muted);
+  background: var(--glass-05);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+.progress-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.progress-grid-line {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.progress-series-path {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.progress-point {
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.progress-chart text {
+  fill: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+
+.progress-chart-unit {
+  transform: translateY(-2px);
+}
+
+.progress-y-label {
+  dominant-baseline: middle;
+  text-anchor: end;
+}
+
+.progress-legend {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.progress-legend-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.progress-legend-line {
+  width: 34px;
+  height: 12px;
+  overflow: visible;
+}
+
+.progress-legend-line line {
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.progress-legend-name,
+.progress-legend-value {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.progress-legend-name strong,
+.progress-legend-value strong {
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-bold);
+  line-height: 1.25;
+}
+
+.progress-legend-name small,
+.progress-legend-value small {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+}
+
+.progress-legend-value {
+  justify-items: end;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-legend-value small.up {
+  color: var(--success);
+}
+
+.progress-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+}
+
+.progress-loading {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.progress-note {
+  padding-top: var(--space-1);
+}
+
+.hist-analysis-link:active {
+  transform: scale(0.98);
+}
+
+.hist-analysis-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hist-analysis-link {
+    transition: none;
+  }
+}

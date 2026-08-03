@@ -1,0 +1,317 @@
+/* Home / main menu — Phase 2 */
+
+.home {
+  width: min(100%, 460px);
+  margin: 0 auto;
+  min-height: 100svh;
+  padding: calc(22px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  background:
+    radial-gradient(circle at 82% -8%, var(--page-glow), transparent 30%),
+    var(--bg);
+}
+
+.home-top {
+  padding: 4px 2px 2px;
+}
+
+.home-top h1 {
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.01em;
+}
+
+.home-sub {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-medium);
+}
+
+.home-resume {
+  display: grid;
+  gap: 11px;
+  padding: 17px 17px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--success-line);
+  border-radius: var(--radius);
+  box-shadow: var(--soft-shadow);
+}
+
+.home-resume-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-resume-row strong {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+}
+
+.home-resume-row svg {
+  color: var(--success);
+}
+
+.home-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 5px;
+}
+
+.home-rail i {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--glass-14);
+  transition: background-color 220ms ease;
+}
+
+.home-rail i.done {
+  background: var(--success);
+}
+
+.home-rail i.failed {
+  background: var(--danger);
+}
+
+.home-resume-sub {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+}
+
+.home-start-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px;
+  color: var(--white);
+  text-align: left;
+  background: var(--accent);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--soft-shadow);
+}
+
+.home-start-main {
+  display: grid;
+  gap: 3px;
+}
+
+.home-start-main strong {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+}
+
+.home-start-main small {
+  color: var(--white-82);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+}
+
+/* Start-workout prompt */
+
+.start-sheet {
+  display: grid;
+  gap: 9px;
+}
+
+.start-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px;
+  color: var(--white);
+  text-align: left;
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.start-next-main {
+  display: grid;
+  gap: 2px;
+}
+
+.start-next-main small {
+  color: var(--white-82);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.start-next-main strong {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+}
+
+.start-or {
+  margin: 6px 2px 0;
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+}
+
+.start-other {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 15px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.start-other svg {
+  color: var(--quiet);
+}
+
+.start-next:active,
+.start-other:active {
+  transform: scale(0.98);
+}
+
+.start-next:focus-visible,
+.start-other:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.home-tiles {
+  margin-top: 2px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.home-bottom-tiles {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Square-ish launcher tiles: icon chip up top, title + status pinned to the bottom. The taller
+   shape gives subtitles a full line of room instead of squeezing beside the icon. */
+.home-tile {
+  min-height: 128px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.home-tile-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-text);
+  background: var(--surface-3);
+  border-radius: var(--radius-control);
+}
+
+.home-tile-text {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  gap: 3px;
+}
+
+/* Direct child only — the Account tile nests spans (sync status) inside its subtitle. */
+.home-tile-text > span {
+  overflow: hidden;
+  font-size: var(--fs-heading);
+  font-weight: var(--fw-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-tile-text small {
+  overflow: hidden;
+  min-height: 1.35em;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sync status line inside the Account tile: dot + label at the same size as the other subtitles. */
+.home-tile-status {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.home-tile-status .sync-status {
+  overflow: hidden;
+  font-size: var(--fs-meta);
+  line-height: inherit;
+  white-space: nowrap;
+}
+
+/* A newer APK exists: the tile asks for attention with the accent treatment. */
+.home-tile.update {
+  border-color: var(--accent-line);
+}
+
+.home-tile.update .home-tile-icon {
+  color: var(--white);
+  background: var(--accent);
+}
+
+.home-resume,
+.home-start-primary,
+.home-tile {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.home-resume:active,
+.home-start-primary:active,
+.home-tile:active {
+  transform: scale(0.98);
+}
+
+.home-resume:focus-visible,
+.home-start-primary:focus-visible,
+.home-tile:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-resume,
+  .home-start-primary,
+  .home-tile {
+    transition: none;
+  }
+}

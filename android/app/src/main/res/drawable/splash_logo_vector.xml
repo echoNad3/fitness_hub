@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from brand/fitness-hub-logo.svg (c334a3dfd5bd9cd9). Do not edit. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <path android:name="splash_vector_anchor" android:fillColor="#F4F5F8" android:pathData="M257,425 H291 A22,22 0 0 1 313,447 V577 A22,22 0 0 1 291,599 H257 A22,22 0 0 1 235,577 V447 A22,22 0 0 1 257,425 Z" />
+    <path android:fillColor="#F4F5F8" android:pathData="M348,379 H382 A22,22 0 0 1 404,401 V623 A22,22 0 0 1 382,645 H348 A22,22 0 0 1 326,623 V401 A22,22 0 0 1 348,379 Z" />
+    <path android:fillColor="#6074F3" android:pathData="M439,473 H585 A22,22 0 0 1 607,495 V529 A22,22 0 0 1 585,551 H439 A22,22 0 0 1 417,529 V495 A22,22 0 0 1 439,473 Z" />
+    <path android:fillColor="#F4F5F8" android:pathData="M642,379 H676 A22,22 0 0 1 698,401 V623 A22,22 0 0 1 676,645 H642 A22,22 0 0 1 620,623 V401 A22,22 0 0 1 642,379 Z" />
+    <path android:fillColor="#F4F5F8" android:pathData="M733,425 H767 A22,22 0 0 1 789,447 V577 A22,22 0 0 1 767,599 H733 A22,22 0 0 1 711,577 V447 A22,22 0 0 1 733,425 Z" />
+</vector>

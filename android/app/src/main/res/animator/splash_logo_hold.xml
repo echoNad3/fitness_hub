@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from brand/fitness-hub-logo.svg (c334a3dfd5bd9cd9). Do not edit. This 1 ms no-op preserves the exact logo while avoiding Android's static-icon bitmap copy. -->
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="1"
+    android:propertyName="fillAlpha"
+    android:valueFrom="1.0"
+    android:valueTo="1.0"
+    android:valueType="floatType" />

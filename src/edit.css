@@ -1,0 +1,383 @@
+/* Edit mode: in-place inline editing of the routine on the workout screen (no separate menu). */
+
+.ws-edit-toggle {
+  justify-self: end;
+}
+
+/* In edit mode the checkmark is the primary "save" action — accent-filled to stand out from the
+   neutral discard (✕) on the left. */
+.ws-edit-toggle.saving {
+  color: var(--white);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Edit-mode items and the add button ease in when the pencil is tapped. */
+.ws-item.editing,
+.ws-add {
+  animation: rise-in 200ms ease both;
+}
+
+/* Collapsed/expanded head of an editable exercise: drag handle + tap-to-open row. */
+.ws-edit-head {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+/* Drag handle owns the reorder gesture; touch-action:none lets a drag start without scrolling. */
+.ws-edit-handle {
+  width: 40px;
+  /* Match the collapsed session row height (.ws-item-head min-height) so toggling edit mode doesn't
+     resize the boxes — the collapsed rows stay put and the transition feels natural. */
+  height: 66px;
+  display: grid;
+  place-items: center;
+  color: var(--quiet);
+  background: transparent;
+  border: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.ws-edit-handle:active {
+  cursor: grabbing;
+}
+
+.ws-item.editing.dragging {
+  background: var(--surface-2);
+}
+
+.ws-edit-open {
+  min-width: 0;
+  min-height: 66px;
+  padding: 10px 14px 10px 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ws-edit-open > svg {
+  color: var(--quiet);
+}
+
+.ws-edit-open-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ws-edit-open-main strong {
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-item.editing.open .ws-edit-open-main strong {
+  font-weight: var(--fw-bold);
+}
+
+.ws-edit-open-main small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+/* The inline editor body (shown when an exercise is expanded in edit mode). */
+.ws-editor {
+  display: grid;
+  /* minmax(0,1fr) so the single column can shrink to the card width — otherwise a wide fixed-size
+     child (e.g. a stepper row) sets an intrinsic min-content and the whole editor overflows. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.ws-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.ws-editor-input {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.ws-editor-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* Load selector: both options are always visible as a segmented control, so it's obvious what the
+   choice is and which side is active (no hidden toggle state). */
+.ex-segment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 5px;
+  padding: 5px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.ex-segment button {
+  min-height: 42px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.ex-segment button.sel {
+  color: var(--white);
+  background: var(--accent);
+}
+
+/* Per-exercise rest, divided off below the exercise fields. */
+.ex-slot-rest {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+/* A hidden exercise: dimmed in the edit list so it clearly reads as inactive (it won't appear on the
+   workout screen), while staying fully editable. */
+.ws-item.editing.is-hidden {
+  opacity: 0.5;
+}
+
+.ws-item.editing.is-hidden.open {
+  opacity: 1;
+}
+
+/* Hide + Link controls, stacked below the fields and above the delete. */
+.ex-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.ex-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap);
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.ex-control-btn > svg {
+  color: var(--accent-text);
+}
+
+.ex-control-btn:active {
+  transform: scale(0.98);
+}
+
+.ex-control-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ex-control-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* When linked, show who it's paired with plus an Unlink action. */
+.ex-linked {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-control);
+}
+
+.ex-linked-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.ex-linked-label > svg {
+  flex: 0 0 auto;
+  color: var(--accent-text);
+}
+
+.ex-linked .ex-control-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  background: transparent;
+}
+
+/* Danger footer: the destructive delete, separated so it can't be fat-fingered. */
+.ex-danger {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.ws-editor-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  color: var(--danger);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+.ws-editor-remove:disabled {
+  opacity: 0.35;
+}
+
+.ws-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 50px;
+  color: var(--accent-text);
+  background: transparent;
+  border: 1px dashed var(--accent-line-strong);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+/* Field label + muscle-group chips, shared by the inline editor. min-width:0 lets a field shrink
+   inside the editor/row grids instead of forcing them wider than the card. */
+.ex-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ex-field > span {
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ex-muscles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ex-muscle {
+  padding: 7px 11px;
+  color: var(--muted);
+  background: var(--glass-04);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+}
+
+.ex-muscle.sel {
+  color: var(--text);
+  background: color-mix(in srgb, var(--muscle-color) 22%, transparent);
+  border-color: color-mix(in srgb, var(--muscle-color) 47%, transparent);
+}
+
+.ws-edit-open,
+.ws-editor-remove,
+.ex-muscle,
+.ws-add {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.ws-item:not(.open) .ws-edit-open:active,
+.ws-editor-remove:not(:disabled):active,
+.ex-segment button:active,
+.ws-add:active {
+  transform: scale(0.98);
+}
+
+/* Small chip — deeper press, one standard with the steppers and pills. */
+.ex-muscle:active {
+  transform: scale(0.95);
+}
+
+.ws-edit-open:focus-visible,
+.ws-edit-handle:focus-visible,
+.ws-editor-remove:focus-visible,
+.ex-muscle:focus-visible,
+.ex-segment button:focus-visible,
+.ws-add:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-edit-open,
+  .ws-editor-remove,
+  .ex-muscle,
+  .ex-segment button,
+  .ws-add {
+    transition: none;
+  }
+}
+.ws-editor-loading {
+  min-height: 96px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: var(--fs-label);
+}

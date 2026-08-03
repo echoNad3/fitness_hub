@@ -1,0 +1,592 @@
+:root {
+  --radius: 16px;
+  --radius-card: 14px;
+  --radius-control: 11px;
+
+  /* Type scale — the only font sizes used across the app. Root stays 16px. */
+  --fs-display: 1.625rem; /* 26px — app title, screen titles */
+  --fs-title: 1.375rem; /* 22px — primary buttons, the weight value */
+  --fs-heading: 1.1875rem; /* 19px — card / exercise names */
+  --fs-body: 1.0625rem; /* 17px — default body, row labels, buttons */
+  --fs-label: 0.9375rem; /* 15px — subtitles, secondary text */
+  --fs-meta: 0.8125rem; /* 13px — meta, captions */
+  --fs-caption: 0.6875rem; /* 11px — eyebrows, tiny tags, numerals */
+
+  /* Weights — three steps only. */
+  --fw-medium: 600;
+  --fw-semibold: 700;
+  --fw-bold: 800;
+
+  /* Spacing scale — used for padding and gaps. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Minimum comfortable tap target. */
+  --tap: 48px;
+}
+
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+button {
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled) {
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  color: var(--text);
+  font-size: var(--fs-title);
+  line-height: 1.12;
+  font-weight: var(--fw-bold);
+}
+
+h2 {
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 1.15;
+  font-weight: var(--fw-bold);
+}
+
+.empty-state {
+  padding: 16px 12px;
+  color: var(--muted);
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.storage-warning {
+  position: fixed;
+  z-index: 30;
+  top: calc(var(--space-3) + env(safe-area-inset-top));
+  left: 50%;
+  width: min(calc(100% - 28px), 432px);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+  line-height: 1.35;
+  text-align: center;
+  background: var(--surface-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
+/* Dialogs — weight / name / setup / target / previous result */
+
+/* Shared motion. The reduced-motion media query below neutralizes all of these. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--scrim);
+  animation: fade-in 160ms ease;
+}
+
+.dialog {
+  width: min(100%, 350px);
+  max-height: calc(100dvh - 32px);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  animation: pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dialog h2 {
+  font-size: var(--fs-heading);
+}
+
+.dialog button {
+  cursor: pointer;
+}
+
+.dialog button:active {
+  transform: scale(0.98);
+}
+
+.dialog button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.dialog:focus-visible {
+  outline: none;
+}
+
+.dialog button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+}
+
+.dialog-actions button {
+  min-height: var(--tap);
+  color: var(--text);
+  background: var(--raised-72);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+}
+
+/* Stacked option buttons inside dialogs (e.g. the last-result picker). */
+.choice-list {
+  display: grid;
+  gap: 9px;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 16px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.choice > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.choice.done {
+  border-color: var(--success-line);
+}
+
+.choice.done > svg {
+  color: var(--success);
+}
+
+.choice.failed {
+  border-color: var(--danger-line);
+}
+
+.choice.failed > svg {
+  color: var(--danger);
+}
+
+.choice:active {
+  transform: scale(0.98);
+}
+
+/* Choices can be links (the APK download) — same look as the button choices. */
+a.choice {
+  text-decoration: none;
+}
+
+/* Choices can host a hidden file input (backup import). */
+label.choice {
+  position: relative;
+  cursor: pointer;
+}
+
+.choice input[type='file'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+label.choice:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.choice:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Neutral full-width dismiss for a picker dialog — same width/shape as the choices above it, but a
+   quieter, centered treatment so it reads as "close" rather than a fourth option. */
+.choice-cancel {
+  min-height: 50px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  text-align: center;
+}
+
+.number-input {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-heading);
+  font-weight: var(--fw-bold);
+}
+
+.number-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.text-input {
+  font-size: var(--fs-body);
+}
+
+.dialog-help {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+
+/* Sync state block inside the Account dialog: status dot + label, last-synced line, errors. */
+.account-status {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.update-progress {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+.update-progress span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.update-progress strong {
+  color: var(--text);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-progress-track {
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--glass-09);
+}
+
+.update-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 80ms linear;
+}
+
+.account-status small {
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+}
+
+.app-update-status {
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.app-build-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.app-build-row {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--quiet);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+
+.app-build-row strong {
+  color: var(--text);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.app-build-row small {
+  margin-top: var(--space-1);
+}
+
+.dialog-session-meta {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+
+.dialog-session-meta small {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+}
+
+.recovery-status {
+  gap: var(--space-1);
+}
+
+.recovery-message,
+.recovery-empty {
+  text-align: center;
+}
+
+.recovery-choice {
+  min-height: 62px;
+  padding: 10px 14px;
+}
+
+.recovery-choice-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.recovery-choice-main strong {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.recovery-choice-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.recovery-choice-title strong {
+  min-width: 0;
+}
+
+.recovery-choice-title em {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  font-size: var(--fs-caption);
+  font-style: normal;
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+}
+
+.recovery-choice-main small {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  line-height: 1.3;
+}
+
+.recovery-choice > svg {
+  margin-left: auto;
+}
+
+.recovery-detail {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  line-height: 1.35;
+}
+
+.recovery-detail strong {
+  color: var(--text);
+  font-size: var(--fs-body);
+}
+
+.recovery-detail span {
+  font-size: var(--fs-meta);
+}
+
+.recovery-detail small {
+  color: var(--quiet);
+  font-size: var(--fs-caption);
+}
+
+.recovery-delete {
+  justify-content: center;
+}
+
+/* Password input with a reveal toggle sitting inside the field's right edge. */
+.pw-field {
+  position: relative;
+  display: block;
+}
+
+.pw-field input {
+  width: 100%;
+  padding-right: 48px;
+}
+
+.pw-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.pw-toggle:active {
+  transform: scale(0.95);
+}
+
+.pw-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-control);
+}
+
+.dialog-actions .primary-action {
+  color: var(--white);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dialog-actions .danger-action {
+  color: var(--white);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.dialog-actions .warning-action {
+  color: var(--warning-ink);
+  background: var(--warning);
+  border-color: var(--warning);
+}
+
+/* Closing a workout gets one compact status mark. The check or flag carries the meaning without
+   decorative confetti or a second animation language. */
+.workout-summary-mark {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.workout-summary-icon {
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  color: var(--success-ink);
+  background: var(--success);
+  border-radius: 50%;
+  box-shadow: var(--soft-shadow);
+  animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.workout-summary-mark.ended-early .workout-summary-icon {
+  color: var(--warning-ink);
+  background: var(--warning);
+}
+
+.workout-summary-copy {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  line-height: 1.35;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Fitness Hub app icon</title>
+  <desc id="desc">A compact barbell mark on the exact Fitness Hub background color.</desc>
+
+  <!-- Exact app background color; no gradient, glow, texture, or shadow. -->
+  <rect width="1024" height="1024" fill="#252730"/>
+
+  <!-- Equal 112px thickness, tighter spacing, slightly rounder 32px corners. -->
+  <rect x="116" y="388" width="112" height="248" rx="32" fill="#F4F5F8"/>
+  <rect x="246" y="322" width="112" height="380" rx="32" fill="#F4F5F8"/>
+  <rect x="376" y="456" width="272" height="112" rx="32" fill="#6074F3"/>
+  <rect x="666" y="322" width="112" height="380" rx="32" fill="#F4F5F8"/>
+  <rect x="796" y="388" width="112" height="248" rx="32" fill="#F4F5F8"/>
+</svg>
