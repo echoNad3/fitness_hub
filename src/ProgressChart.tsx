@@ -9,13 +9,6 @@ const PLOT_RIGHT = 310
 const PLOT_TOP = 12
 const PLOT_BOTTOM = 194
 
-const SERIES_STYLES = [
-  { dash: undefined, opacity: 1 },
-  { dash: '8 5', opacity: 0.9 },
-  { dash: '2 4', opacity: 0.84 },
-  { dash: '12 4 2 4', opacity: 0.78 },
-] as const
-
 type ChartDomain = {
   min: number
   max: number
@@ -70,8 +63,8 @@ function changeLabel(points: ProgressSeries['points']) {
   return `${change > 0 ? '+' : '−'}${formatProgressValue(Math.abs(change))}`
 }
 
-export function ProgressChart({ series, metric }: { series: ProgressSeries[]; metric: ProgressMetric }) {
-  const points = series.flatMap((item) => item.points)
+export function ProgressChart({ series, metric }: { series: ProgressSeries; metric: ProgressMetric }) {
+  const points = series.points
   const values = points.map((point) => point.value)
   const dates = points.map((point) => point.createdAt)
   const minDate = Math.min(...dates)
@@ -97,6 +90,12 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries[]; me
           { value: maxDate, anchor: 'end' as const },
         ]
   const chartLabel = metric === 'load' ? 'Total load' : 'Estimated one rep max'
+  const latest = series.points[series.points.length - 1]
+  const change = latest.value - series.points[0].value
+  const color = muscleColor(series.category)
+  const path = series.points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.createdAt)} ${y(point.value)}`)
+    .join(' ')
 
   return (
     <>
@@ -104,7 +103,7 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries[]; me
         className="progress-chart"
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
         role="img"
-        aria-label={`${chartLabel} progress for ${series.length} ${series.length === 1 ? 'exercise' : 'exercises'}`}
+        aria-label={`${series.name} ${chartLabel.toLowerCase()} chart`}
       >
         <title>{chartLabel} over time</title>
         <text className="progress-chart-unit" x={PLOT_LEFT} y={PLOT_TOP}>kg</text>
@@ -125,74 +124,39 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries[]; me
             {formatChartDate(tick.value, includeAxisYear)}
           </text>
         ))}
-        {series.map((item, index) => {
-          const style = SERIES_STYLES[index % SERIES_STYLES.length]
-          const color = muscleColor(item.category)
-          const path = item.points.map((point, pointIndex) => `${pointIndex === 0 ? 'M' : 'L'} ${x(point.createdAt)} ${y(point.value)}`).join(' ')
-          return (
-            <g className="progress-series" key={item.exerciseId}>
-              {item.points.length > 1 && (
-                <path
-                  className="progress-series-path"
-                  d={path}
-                  stroke={color}
-                  strokeDasharray={style.dash}
-                  strokeOpacity={style.opacity}
-                />
-              )}
-              {item.points.map((point) => (
-                <circle
-                  className={`progress-point${point.result === 'failure' ? ' failed' : ''}`}
-                  key={point.sessionId}
-                  cx={x(point.createdAt)}
-                  cy={y(point.value)}
-                  r={3.5}
-                  fill={point.result === 'failure' ? 'var(--surface)' : color}
-                  stroke={color}
-                  strokeOpacity={style.opacity}
-                >
-                  <title>
-                    {`${item.name} · ${formatPointDate(point.createdAt)} · ${formatProgressValue(point.value)} · ${point.reps} ${point.reps === 1 ? 'rep' : 'reps'} · ${point.result === 'success' ? 'Done' : 'Failed'}`}
-                  </title>
-                </circle>
-              ))}
-            </g>
-          )
-        })}
+        <g className="progress-series">
+          {series.points.length > 1 && (
+            <path className="progress-series-path" d={path} stroke={color} />
+          )}
+          {series.points.map((point) => (
+            <circle
+              className={`progress-point${point.result === 'failure' ? ' failed' : ''}`}
+              key={point.sessionId}
+              cx={x(point.createdAt)}
+              cy={y(point.value)}
+              r={3.5}
+              fill={point.result === 'failure' ? 'var(--surface)' : color}
+              stroke={color}
+            >
+              <title>
+                {`${series.name} · ${formatPointDate(point.createdAt)} · ${formatProgressValue(point.value)} · ${point.reps} ${point.reps === 1 ? 'rep' : 'reps'} · ${point.result === 'success' ? 'Done' : 'Failed'}`}
+              </title>
+            </circle>
+          ))}
+        </g>
       </svg>
 
-      <div className="progress-legend" aria-label="Exercise lines">
-        {series.map((item, index) => {
-          const style = SERIES_STYLES[index % SERIES_STYLES.length]
-          const color = muscleColor(item.category)
-          const latest = item.points[item.points.length - 1]
-          return (
-            <div className="progress-legend-row" key={item.exerciseId}>
-              <svg className="progress-legend-line" viewBox="0 0 34 12" aria-hidden="true">
-                <line
-                  x1="2"
-                  x2="32"
-                  y1="6"
-                  y2="6"
-                  stroke={color}
-                  strokeDasharray={style.dash}
-                  strokeOpacity={style.opacity}
-                />
-                <circle cx="17" cy="6" r="2.5" fill={color} />
-              </svg>
-              <span className="progress-legend-name">
-                <strong>{item.name}</strong>
-                <small>{item.points.length} {item.points.length === 1 ? 'attempt' : 'attempts'}</small>
-              </span>
-              <span className="progress-legend-value">
-                <strong>{formatProgressValue(latest.value)}</strong>
-                <small className={item.points.length > 1 && latest.value > item.points[0].value ? 'up' : undefined}>
-                  {changeLabel(item.points)}
-                </small>
-              </span>
-            </div>
-          )
-        })}
+      <div className="progress-chart-summary" aria-label="Exercise summary">
+        <span>
+          <small>Latest</small>
+          <strong>{formatProgressValue(latest.value)}</strong>
+        </span>
+        <span>
+          <small>Trend</small>
+          <strong className={change > 0 ? 'up' : change < 0 ? 'down' : undefined}>
+            {changeLabel(series.points)}
+          </strong>
+        </span>
       </div>
     </>
   )

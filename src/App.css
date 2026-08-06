@@ -428,18 +428,15 @@ label.choice:focus-within {
   font-weight: var(--fw-semibold);
 }
 
-.recovery-choice-title {
+.recovery-choice-meta {
   min-width: 0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
 }
 
-.recovery-choice-title strong {
-  min-width: 0;
-}
-
-.recovery-choice-title em {
+.recovery-choice-meta em {
   flex: 0 0 auto;
   padding: 2px 6px;
   color: var(--accent-text);
@@ -461,6 +458,17 @@ label.choice:focus-within {
 
 .recovery-choice > svg {
   margin-left: auto;
+}
+
+.recovery-create {
+  justify-content: center;
+  color: var(--white);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.recovery-create > svg {
+  color: currentColor;
 }
 
 .recovery-detail {

@@ -1,47 +1,6 @@
-/* Deeper History analysis. It reuses the editor's muscle chips and segmented controls so the same
-   choices have the same dimensions, colors, and press behavior everywhere in the app. */
+/* Progress reuses the workout editor's filters so controls stay familiar across the app. */
 
-.hist-analysis-link {
-  width: 100%;
-  min-height: 66px;
-  padding: 10px var(--space-4);
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  color: var(--text);
-  text-align: left;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  cursor: pointer;
-}
-
-.hist-analysis-link > svg:first-child {
-  color: var(--accent-text);
-}
-
-.hist-analysis-link > svg:last-child {
-  color: var(--muted);
-}
-
-.hist-analysis-copy {
-  min-width: 0;
-  display: grid;
-  gap: var(--space-1);
-}
-
-.hist-analysis-copy strong {
-  font-size: var(--fs-body);
-  font-weight: var(--fw-bold);
-}
-
-.hist-analysis-copy small {
-  color: var(--muted);
-  font-size: var(--fs-meta);
-  line-height: 1.35;
-}
-
+.progress-summary,
 .progress-controls,
 .progress-card {
   padding: var(--space-4);
@@ -50,6 +9,16 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
+}
+
+.progress-summary {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.progress-summary .ex-segment,
+.progress-controls .ex-segment {
+  background: var(--surface-2);
 }
 
 .progress-filter {
@@ -70,12 +39,31 @@
   min-height: 36px;
 }
 
-.progress-controls .ex-segment {
-  background: var(--surface-2);
-}
-
 .progress-controls .ex-segment button {
   font-size: var(--fs-label);
+}
+
+.progress-exercise-select {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font: inherit;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.progress-exercise-select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.progress-exercise-select:disabled {
+  color: var(--quiet);
+  opacity: 1;
 }
 
 .progress-period {
@@ -165,60 +153,42 @@
   text-anchor: end;
 }
 
-.progress-legend {
+.progress-chart-summary {
   display: grid;
-  gap: var(--space-3);
-}
-
-.progress-legend-row {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
-.progress-legend-line {
-  width: 34px;
-  height: 12px;
-  overflow: visible;
-}
-
-.progress-legend-line line {
-  stroke-width: 2.2;
-  stroke-linecap: round;
-}
-
-.progress-legend-name,
-.progress-legend-value {
+.progress-chart-summary > span {
   min-width: 0;
+  padding: var(--space-3);
   display: grid;
   gap: var(--space-1);
+  background: var(--glass-035);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
 }
 
-.progress-legend-name strong,
-.progress-legend-value strong {
-  font-size: var(--fs-meta);
-  font-weight: var(--fw-bold);
-  line-height: 1.25;
-}
-
-.progress-legend-name small,
-.progress-legend-value small {
+.progress-chart-summary small {
   color: var(--quiet);
   font-size: var(--fs-caption);
-  font-weight: var(--fw-semibold);
-  line-height: 1.25;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
-.progress-legend-value {
-  justify-items: end;
-  text-align: right;
+.progress-chart-summary strong {
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
 }
 
-.progress-legend-value small.up {
+.progress-chart-summary strong.up {
   color: var(--success);
+}
+
+.progress-chart-summary strong.down {
+  color: var(--danger);
 }
 
 .progress-empty {
@@ -238,19 +208,4 @@
 
 .progress-note {
   padding-top: var(--space-1);
-}
-
-.hist-analysis-link:active {
-  transform: scale(0.98);
-}
-
-.hist-analysis-link:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hist-analysis-link {
-    transition: none;
-  }
 }

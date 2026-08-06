@@ -620,6 +620,21 @@
   outline-offset: 2px;
 }
 
+.ws-screen.readonly .ws-guide,
+.ws-screen.readonly .ws-result,
+.ws-screen.readonly .ws-swap,
+.ws-screen.readonly .ws-stepbtn {
+  display: none;
+}
+
+.ws-screen.readonly .ws-step {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ws-screen.readonly .ws-weight:disabled {
+  opacity: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ws-item-head,
   .ws-guide,

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   MAX_AUTOMATIC_RECOVERY_COPIES,
+  RECOVERY_REASONS,
   addRecoverySnapshot,
   automaticRecoveryDue,
   createRecoverySnapshot,
@@ -11,6 +13,8 @@ import {
   normalizeRecoverySnapshots,
   parseRecoveryStore,
 } from '../src/recovery.ts'
+
+const recoverySql = await readFile('supabase/recovery_snapshots.sql', 'utf8')
 
 const validData = (value: unknown) =>
   Boolean(value) && typeof value === 'object' && Array.isArray((value as { sessions?: unknown }).sessions)
@@ -119,4 +123,10 @@ test('only one automatic copy is due each local day', () => {
   assert.equal(automaticRecoveryDue([], morning), true)
   assert.equal(automaticRecoveryDue([automatic], evening), false)
   assert.equal(automaticRecoveryDue([automatic], tomorrow), true)
+})
+
+test('Supabase accepts every client recovery reason', () => {
+  for (const reason of RECOVERY_REASONS) {
+    assert.equal(recoverySql.includes(`'${reason}'`), true, `Missing SQL recovery reason: ${reason}`)
+  }
 })

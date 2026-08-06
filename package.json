@@ -16,7 +16,7 @@
     "generate-android-assets": "npm run brand:sync",
     "lint": "oxlint",
     "security:rls": "node --experimental-strip-types scripts/check-supabase-rls.ts",
-    "test": "npm run brand:check && npm run theme:check && node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts tests/cloudSync.test.ts tests/apkVersion.test.ts tests/timeFormat.test.ts tests/storage.test.ts tests/restTimerState.test.ts tests/historyPagination.test.ts tests/progressAnalysis.test.ts tests/recovery.test.ts tests/launchScreen.test.ts tests/backupFiles.test.ts tests/workoutPresentation.test.ts",
+    "test": "npm run brand:check && npm run theme:check && node --experimental-strip-types --test tests/domain.test.ts tests/dataValidation.test.ts tests/cloudSync.test.ts tests/apkVersion.test.ts tests/timeFormat.test.ts tests/storage.test.ts tests/restTimerState.test.ts tests/historyPagination.test.ts tests/progressAnalysis.test.ts tests/programs.test.ts tests/recovery.test.ts tests/launchScreen.test.ts tests/backupFiles.test.ts tests/workoutPresentation.test.ts",
     "test:e2e": "node scripts/run-e2e.mjs",
     "preview": "vite preview"
   },

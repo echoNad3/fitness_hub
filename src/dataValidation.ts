@@ -1,4 +1,3 @@
-const WORKOUT_IDS = new Set(['workout-a', 'workout-b'])
 const CATEGORIES = new Set(['CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'CORE', 'LEGS'])
 const PREVIOUS_RESULTS = new Set(['success', 'failure', 'missing'])
 const MAX_EXERCISE_NAME_LENGTH = 80
@@ -6,6 +5,8 @@ const MAX_WORKOUT_NAME_LENGTH = 80
 const MAX_SETUP_LENGTH = 120
 const MAX_NOTE_LENGTH = 240
 const MAX_COUNT = 999
+const MAX_PROGRAMS = 100
+const MAX_PROGRAM_DAYS = 7
 const VARIANT_OVERRIDE_KEYS = new Set([
   'name',
   'category',
@@ -107,8 +108,7 @@ function isExerciseGroup(value: unknown) {
 function isWorkoutTemplate(value: unknown) {
   if (
     !isRecord(value) ||
-    typeof value.id !== 'string' ||
-    !WORKOUT_IDS.has(value.id) ||
+    !isNonEmptyString(value.id) ||
     !isStringWithin(value.name, MAX_WORKOUT_NAME_LENGTH, false)
   ) {
     return false
@@ -156,12 +156,12 @@ function isVariantOverride(value: unknown) {
 }
 
 export function isValidTemplates(value: unknown): value is unknown[] {
-  if (!Array.isArray(value) || value.length !== WORKOUT_IDS.size || !value.every(isWorkoutTemplate)) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_PROGRAMS * MAX_PROGRAM_DAYS || !value.every(isWorkoutTemplate)) {
     return false
   }
 
-  const ids = new Set(value.map((template) => (isRecord(template) ? template.id : undefined)))
-  if (![...WORKOUT_IDS].every((id) => ids.has(id))) {
+  const ids = value.map((template) => (template as { id: string }).id)
+  if (new Set(ids).size !== ids.length) {
     return false
   }
 
@@ -176,6 +176,40 @@ export function isValidTemplates(value: unknown): value is unknown[] {
     }
   }
   return new Set(groupIds).size === groupIds.length && new Set(variantIds).size === variantIds.length
+}
+
+function isWorkoutProgram(value: unknown, templateIds: ReadonlySet<string>) {
+  if (!isRecord(value)) return false
+  if (
+    !isNonEmptyString(value.id) ||
+    !isStringWithin(value.name, MAX_WORKOUT_NAME_LENGTH, false) ||
+    typeof value.createdAt !== 'number' ||
+    !Number.isFinite(value.createdAt) ||
+    value.createdAt <= 0 ||
+    !Array.isArray(value.workoutIds) ||
+    value.workoutIds.length === 0 ||
+    value.workoutIds.length > MAX_PROGRAM_DAYS ||
+    !value.workoutIds.every((id) => typeof id === 'string' && templateIds.has(id))
+  ) {
+    return false
+  }
+  return new Set(value.workoutIds).size === value.workoutIds.length
+}
+
+export function isValidPrograms(value: unknown, templates: unknown) {
+  if (!isValidTemplates(templates) || !Array.isArray(value) || value.length === 0 || value.length > MAX_PROGRAMS) {
+    return false
+  }
+  const templateIds = new Set((templates as Array<{ id: string }>).map((template) => template.id))
+  if (!value.every((program) => isWorkoutProgram(program, templateIds))) return false
+  const programIds = value.map((program) => (program as { id: string }).id)
+  const assignedWorkoutIds = value.flatMap((program) => (program as { workoutIds: string[] }).workoutIds)
+  return (
+    new Set(programIds).size === programIds.length &&
+    new Set(assignedWorkoutIds).size === assignedWorkoutIds.length &&
+    assignedWorkoutIds.length === templateIds.size &&
+    assignedWorkoutIds.every((id) => templateIds.has(id))
+  )
 }
 
 // Local saves created before the linked-delete fix can contain a one-sided pair that the editor can
@@ -239,12 +273,11 @@ function isSessionGroup(value: unknown) {
 }
 
 function isWorkoutSession(value: unknown) {
-  if (!isRecord(value) || !isNonEmptyString(value.id) || typeof value.workoutId !== 'string') {
+  if (!isRecord(value) || !isNonEmptyString(value.id) || !isNonEmptyString(value.workoutId)) {
     return false
   }
 
   return (
-    WORKOUT_IDS.has(value.workoutId) &&
     typeof value.createdAt === 'number' &&
     Number.isFinite(value.createdAt) &&
     value.createdAt > 0 &&
@@ -257,6 +290,13 @@ function isWorkoutSession(value: unknown) {
         typeof value.finishedAt === 'number' &&
         Number.isFinite(value.finishedAt) &&
         value.finishedAt > value.createdAt)) &&
+    (value.programId === undefined || isNonEmptyString(value.programId)) &&
+    (value.programName === undefined || isStringWithin(value.programName, MAX_WORKOUT_NAME_LENGTH, false)) &&
+    (value.workoutName === undefined || isStringWithin(value.workoutName, MAX_WORKOUT_NAME_LENGTH, false)) &&
+    (value.workoutSnapshot === undefined ||
+      (isRecord(value.workoutSnapshot) &&
+        isWorkoutTemplate(value.workoutSnapshot) &&
+        value.workoutSnapshot.id === value.workoutId)) &&
     isRecord(value.groupEntries) &&
     Object.values(value.groupEntries).every(isSessionGroup)
   )
@@ -270,6 +310,30 @@ export function isValidSessions(value: unknown): value is unknown[] {
   return new Set(ids).size === ids.length
 }
 
+// Local storage can be interrupted mid-write or partially damaged. Imports stay strict, but local
+// startup keeps every structurally sound, resolvable workout instead of dropping the entire history
+// because one record is bad.
+export function recoverValidSessions(
+  value: unknown,
+  resolvableWorkoutIds?: ReadonlySet<string>,
+): unknown[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  return value.filter((session) => {
+    if (!isWorkoutSession(session)) return false
+    const candidate = session as { id: string; workoutId: string; workoutSnapshot?: unknown }
+    if (
+      candidate.workoutSnapshot === undefined &&
+      resolvableWorkoutIds &&
+      !resolvableWorkoutIds.has(candidate.workoutId)
+    ) return false
+    const id = candidate.id
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+}
+
 function isRecordOf(value: unknown, predicate: (entry: unknown) => boolean) {
   return isRecord(value) && Object.values(value).every(predicate)
 }
@@ -279,8 +343,24 @@ export function isValidBackup(value: unknown) {
     return false
   }
 
+  const templatesValid = value.templates === undefined || isValidTemplates(value.templates)
+  const programsValid =
+    value.programs === undefined ||
+    (isValidPrograms(value.programs, value.templates) &&
+      typeof value.activeProgramId === 'string' &&
+      (value.programs as Array<{ id: string }>).some((program) => program.id === value.activeProgramId))
+  const templateIds = isValidTemplates(value.templates)
+    ? new Set((value.templates as Array<{ id: string }>).map((template) => template.id))
+    : new Set<string>()
+  const sessionsResolvable = (value.sessions as Array<{ workoutId: string; workoutSnapshot?: unknown }>).every(
+    (session) => session.workoutSnapshot !== undefined || templateIds.has(session.workoutId),
+  )
+
   return (
-    (value.templates === undefined || isValidTemplates(value.templates)) &&
+    templatesValid &&
+    programsValid &&
+    (value.activeProgramId === undefined || typeof value.activeProgramId === 'string') &&
+    sessionsResolvable &&
     (value.variantOverrides === undefined || isRecordOf(value.variantOverrides, isVariantOverride)) &&
     (value.variantPrefs === undefined || isRecordOf(value.variantPrefs, isNonEmptyString)) &&
     (value.baselineResults === undefined ||

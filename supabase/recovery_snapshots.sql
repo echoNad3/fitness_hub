@@ -1,4 +1,4 @@
--- Run once in the Supabase SQL editor. Safe to run again.
+-- Run in the Supabase SQL editor. Safe to rerun.
 create table if not exists public.app_recovery_snapshots (
   user_id uuid not null references auth.users(id) on delete cascade,
   id text not null check (char_length(id) between 1 and 100),
@@ -8,6 +8,7 @@ create table if not exists public.app_recovery_snapshots (
     'manual',
     'before-workout-edit',
     'before-workout-delete',
+    'before-program-change',
     'before-import',
     'before-reset',
     'before-restore',
@@ -17,6 +18,22 @@ create table if not exists public.app_recovery_snapshots (
   data jsonb not null check (pg_column_size(data) <= 10485760),
   primary key (user_id, id)
 );
+
+-- Keep the reason constraint current when this script is rerun on an existing project.
+alter table public.app_recovery_snapshots
+  drop constraint if exists app_recovery_snapshots_reason_check;
+alter table public.app_recovery_snapshots
+  add constraint app_recovery_snapshots_reason_check check (reason in (
+    'automatic',
+    'manual',
+    'before-workout-edit',
+    'before-workout-delete',
+    'before-program-change',
+    'before-import',
+    'before-reset',
+    'before-restore',
+    'before-cloud-replace'
+  ));
 
 alter table public.app_recovery_snapshots enable row level security;
 

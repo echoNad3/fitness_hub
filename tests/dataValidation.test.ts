@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { isValidBackup, isValidSessions, isValidTemplates, repairTemplateLinks } from '../src/dataValidation.ts'
+import {
+  isValidBackup,
+  isValidPrograms,
+  isValidSessions,
+  isValidTemplates,
+  recoverValidSessions,
+  repairTemplateLinks,
+} from '../src/dataValidation.ts'
 
 function variant(id: string) {
   return {
@@ -16,11 +23,11 @@ function variant(id: string) {
   }
 }
 
-function template(id: 'workout-a' | 'workout-b') {
+function template(id: string) {
   const exercise = variant(`${id}-exercise`)
   return {
     id,
-    name: id === 'workout-a' ? 'Workout A' : 'Workout B',
+    name: id === 'workout-b' ? 'Workout B' : 'Workout A',
     groups: [{ id: exercise.id, activeVariantId: exercise.id, variants: [exercise] }],
   }
 }
@@ -34,14 +41,32 @@ test('a legacy backup with valid sessions and no templates is accepted', () => {
   assert.equal(isValidBackup({ sessions: [], variantOverrides: { exercise: { unexpected: true } } }), false)
 })
 
-test('both editable workout templates must be structurally valid', () => {
+test('one to many editable workout templates can be structurally valid', () => {
   const templates = [template('workout-a'), template('workout-b')]
   assert.equal(isValidTemplates(templates), true)
-  assert.equal(isValidTemplates([template('workout-a')]), false)
+  assert.equal(isValidTemplates([template('workout-a')]), true)
 
   const broken = structuredClone(templates)
   broken[0].groups[0].activeVariantId = 'missing-variant'
   assert.equal(isValidTemplates(broken), false)
+})
+
+test('programs cover every current workout exactly once and keep one to seven days', () => {
+  const templates = [template('workout-a'), template('workout-b')]
+  const programs = [{
+    id: 'program-1',
+    name: 'Current program',
+    workoutIds: ['workout-a', 'workout-b'],
+    createdAt: 100,
+  }]
+  assert.equal(isValidPrograms(programs, templates), true)
+  assert.equal(isValidBackup({ sessions: [], templates, programs, activeProgramId: 'program-1' }), true)
+  assert.equal(isValidBackup({ sessions: [], templates, programs, activeProgramId: 'missing' }), false)
+  assert.equal(isValidPrograms([{ ...programs[0], workoutIds: ['workout-a'] }], templates), false)
+  assert.equal(isValidPrograms([
+    programs[0],
+    { id: 'program-2', name: 'Other', workoutIds: ['workout-a'], createdAt: 200 },
+  ], templates), false)
 })
 
 test('malformed template data cannot be imported', () => {
@@ -144,6 +169,22 @@ test('session entries reject invalid weights and result values', () => {
   assert.equal(isValidSessions([{ ...validSession, groupEntries: { exercise: { activeVariantId: 'exercise', entries: { exercise: { weight: 20, setup: 'x'.repeat(121) } } } } }]), false)
   assert.equal(isValidSessions([{ ...validSession, groupEntries: { exercise: { activeVariantId: 'exercise', entries: { exercise: { weight: 20, reps: 1000 } } } } }]), false)
   assert.equal(isValidSessions([validSession, structuredClone(validSession)]), false)
+  assert.deepEqual(
+    recoverValidSessions([
+      validSession,
+      { ...validSession, id: 'broken', createdAt: -1 },
+      structuredClone(validSession),
+      { ...validSession, id: 'session-2' },
+    ]).map((session) => (session as { id: string }).id),
+    ['session-1', 'session-2'],
+  )
+  assert.deepEqual(
+    recoverValidSessions([
+      validSession,
+      { ...validSession, id: 'orphan', workoutId: 'missing-workout' },
+    ], new Set(['workout-a'])).map((session) => (session as { id: string }).id),
+    ['session-1'],
+  )
 })
 
 test('app-wide ids must be unique across editable templates', () => {

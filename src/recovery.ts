@@ -5,15 +5,19 @@ export const MAX_AUTOMATIC_RECOVERY_COPIES = 3
 export const MAX_RECOVERY_COPY_BYTES = 10 * 1024 * 1024
 const MAX_RECOVERY_TOMBSTONES = 20
 
-export type RecoveryReason =
-  | 'automatic'
-  | 'manual'
-  | 'before-workout-edit'
-  | 'before-workout-delete'
-  | 'before-import'
-  | 'before-reset'
-  | 'before-restore'
-  | 'before-cloud-replace'
+export const RECOVERY_REASONS = [
+  'automatic',
+  'manual',
+  'before-workout-edit',
+  'before-workout-delete',
+  'before-program-change',
+  'before-import',
+  'before-reset',
+  'before-restore',
+  'before-cloud-replace',
+] as const
+
+export type RecoveryReason = (typeof RECOVERY_REASONS)[number]
 
 export type RecoverySnapshot = {
   id: string
@@ -28,16 +32,7 @@ export type RecoveryStore = {
   deletedIds: string[]
 }
 
-const RECOVERY_REASONS = new Set<RecoveryReason>([
-  'automatic',
-  'manual',
-  'before-workout-edit',
-  'before-workout-delete',
-  'before-import',
-  'before-reset',
-  'before-restore',
-  'before-cloud-replace',
-])
+const RECOVERY_REASON_SET = new Set<RecoveryReason>(RECOVERY_REASONS)
 
 export const emptyRecoveryStore = (): RecoveryStore => ({ copies: [], deletedIds: [] })
 
@@ -47,6 +42,7 @@ export function recoveryReasonLabel(reason: RecoveryReason) {
     manual: 'Manual copy',
     'before-workout-edit': 'Before workout edit',
     'before-workout-delete': 'Before workout deletion',
+    'before-program-change': 'Before program change',
     'before-import': 'Before backup import',
     'before-reset': 'Before data reset',
     'before-restore': 'Before recovery restore',
@@ -186,7 +182,7 @@ export function isRecoverySnapshot(
     Number.isFinite(value.createdAt) &&
     value.createdAt > 0 &&
     typeof value.reason === 'string' &&
-    RECOVERY_REASONS.has(value.reason as RecoveryReason) &&
+    RECOVERY_REASON_SET.has(value.reason as RecoveryReason) &&
     typeof value.hash === 'string' &&
     value.hash.length > 0 &&
     isValidData(value.data)

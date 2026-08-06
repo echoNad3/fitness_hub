@@ -1,0 +1,202 @@
+.program-lock {
+  padding: var(--space-3) var(--space-4);
+  color: var(--warning-ink);
+  background: var(--warning);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+  line-height: 1.35;
+}
+
+.program-list,
+.program-workouts {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.program-card,
+.program-workout-row {
+  width: 100%;
+  min-height: 68px;
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.program-card.active {
+  border-color: var(--accent-line);
+}
+
+.program-card-main,
+.program-workout-row > span,
+.program-overview-head > span {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.program-card strong,
+.program-workout-row strong,
+.program-overview strong {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+}
+
+.program-card small,
+.program-workout-row small,
+.program-overview small {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+}
+
+.program-card em,
+.program-overview-head em {
+  padding: 4px 7px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  font-size: var(--fs-caption);
+  font-style: normal;
+  font-weight: var(--fw-bold);
+}
+
+.program-card > svg,
+.program-workout-row > svg {
+  color: var(--muted);
+}
+
+.program-new {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--white);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+}
+
+.program-overview,
+.program-days {
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.program-overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.program-overview-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.program-overview-actions button {
+  min-height: var(--tap);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.program-overview-actions button:only-child {
+  grid-column: 1 / -1;
+}
+
+.program-overview-actions .primary-action {
+  color: var(--white);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.program-day-count {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.program-day-count button {
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0;
+}
+
+.program-workout-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.program-delete {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.program-card:disabled,
+.program-workout-row:disabled,
+.program-new:disabled,
+.program-delete:disabled,
+.program-overview-actions button:disabled,
+.program-day-count button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.program-card:not(:disabled):active,
+.program-workout-row:not(:disabled):active,
+.program-new:not(:disabled):active,
+.program-delete:not(:disabled):active,
+.program-overview-actions button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.program-card:focus-visible,
+.program-workout-row:focus-visible,
+.program-new:focus-visible,
+.program-delete:focus-visible,
+.program-overview-actions button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.program-dialog-days {
+  display: grid;
+  gap: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .program-card,
+  .program-workout-row,
+  .program-new,
+  .program-delete,
+  .program-overview-actions button {
+    transition: none;
+  }
+}

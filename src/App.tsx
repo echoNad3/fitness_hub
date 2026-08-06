@@ -8,6 +8,7 @@ import './home.css'
 import './chrome.css'
 import './edit.css'
 import './analysis.css'
+import './programs.css'
 import {
   deleteCloudRecoverySnapshots,
   loadCloudRecoveryDeletedIds,
@@ -28,7 +29,6 @@ import {
   parseCloudTimestamp,
 } from './cloudSync'
 import {
-  MAX_WORKOUT_DURATION_SECONDS,
   clampRestValue,
   nextPendingId,
   restSecondsRemaining,
@@ -39,7 +39,7 @@ import {
   WORKOUT_DURATION_STEP_SECONDS,
   workoutDurationSeconds,
 } from './domain'
-import { isRecord, isValidBackup, isValidSessions, isValidTemplates, repairTemplateLinks } from './dataValidation'
+import { isRecord, isValidBackup, isValidTemplates, recoverValidSessions, repairTemplateLinks } from './dataValidation'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import { cancelRestNotification, scheduleRestNotification } from './restNotifications'
@@ -86,32 +86,23 @@ import {
 import type { ExerciseVariant, PreviousResult, ResultStatus, WorkoutId } from './workoutTypes'
 import { categoryLabel, muscleColor, muscleColorStyle } from './workoutPresentation'
 import { useHoldStepper } from './useHoldStepper'
+import {
+  createBlankWorkout,
+  createProgram,
+  MAX_PROGRAM_DAYS,
+  MAX_PROGRAMS,
+  migrateSessionPrograms,
+  MIN_PROGRAM_DAYS,
+  normalizeProgramState,
+  programForWorkout,
+  snapshotWorkoutForSession,
+  type ExerciseGroup,
+  type WorkoutProgram,
+  type WorkoutTemplate,
+} from './programs'
 
 const WorkoutEditorList = lazy(() => import('./WorkoutEditorList'))
 const ProgressAnalysisScreen = lazy(() => import('./ProgressAnalysisScreen'))
-
-// A group is a single exercise slot. `variants` always holds exactly one exercise now (swaps are no
-// longer nested); the swap feature is expressed with `linkId` instead. Kept as an array so the session
-// storage (entries keyed by variant id) and the many variant helpers stay unchanged.
-type ExerciseGroup = {
-  id: string
-  activeVariantId: string
-  variants: ExerciseVariant[]
-  // Rest countdown length for this exercise (seconds). Per-exercise, edited in the workout editor.
-  restSeconds: number
-  // Hidden exercises are dimmed in edit mode and skipped on the workout screen.
-  hidden?: boolean
-  // Two exercises sharing a `linkId` are a swap pair: only the visible (non-hidden) one shows on the
-  // workout screen, at the position of whichever pair member sits higher in the list, with a
-  // "Swap with …" button to flip which is visible.
-  linkId?: string
-}
-
-type WorkoutTemplate = {
-  id: WorkoutId
-  name: string
-  groups: ExerciseGroup[]
-}
 
 type SessionExercise = {
   weight: number
@@ -138,6 +129,10 @@ type SessionGroup = {
 type WorkoutSession = {
   id: string
   workoutId: WorkoutId
+  programId: string
+  programName: string
+  workoutName: string
+  workoutSnapshot: WorkoutTemplate
   createdAt: number
   // Set when the workout is completed or explicitly ended early, so History can show its duration.
   finishedAt?: number
@@ -151,6 +146,8 @@ type AppData = {
   sessions: WorkoutSession[]
   variantPrefs: Record<string, string>
   templates: WorkoutTemplate[]
+  programs: WorkoutProgram[]
+  activeProgramId: string
   baselineResults: Record<string, PreviousResult>
   expandedBySession: Record<string, string>
   scrollBySession: Record<string, number>
@@ -162,8 +159,10 @@ type Screen =
   | { name: 'main' }
   | { name: 'global-history' }
   | { name: 'progress-analysis' }
+  | { name: 'programs' }
+  | { name: 'program'; programId: string }
   | { name: 'settings' }
-  | { name: 'session'; workoutId: WorkoutId; sessionId: string }
+  | { name: 'session'; workoutId: WorkoutId; sessionId: string; readOnly?: true }
 
 type WeightDialog = {
   sessionId: string
@@ -243,6 +242,7 @@ const PUBLIC_APP_URL = 'https://echonad3.github.io/fitness_hub/'
 const APK_DOWNLOAD_URL = 'https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
+const MAX_RECORDED_WORKOUT_DURATION_MS = 24 * 60 * 60 * 1000
 
 const defaultWorkouts: WorkoutTemplate[] = [
   {
@@ -588,6 +588,13 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M6.5 15.5l4-4 3 2 5-6" />
         </svg>
       )
+    case 'program':
+      return (
+        <svg {...props}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <path d="M8 8h8M8 12h8M8 16h5" />
+        </svg>
+      )
     case 'settings':
       return (
         <svg {...props}>
@@ -760,6 +767,9 @@ function DurationEditor({
 function App() {
   const [data, setData] = useState<AppData>(loadData)
   templatesRef = data.templates
+  currentSessionIdsRef = new Set(
+    Object.values(data.currentSessionByWorkout).filter((sessionId): sessionId is string => typeof sessionId === 'string'),
+  )
   const [screen, setScreenState] = useState<Screen>(loadScreen)
   const [screenStack, setScreenStack] = useState<Screen[]>([])
   const [weightDialog, setWeightDialog] = useState<WeightDialog | null>(null)
@@ -792,6 +802,9 @@ function App() {
   const [accountDialogOpen, setAccountDialogOpen] = useState(false)
   const [apkDialogOpen, setApkDialogOpen] = useState(false)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
+  const [programDialog, setProgramDialog] = useState<ProgramDialog | null>(null)
+  const [editingProgramWorkoutId, setEditingProgramWorkoutId] = useState<string | null>(null)
+  const [plannerExpandedId, setPlannerExpandedId] = useState('')
   // When this device last completed a successful sync — shown on the home account row.
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => {
     const stored = Number(getStored(LAST_SYNCED_KEY))
@@ -872,14 +885,18 @@ function App() {
     durationDialog !== null ||
     recoveryDialog !== null ||
     syncConflict !== null ||
-    startDialogOpen
+    startDialogOpen ||
+    programDialog !== null
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
   const editModeRef = useRef(editMode)
   editModeRef.current = editMode
   const editDirtyRef = useRef(editDirty)
   editDirtyRef.current = editDirty
   // Pre-edit snapshot of the routine + sessions, so discarding edit mode can roll them back.
-  const editSnapshotRef = useRef<{ templates: WorkoutTemplate[]; sessions: WorkoutSession[] } | null>(null)
+  const editSnapshotRef = useRef<Pick<
+    AppData,
+    'templates' | 'sessions' | 'variantPrefs' | 'baselineResults'
+  > | null>(null)
   const dialogOpenRef = useRef(dialogOpen)
   dialogOpenRef.current = dialogOpen
   const syncConflictRef = useRef(syncConflict)
@@ -1494,9 +1511,16 @@ function App() {
               onConfirm: () => {
                 if (editSnapshotRef.current) {
                   const snapshot = editSnapshotRef.current
-                  setData((current) => ({ ...current, templates: snapshot.templates, sessions: snapshot.sessions }))
+                  setData((current) => ({
+                    ...current,
+                    templates: snapshot.templates,
+                    sessions: snapshot.sessions,
+                    variantPrefs: snapshot.variantPrefs,
+                    baselineResults: snapshot.baselineResults,
+                  }))
                 }
                 setEditMode(false)
+                setEditingProgramWorkoutId(null)
                 editSnapshotRef.current = null
                 setConfirmDialog(null)
               },
@@ -1504,6 +1528,7 @@ function App() {
             return
           }
           setEditMode(false)
+          setEditingProgramWorkoutId(null)
           editSnapshotRef.current = null
         }
         return
@@ -1686,9 +1711,19 @@ function App() {
     () => [...data.sessions].sort((a, b) => b.createdAt - a.createdAt),
     [data.sessions],
   )
+  const showHistoryProgram = new Set(data.sessions.map((session) => session.programId)).size > 1
   const historyOptionsSession = historyOptionsSessionId
     ? data.sessions.find((session) => session.id === historyOptionsSessionId) ?? null
     : null
+  const activeProgram =
+    data.programs.find((program) => program.id === data.activeProgramId) ?? data.programs[0]
+  const activeProgramWorkouts = activeProgram.workoutIds
+    .map((workoutId) => data.templates.find((template) => template.id === workoutId))
+    .filter((workout): workout is WorkoutTemplate => Boolean(workout))
+  const currentWorkoutSession = data.sessions.find(
+    (session) => currentSessionIdsRef.has(session.id) && !isSessionClosed(session),
+  )
+  const programsLocked = Boolean(currentWorkoutSession)
 
   const reorderGroups = (workoutId: WorkoutId, activeId: string, overId: string) => {
     const workout = data.templates.find((template) => template.id === workoutId)
@@ -1711,6 +1746,257 @@ function App() {
       }),
     }))
     void haptics.dragDrop()
+  }
+
+  const addTemplateDefaults = (current: AppData, templates: readonly WorkoutTemplate[]) => {
+    const variantPrefs = { ...current.variantPrefs }
+    const baselineResults = { ...current.baselineResults }
+    for (const template of templates) {
+      for (const group of template.groups) {
+        variantPrefs[group.id] = group.activeVariantId
+        for (const variant of group.variants) {
+          baselineResults[variant.id] = variant.lastResult
+        }
+      }
+    }
+    return { variantPrefs, baselineResults }
+  }
+
+  const removeTemplateDefaults = (current: AppData, removedTemplates: readonly WorkoutTemplate[]) => {
+    const variantPrefs = { ...current.variantPrefs }
+    const baselineResults = { ...current.baselineResults }
+    for (const template of removedTemplates) {
+      for (const group of template.groups) {
+        delete variantPrefs[group.id]
+        for (const variant of group.variants) delete baselineResults[variant.id]
+      }
+    }
+    return { variantPrefs, baselineResults }
+  }
+
+  const submitProgramDialog = () => {
+    if (!programDialog) return
+    const name = programDialog.name.trim()
+    if (!name) {
+      setProgramDialog({ ...programDialog, error: 'Enter a program name.' })
+      void haptics.reject()
+      return
+    }
+    const duplicate = data.programs.some(
+      (program) => program.name.toLocaleLowerCase() === name.toLocaleLowerCase() &&
+        (programDialog.mode === 'create' || program.id !== programDialog.programId),
+    )
+    if (duplicate) {
+      setProgramDialog({ ...programDialog, error: 'Use a different program name.' })
+      void haptics.reject()
+      return
+    }
+
+    if (programDialog.mode === 'rename') {
+      setData((current) => ({
+        ...current,
+        programs: current.programs.map((program) =>
+          program.id === programDialog.programId ? { ...program, name } : program,
+        ),
+        sessions: current.sessions.map((session) =>
+          session.programId === programDialog.programId ? { ...session, programName: name } : session,
+        ),
+      }))
+      setProgramDialog(null)
+      void haptics.confirm()
+      return
+    }
+
+    if (data.programs.length >= MAX_PROGRAMS) {
+      setProgramDialog({ ...programDialog, error: 'Program limit reached.' })
+      void haptics.reject()
+      return
+    }
+
+    const created = createProgram(name, programDialog.days, data.restSeconds, createId)
+    setData((current) => {
+      const defaults = addTemplateDefaults(current, created.templates)
+      return {
+        ...current,
+        templates: [...current.templates, ...created.templates],
+        programs: [...current.programs, created.program],
+        ...defaults,
+      }
+    })
+    setProgramDialog(null)
+    navigate({ name: 'program', programId: created.program.id })
+    void haptics.confirm()
+  }
+
+  const setProgramDays = (program: WorkoutProgram, days: number) => {
+    const nextDays = Math.min(MAX_PROGRAM_DAYS, Math.max(MIN_PROGRAM_DAYS, Math.round(days)))
+    if (programsLocked || nextDays === program.workoutIds.length) return
+
+    if (nextDays > program.workoutIds.length) {
+      const added = Array.from(
+        { length: nextDays - program.workoutIds.length },
+        (_, offset) => createBlankWorkout(program.workoutIds.length + offset, data.restSeconds, createId),
+      )
+      setData((current) => {
+        const defaults = addTemplateDefaults(current, added)
+        return {
+          ...current,
+          templates: [...current.templates, ...added],
+          programs: current.programs.map((candidate) =>
+            candidate.id === program.id
+              ? { ...candidate, workoutIds: [...candidate.workoutIds, ...added.map((workout) => workout.id)] }
+              : candidate,
+          ),
+          ...defaults,
+        }
+      })
+      void haptics.selection()
+      return
+    }
+
+    const removedIds = new Set(program.workoutIds.slice(nextDays))
+    setConfirmDialog({
+      title: `Change to ${nextDays} ${nextDays === 1 ? 'day' : 'days'}?`,
+      message: 'Removed days disappear from this program. Their workout history stays.',
+      confirmLabel: 'Change days',
+      warning: true,
+      onConfirm: () => {
+        if (storeRecoveryCopy('before-program-change') === 'error') return false
+        setData((current) => {
+          const removedTemplates = current.templates.filter((template) => removedIds.has(template.id))
+          const defaults = removeTemplateDefaults(current, removedTemplates)
+          return {
+            ...current,
+            templates: current.templates.filter((template) => !removedIds.has(template.id)),
+            programs: current.programs.map((candidate) =>
+              candidate.id === program.id
+                ? { ...candidate, workoutIds: candidate.workoutIds.slice(0, nextDays) }
+                : candidate,
+            ),
+            currentSessionByWorkout: Object.fromEntries(
+              Object.entries(current.currentSessionByWorkout).filter(([workoutId]) => !removedIds.has(workoutId)),
+            ),
+            ...defaults,
+          }
+        })
+        setConfirmDialog(null)
+        void haptics.confirm()
+      },
+    })
+  }
+
+  const activateProgram = (program: WorkoutProgram) => {
+    if (programsLocked || program.id === data.activeProgramId) return
+    setData((current) => ({ ...current, activeProgramId: program.id }))
+    void haptics.confirm()
+  }
+
+  const deleteProgram = (program: WorkoutProgram) => {
+    if (programsLocked || data.programs.length <= 1) return
+    const historyCount = data.sessions.filter((session) => session.programId === program.id).length
+    setConfirmDialog({
+      title: 'Delete program?',
+      message: historyCount > 0
+        ? `${historyCount} ${historyCount === 1 ? 'workout stays' : 'workouts stay'} in History and Progress.`
+        : 'Its workout setup will be removed.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: () => {
+        if (storeRecoveryCopy('before-program-change') === 'error') return false
+        const removedIds = new Set(program.workoutIds)
+        setData((current) => {
+          const remainingPrograms = current.programs.filter((candidate) => candidate.id !== program.id)
+          const removedTemplates = current.templates.filter((template) => removedIds.has(template.id))
+          const defaults = removeTemplateDefaults(current, removedTemplates)
+          return {
+            ...current,
+            templates: current.templates.filter((template) => !removedIds.has(template.id)),
+            programs: remainingPrograms,
+            activeProgramId:
+              current.activeProgramId === program.id ? remainingPrograms[0].id : current.activeProgramId,
+            currentSessionByWorkout: Object.fromEntries(
+              Object.entries(current.currentSessionByWorkout).filter(([workoutId]) => !removedIds.has(workoutId)),
+            ),
+            ...defaults,
+          }
+        })
+        setConfirmDialog(null)
+        setScreenStack((current) => current.slice(0, -1))
+        setScreenState({ name: 'programs' })
+        void haptics.confirm()
+      },
+    })
+  }
+
+  const openProgramWorkoutEditor = (workout: WorkoutTemplate) => {
+    if (programsLocked) return
+    editSnapshotRef.current = {
+      templates: data.templates,
+      sessions: data.sessions,
+      variantPrefs: data.variantPrefs,
+      baselineResults: data.baselineResults,
+    }
+    setEditDirty(false)
+    setEditingProgramWorkoutId(workout.id)
+    setPlannerExpandedId(workout.groups[0]?.id ?? '')
+    setEditMode(true)
+  }
+
+  const saveProgramWorkoutEditor = () => {
+    if (editDirty) {
+      const snapshot = editSnapshotRef.current
+      if (snapshot) {
+        const recoveryResult = storeRecoveryCopy('before-workout-edit', {
+          ...dataRef.current,
+          templates: snapshot.templates,
+          sessions: snapshot.sessions,
+          variantPrefs: snapshot.variantPrefs,
+          baselineResults: snapshot.baselineResults,
+        })
+        if (recoveryResult === 'error') {
+          void haptics.reject()
+          return
+        }
+      }
+      void haptics.confirm()
+    }
+    setEditMode(false)
+    setEditingProgramWorkoutId(null)
+    editSnapshotRef.current = null
+  }
+
+  const addProgramExercise = (workoutId: WorkoutId) => {
+    const variantId = createId()
+    const variant: ExerciseVariant = {
+      id: variantId,
+      name: 'New exercise',
+      category: 'CHEST',
+      setup: '',
+      sets: 3,
+      reps: 10,
+      weight: 0,
+      perHand: false,
+      lastResult: 'missing',
+    }
+    setEditDirty(true)
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) =>
+        template.id === workoutId
+          ? {
+              ...template,
+              groups: [
+                ...template.groups,
+                { id: variantId, activeVariantId: variantId, variants: [variant], restSeconds: current.restSeconds },
+              ],
+            }
+          : template,
+      ),
+      variantPrefs: { ...current.variantPrefs, [variantId]: variantId },
+      baselineResults: { ...current.baselineResults, [variantId]: 'missing' },
+    }))
+    setPlannerExpandedId(variantId)
+    void haptics.selection()
   }
 
   // Cancel the "choose which data to keep" prompt: undo the sign-in attempt entirely by signing out,
@@ -1805,6 +2091,7 @@ function App() {
     setHistoryOptionsSessionId(null)
     setDurationDialog(null)
     setRecoveryDialog(null)
+    setProgramDialog(null)
     if (syncConflictRef.current) {
       setSyncConflict(null)
       setSyncStatus('idle')
@@ -2042,11 +2329,12 @@ function App() {
   }
 
   const renderMain = () => {
-    const latest = sortedSessions[0]
-    const resumable = latest && !isSessionClosed(latest) ? latest : undefined
-    const lastWorkoutId = latest?.workoutId
-    const suggestedId: WorkoutId = lastWorkoutId === 'workout-a' ? 'workout-b' : 'workout-a'
-    const otherWorkouts = data.templates.filter((template) => template.id !== suggestedId)
+    const resumable = sortedSessions.find((session) => currentSessionIdsRef.has(session.id) && !isSessionClosed(session))
+    const latestProgramSession = sortedSessions.find((session) => session.programId === activeProgram.id)
+    const lastWorkoutIndex = activeProgramWorkouts.findIndex((workout) => workout.id === latestProgramSession?.workoutId)
+    const suggestedWorkout = activeProgramWorkouts[(lastWorkoutIndex + 1) % activeProgramWorkouts.length] ?? activeProgramWorkouts[0]
+    const suggestedId = suggestedWorkout.id
+    const otherWorkouts = activeProgramWorkouts.filter((template) => template.id !== suggestedId)
     const sessionCount = data.sessions.length
 
     return (
@@ -2067,11 +2355,11 @@ function App() {
               <Icon name="play" size={24} />
             </span>
             <span className="home-resume-sub">
-              {getWorkout(resumable.workoutId).name} · {countDone(resumable)} of{' '}
-              {displayedGroups(getWorkout(resumable.workoutId).groups).length} done
+              {getSessionWorkout(resumable).name} · {countDone(resumable)} of{' '}
+              {displayedGroups(getSessionWorkout(resumable).groups).length} done
             </span>
             <span className="home-rail" aria-hidden="true">
-              {displayedGroups(getWorkout(resumable.workoutId).groups).map(({ group }) => {
+              {displayedGroups(getSessionWorkout(resumable).groups).map(({ group }) => {
                 const groupEntry = resumable.groupEntries[group.id]
                 const result = groupEntry?.entries[group.activeVariantId]?.result
                 return <i className={result === 'success' ? 'done' : result === 'failure' ? 'failed' : ''} key={group.id} />
@@ -2080,13 +2368,15 @@ function App() {
           </button>
         )}
 
-        <button className="home-start-primary" type="button" onClick={() => setStartDialogOpen(true)}>
-          <span className="home-start-main">
-            <strong>Start workout</strong>
-            <small>Up next · {getWorkout(suggestedId).name}</small>
-          </span>
-          <Icon name="forward" size={24} />
-        </button>
+        {!resumable && (
+          <button className="home-start-primary" type="button" onClick={() => setStartDialogOpen(true)}>
+            <span className="home-start-main">
+              <strong>Start workout</strong>
+              <small>Up next · {getWorkout(suggestedId).name}</small>
+            </span>
+            <Icon name="forward" size={24} />
+          </button>
+        )}
 
         <div className="home-tiles">
           {supabase &&
@@ -2120,11 +2410,29 @@ function App() {
           {renderApkTile()}
 
           <div className="home-bottom-tiles">
+            <button className="home-tile" type="button" onClick={() => navigate({ name: 'progress-analysis' })}>
+              <span className="home-tile-icon"><Icon name="chart" size={22} /></span>
+              <span className="home-tile-text">
+                <span>Progress</span>
+                <small>Stats and exercises</small>
+              </span>
+            </button>
+
             <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
               <span className="home-tile-icon"><Icon name="history" size={22} /></span>
               <span className="home-tile-text">
                 <span>History</span>
                 <small>{sessionCount} {sessionCount === 1 ? 'workout' : 'workouts'}</small>
+              </span>
+            </button>
+          </div>
+
+          <div className="home-bottom-tiles">
+            <button className="home-tile" type="button" onClick={() => navigate({ name: 'programs' })}>
+              <span className="home-tile-icon"><Icon name="program" size={22} /></span>
+              <span className="home-tile-text">
+                <span>Program</span>
+                <small>{activeProgram.name}</small>
               </span>
             </button>
 
@@ -2188,25 +2496,6 @@ function App() {
 
   const renderHistory = (sessions: WorkoutSession[], onBack: () => void, title = 'History') => {
     const tracker = buildTrackerDays(sessions)
-    // Headline stats over all recorded sessions (the list is sorted newest-first).
-    const totalCount = sessions.length
-    const finishedCount = sessions.filter(isSessionFinished).length
-    const completionRate = totalCount > 0 ? Math.round((finishedCount / totalCount) * 100) : 0
-    const oldest = sessions[sessions.length - 1]
-    const spanWeeks = oldest ? Math.max(1, (Date.now() - oldest.createdAt) / (7 * 24 * 60 * 60 * 1000)) : 1
-    const perWeek = (totalCount / spanWeeks).toFixed(1)
-    const durations = sessions
-      .filter(
-        (session) =>
-          session.finishedAt !== undefined &&
-          session.finishedAt > session.createdAt &&
-          session.finishedAt - session.createdAt <= MAX_WORKOUT_DURATION_SECONDS * 1000,
-      )
-      .map((session) => (session.finishedAt as number) - session.createdAt)
-    const avgLength =
-      durations.length > 0
-        ? formatWorkoutDuration(durations.reduce((sum, value) => sum + value, 0) / durations.length)
-        : '—'
     const visibleCount = clampHistoryCount(historyVisibleCount, sessions.length)
     const visibleSessions = sessions.slice(0, visibleCount)
 
@@ -2216,38 +2505,6 @@ function App() {
           <EmptyState text="No workouts yet." />
         ) : (
           <>
-            <button
-              className="hist-analysis-link"
-              type="button"
-              onClick={() => navigate({ name: 'progress-analysis' })}
-            >
-              <Icon name="chart" size={22} />
-              <span className="hist-analysis-copy">
-                <strong>Progress</strong>
-                <small>Track load and estimated 1RM</small>
-              </span>
-              <Icon name="forward" size={18} />
-            </button>
-
-            <div className="hist-stats" aria-label="Workout stats">
-              <div className="hist-stat">
-                <strong>{totalCount}</strong>
-                <span>Workouts</span>
-              </div>
-              <div className="hist-stat">
-                <strong className="good">{completionRate}%</strong>
-                <span>Completed</span>
-              </div>
-              <div className="hist-stat">
-                <strong>{perWeek}</strong>
-                <span>Per week</span>
-              </div>
-              <div className="hist-stat">
-                <strong>{avgLength}</strong>
-                <span>Avg duration</span>
-              </div>
-            </div>
-
             <div className="hist-tracker" aria-label="Last 28 days">
               <div className="hist-tracker-weekdays" aria-hidden="true">
                 {tracker.slice(0, 7).map((day) => (
@@ -2287,7 +2544,7 @@ function App() {
 
             <div className="hist-list">
               {visibleSessions.map((session) => {
-                const workout = getWorkout(session.workoutId)
+                const workout = getSessionWorkout(session)
                 const doneCount = countDone(session)
                 // Count displayed slots (linked pairs collapse, hidden drop) — same base as countDone,
                 // so a finished session actually reads as finished.
@@ -2302,7 +2559,7 @@ function App() {
                     <button className="hist-open" type="button" onClick={() => setHistoryOptionsSessionId(session.id)}>
                       <span className="hist-main">
                         <strong>{workout.name}</strong>
-                        <small>{formatHistorySessionLine(session)}</small>
+                        <small>{formatHistorySessionLine(session, showHistoryProgram)}</small>
                         <small className="hist-ago">{formatRelative(session.createdAt)}</small>
                       </span>
                       <span className={`hist-chip ${status}`}>
@@ -2469,6 +2726,247 @@ function App() {
     return `${copies} on this device`
   })()
 
+  const renderProgramWorkoutEditor = (program: WorkoutProgram, workout: WorkoutTemplate) => (
+    <>
+      <main className="ws-screen editing program-workout-editor">
+        <header className="ws-header">
+          <button className="ws-back" type="button" aria-label="Discard changes" onClick={() => window.history.back()}>
+            <Icon name="close" />
+          </button>
+          <div className="ws-head-title">
+            <strong>{workout.name}</strong>
+            <span>{program.name}</span>
+          </div>
+          <div className="ws-head-actions">
+            <button className="ws-back ws-edit-toggle saving" type="button" aria-label="Save changes" onClick={saveProgramWorkoutEditor}>
+              <Icon name="check" />
+            </button>
+          </div>
+        </header>
+
+        <section className="ws-list" aria-label={`${workout.name} exercises`}>
+          <Suspense fallback={<p className="ws-editor-loading" role="status">Loading editor…</p>}>
+            <WorkoutEditorList
+              Icon={Icon}
+              onReorder={(activeId, overId) => reorderGroups(workout.id, activeId, overId)}
+              items={workout.groups.map((group) => {
+                const partner = group.linkId
+                  ? workout.groups.find((other) => other.id !== group.id && other.linkId === group.linkId)
+                  : undefined
+                return {
+                  id: group.id,
+                  variant: soleVariant(group),
+                  restSeconds: group.restSeconds,
+                  hidden: Boolean(group.hidden),
+                  linkedPartnerName: partner ? soleVariant(partner).name : undefined,
+                  isExpanded: plannerExpandedId === group.id,
+                  canRemove:
+                    workout.groups.length > 1 &&
+                    displayedGroups(workout.groups.filter((candidate) => candidate.id !== group.id)).length > 0,
+                  canLink: !group.linkId && workout.groups.some((other) => other.id !== group.id && !other.linkId),
+                  canToggleHidden: Boolean(group.hidden) || Boolean(group.linkId) || displayedGroups(workout.groups).length > 1,
+                  onToggle: () => setPlannerExpandedId((current) => current === group.id ? '' : group.id),
+                  onVariant: (patch: Partial<ExerciseVariant>) => {
+                    setEditDirty(true)
+                    updateTemplateVariant(group.activeVariantId, patch)
+                  },
+                  onRest: (value: number) => editGroupRest(group.id, value),
+                  onRemove: () => {
+                    setPlannerExpandedId('')
+                    removeGroup(workout.id, group.id)
+                  },
+                  onToggleHidden: () => toggleHidden(workout.id, group.id),
+                  onLink: () => setLinkDialog({ workoutId: workout.id, groupId: group.id }),
+                  onUnlink: () => unlinkExercise(workout.id, group.id),
+                }
+              })}
+            />
+          </Suspense>
+          <button className="ws-add" type="button" onClick={() => addProgramExercise(workout.id)}>
+            <Icon name="plus" size={18} />
+            Add exercise
+          </button>
+        </section>
+      </main>
+
+      {linkDialog && (() => {
+        const source = workout.groups.find((group) => group.id === linkDialog.groupId)
+        const candidates = workout.groups.filter(
+          (group) => group.id !== linkDialog.groupId && !group.linkId,
+        )
+        return (
+          <Dialog title="Link exercise">
+            <p className="dialog-help">
+              Choose the exercise to swap with {source ? soleVariant(source).name : 'this exercise'}.
+            </p>
+            {candidates.length === 0 ? (
+              <p className="dialog-help">No exercises available.</p>
+            ) : (
+              <div className="choice-list">
+                {candidates.map((group) => (
+                  <button
+                    key={group.id}
+                    className="choice"
+                    type="button"
+                    onClick={() => linkExercise(workout.id, linkDialog.groupId, group.id)}
+                  >
+                    <span className="ws-dot" style={{ background: muscleColor(soleVariant(group).category) }} aria-hidden="true" />
+                    <span>{soleVariant(group).name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button className="choice-cancel" type="button" onClick={() => setLinkDialog(null)}>Cancel</button>
+          </Dialog>
+        )
+      })()}
+    </>
+  )
+
+  const renderPrograms = () => (
+    <Page title="Programs" onBack={() => goBack({ name: 'main' })}>
+      {programsLocked && (
+        <p className="program-lock" role="status">
+          Finish your current workout before changing programs.
+        </p>
+      )}
+      <div className="program-list">
+        {data.programs.map((program) => {
+          const active = program.id === data.activeProgramId
+          return (
+            <button
+              className={`program-card${active ? ' active' : ''}`}
+              type="button"
+              key={program.id}
+              onClick={() => navigate({ name: 'program', programId: program.id })}
+            >
+              <span className="program-card-main">
+                <strong>{program.name}</strong>
+                <small>{program.workoutIds.length} {program.workoutIds.length === 1 ? 'day' : 'days'}</small>
+              </span>
+              {active && <em>Active</em>}
+              <Icon name="forward" size={18} />
+            </button>
+          )
+        })}
+      </div>
+      <button
+        className="program-new"
+        type="button"
+        disabled={programsLocked || data.programs.length >= MAX_PROGRAMS}
+        onClick={() => setProgramDialog({
+          mode: 'create',
+          name: `Program ${data.programs.length + 1}`,
+          days: Math.min(MAX_PROGRAM_DAYS, Math.max(MIN_PROGRAM_DAYS, activeProgram.workoutIds.length)),
+          error: '',
+        })}
+      >
+        <Icon name="plus" size={18} />
+        New program
+      </button>
+    </Page>
+  )
+
+  const renderProgram = (programId: string) => {
+    const program = data.programs.find((candidate) => candidate.id === programId)
+    if (!program) {
+      return (
+        <Page title="Program unavailable" onBack={() => goBack({ name: 'programs' })}>
+          <EmptyState text="This program was deleted." />
+        </Page>
+      )
+    }
+    const workouts = program.workoutIds
+      .map((workoutId) => data.templates.find((template) => template.id === workoutId))
+      .filter((workout): workout is WorkoutTemplate => Boolean(workout))
+    const editingWorkout = editMode && editingProgramWorkoutId
+      ? workouts.find((workout) => workout.id === editingProgramWorkoutId)
+      : undefined
+    if (editingWorkout) return renderProgramWorkoutEditor(program, editingWorkout)
+
+    const active = program.id === data.activeProgramId
+    return (
+      <Page title={program.name} onBack={() => goBack({ name: 'programs' })}>
+        {programsLocked && (
+          <p className="program-lock" role="status">
+            Finish your current workout before editing or switching programs.
+          </p>
+        )}
+
+        <section className="program-overview">
+          <div className="program-overview-head">
+            <span>
+              <strong>{program.workoutIds.length} {program.workoutIds.length === 1 ? 'workout day' : 'workout days'}</strong>
+            </span>
+            {active && <em>Active</em>}
+          </div>
+          <div className="program-overview-actions">
+            <button
+              type="button"
+              disabled={programsLocked}
+              onClick={() => setProgramDialog({ mode: 'rename', programId: program.id, name: program.name, error: '' })}
+            >
+              Rename
+            </button>
+            {!active && (
+              <button className="primary-action" type="button" disabled={programsLocked} onClick={() => activateProgram(program)}>
+                Use program
+              </button>
+            )}
+          </div>
+        </section>
+
+        <section className="program-days">
+          <span className="progress-filter-label">Days</span>
+          <div className="ex-segment program-day-count" role="group" aria-label="Program days">
+            {Array.from({ length: MAX_PROGRAM_DAYS }, (_, index) => index + 1).map((days) => (
+              <button
+                className={program.workoutIds.length === days ? 'sel' : undefined}
+                type="button"
+                key={days}
+                disabled={programsLocked}
+                aria-pressed={program.workoutIds.length === days}
+                onClick={() => setProgramDays(program, days)}
+              >
+                {days}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <div className="program-workouts">
+          {workouts.map((workout) => (
+            <button
+              className="program-workout-row"
+              type="button"
+              key={workout.id}
+              disabled={programsLocked}
+              onClick={() => openProgramWorkoutEditor(workout)}
+            >
+              <span>
+                <strong>{workout.name}</strong>
+                <small>{displayedGroups(workout.groups).length} {displayedGroups(workout.groups).length === 1 ? 'exercise' : 'exercises'}</small>
+              </span>
+              <Icon name="edit" size={18} />
+            </button>
+          ))}
+        </div>
+
+        {data.programs.length > 1 && (
+          <button
+            className="program-delete"
+            type="button"
+            disabled={programsLocked}
+            onClick={() => deleteProgram(program)}
+          >
+            <Icon name="trash" size={18} />
+            Delete program
+          </button>
+        )}
+      </Page>
+    )
+  }
+
   const createManualRecoveryCopy = () => {
     setRecoveryError('')
     const result = storeRecoveryCopy('manual')
@@ -2538,14 +3036,12 @@ function App() {
   const renderSettings = () => (
     <Page title="Settings" onBack={() => goBack({ name: 'main' })}>
       <div className="set-list">
-        <button className="set-row" type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
+        <button className="set-row" type="button" onClick={testVibration}>
           <span className="set-main">
-            <strong>Recovery copies</strong>
-            <small className={recoveryLocalError ? 'set-note-error' : undefined} role="status">
-              {recoveryMessage || (recoveryLocalError ? 'Device save paused' : recoveryCountLabel)}
-            </small>
+            <strong>Test rest alert</strong>
+            <small role="status">{vibrationMessage || 'Vibrates for five seconds'}</small>
           </span>
-          <Icon name="history" />
+          <Icon name="bell" />
         </button>
 
         <button
@@ -2597,12 +3093,14 @@ function App() {
           onChange={(event) => void importData(event)}
         />
 
-        <button className="set-row" type="button" onClick={testVibration}>
+        <button className="set-row" type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
           <span className="set-main">
-            <strong>Test rest alert</strong>
-            <small role="status">{vibrationMessage || 'Vibrates for five seconds'}</small>
+            <strong>Recovery copies</strong>
+            <small className={recoveryLocalError ? 'set-note-error' : undefined} role="status">
+              {recoveryMessage || (recoveryLocalError ? 'Device save paused' : recoveryCountLabel)}
+            </small>
           </span>
-          <Icon name="bell" />
+          <Icon name="history" />
         </button>
 
         <button className="set-row danger" type="button" onClick={resetData}>
@@ -2645,7 +3143,12 @@ function App() {
           ...current,
           sessions: current.sessions.map((candidate) =>
             candidate.id === session.id
-              ? { ...candidate, finishedAt, endedEarly: true }
+              ? {
+                  ...candidate,
+                  finishedAt,
+                  endedEarly: true,
+                  workoutSnapshot: snapshotWorkoutForSession(getWorkout(candidate.workoutId), candidate),
+                }
               : candidate,
           ),
           currentSessionByWorkout:
@@ -2663,7 +3166,8 @@ function App() {
   }
 
   const renderSession = (session: WorkoutSession) => {
-    const workout = getWorkout(session.workoutId)
+    const workout = getSessionWorkout(session)
+    const readOnly = screen.name === 'session' && screen.readOnly === true
     // The workout (doing) screen shows collapsed slots (linked pairs merged); edit mode shows every
     // exercise as its own row.
     const slots = displayedGroups(workout.groups)
@@ -2680,7 +3184,7 @@ function App() {
     const sessionStatus = sessionHistoryStatus(session)
 
     return (
-      <main className={`ws-screen${editMode ? ' editing' : ''}`}>
+      <main className={`ws-screen${editMode ? ' editing' : ''}${readOnly ? ' readonly' : ''}`}>
         <header className="ws-header">
           {editMode ? (
             <button className="ws-back" type="button" aria-label="Discard changes" onClick={() => window.history.back()}>
@@ -2703,7 +3207,7 @@ function App() {
               <span>{`${doneCount}/${slots.length} done`}</span>
             )}
           </div>
-          <div className="ws-head-actions">
+          {!readOnly && <div className="ws-head-actions">
             <button
               className={`ws-back ws-edit-toggle${editMode ? ' saving' : ''}`}
               type="button"
@@ -2717,6 +3221,8 @@ function App() {
                         ...dataRef.current,
                         templates: snapshot.templates,
                         sessions: snapshot.sessions,
+                        variantPrefs: snapshot.variantPrefs,
+                        baselineResults: snapshot.baselineResults,
                       })
                       if (recoveryResult === 'error') {
                         void haptics.reject()
@@ -2728,7 +3234,12 @@ function App() {
                   setEditMode(false)
                   editSnapshotRef.current = null
                 } else {
-                  editSnapshotRef.current = { templates: data.templates, sessions: data.sessions }
+                  editSnapshotRef.current = {
+                    templates: data.templates,
+                    sessions: data.sessions,
+                    variantPrefs: data.variantPrefs,
+                    baselineResults: data.baselineResults,
+                  }
                   setEditDirty(false)
                   setEditMode(true)
                 }
@@ -2736,7 +3247,7 @@ function App() {
             >
               <Icon name={editMode ? 'check' : 'edit'} />
             </button>
-          </div>
+          </div>}
           <div className="ws-rail" aria-label={`${doneCount} of ${slots.length} exercises done`}>
             {slots.map(({ group }) => {
               const groupEntry = session.groupEntries[group.id]
@@ -2781,7 +3292,7 @@ function App() {
             </Suspense>
           ) : (
             slots.map(({ group, partner }, index) =>
-              renderExerciseRow(workout, session, group, partner, expandedGroupId, index),
+              renderExerciseRow(workout, session, group, partner, expandedGroupId, index, readOnly),
             )
           )}
           {editMode && (
@@ -2799,7 +3310,7 @@ function App() {
           )}
         </section>
 
-        {!editMode && sessionStatus === 'unfinished' && (
+        {!readOnly && !editMode && sessionStatus === 'unfinished' && (
           <button
             className="ws-end-workout"
             type="button"
@@ -2810,7 +3321,7 @@ function App() {
           </button>
         )}
 
-        {!editMode && renderRestTimer(activeRest)}
+        {!readOnly && !editMode && renderRestTimer(activeRest)}
       </main>
     )
   }
@@ -2822,6 +3333,7 @@ function App() {
     partner: ExerciseGroup | undefined,
     expandedGroupId: string,
     index: number,
+    readOnly: boolean,
   ) => {
     const sessionGroup = ensureSessionGroup(session, group, data)
     const variant = getVariant(group, sessionGroup.activeVariantId)
@@ -2836,7 +3348,7 @@ function App() {
     const numLabel = String(index + 1).padStart(2, '0')
     // "Increase weight?" confirmation: only when last time was a success and it hasn't been resolved
     // for this session yet. Failed / no-record exercises skip straight to the normal controls.
-    const showIncrease = previous === 'success' && !entry.increaseResolved
+    const showIncrease = !readOnly && previous === 'success' && !entry.increaseResolved
 
     return (
       <article
@@ -2884,6 +3396,7 @@ function App() {
               <button
                 className={`ws-guide ${guidanceClass(previous)}`}
                 type="button"
+                disabled={readOnly}
                 onClick={() =>
                   setPreviousDialog({ workoutId: workout.id, sessionId: session.id, groupId: group.id, variantId: variant.id })
                 }
@@ -2898,6 +3411,7 @@ function App() {
                     <button
                       className="ws-stepbtn"
                       type="button"
+                      disabled={readOnly}
                       aria-label="Decrease amount"
                       {...holdStepper.bind(() => adjustIncrease(session.id, group.id, variant.id, -1))}
                     >
@@ -2906,6 +3420,7 @@ function App() {
                     <button
                       className="ws-weight ws-weight-increase"
                       type="button"
+                      disabled={readOnly}
                       onClick={() =>
                         setWeightDialog({
                           sessionId: session.id,
@@ -2929,6 +3444,7 @@ function App() {
                     <button
                       className="ws-stepbtn"
                       type="button"
+                      disabled={readOnly}
                       aria-label="Increase amount"
                       {...holdStepper.bind(() => adjustIncrease(session.id, group.id, variant.id, 1))}
                     >
@@ -2940,6 +3456,7 @@ function App() {
                     <button
                       className="ws-resultbtn done"
                       type="button"
+                      disabled={readOnly}
                       onClick={() => acceptIncrease(session.id, group.id, variant.id)}
                     >
                       Apply
@@ -2947,6 +3464,7 @@ function App() {
                     <button
                       className="ws-resultbtn"
                       type="button"
+                      disabled={readOnly}
                       onClick={() => cancelIncrease(session.id, group.id, variant.id)}
                     >
                       Keep weight
@@ -2959,6 +3477,7 @@ function App() {
                     <button
                       className="ws-stepbtn"
                       type="button"
+                      disabled={readOnly}
                       aria-label="Decrease weight"
                       {...holdStepper.bind(() => adjustWeight(session.id, group.id, variant.id, -1.25))}
                     >
@@ -2967,6 +3486,7 @@ function App() {
                     <button
                       className="ws-weight"
                       type="button"
+                      disabled={readOnly}
                       onClick={() =>
                         setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
                       }
@@ -2977,6 +3497,7 @@ function App() {
                     <button
                       className="ws-stepbtn"
                       type="button"
+                      disabled={readOnly}
                       aria-label="Increase weight"
                       {...holdStepper.bind(() => adjustWeight(session.id, group.id, variant.id, 1.25))}
                     >
@@ -2988,6 +3509,7 @@ function App() {
                     <button
                       className={`ws-resultbtn done${entry.result === 'success' ? ' sel' : ''}`}
                       type="button"
+                      disabled={readOnly}
                       aria-pressed={entry.result === 'success'}
                       onClick={() => setExerciseResult(session.id, group.id, variant.id, 'success')}
                     >
@@ -2996,6 +3518,7 @@ function App() {
                     <button
                       className={`ws-resultbtn failed${entry.result === 'failure' ? ' sel' : ''}`}
                       type="button"
+                      disabled={readOnly}
                       aria-pressed={entry.result === 'failure'}
                       onClick={() => setExerciseResult(session.id, group.id, variant.id, 'failure')}
                     >
@@ -3009,6 +3532,7 @@ function App() {
                 <button
                   className="ws-swap"
                   type="button"
+                  disabled={readOnly}
                   onClick={() => swapLinked(session.id, workout.id, group.id, partner.id)}
                 >
                   Swap with {soleVariant(partner).name}
@@ -3081,6 +3605,11 @@ function App() {
   )
 
   const openSession = (workoutId: WorkoutId, sessionId: string, confirmResume = true) => {
+    if (!confirmResume) {
+      setEditMode(false)
+      navigate({ name: 'session', workoutId, sessionId, readOnly: true })
+      return
+    }
     setData((current) =>
       // Re-opening the already-current session isn't a data change — keep the object identity so it
       // doesn't count as a meaningful edit for sync.
@@ -3100,6 +3629,10 @@ function App() {
   }
 
   const startSession = (workoutId: WorkoutId) => {
+    if (currentWorkoutSession) {
+      openSession(currentWorkoutSession.workoutId, currentWorkoutSession.id)
+      return
+    }
     const sessionId = createId()
     const session = createSession(workoutId, data, sessionId)
     setData((current) => ({
@@ -3503,6 +4036,7 @@ function App() {
             ...updatedSession,
             finishedAt: session.finishedAt ?? completionAt,
             endedEarly: undefined,
+            workoutSnapshot: snapshotWorkoutForSession(getWorkout(session.workoutId), updatedSession),
           }
         } else if (wasFinished && !nowFinished) {
           updatedSession = { ...updatedSession, finishedAt: undefined, endedEarly: undefined }
@@ -3827,14 +4361,28 @@ function App() {
       return (
         <Page
           title="Progress"
-          backLabel="Back to History"
-          onBack={() => goBack({ name: 'global-history' })}
+          backLabel="Back to Home"
+          onBack={() => goBack({ name: 'main' })}
         >
           <Suspense fallback={<p className="progress-loading" role="status">Loading analysis…</p>}>
-            <ProgressAnalysisScreen templates={data.templates} sessions={data.sessions} />
+            <ProgressAnalysisScreen
+              templates={data.templates}
+              sessions={data.sessions}
+              completedSessionIds={new Set(data.sessions.filter(isSessionFinished).map((session) => session.id))}
+              programs={data.programs}
+              activeProgramId={data.activeProgramId}
+            />
           </Suspense>
         </Page>
       )
+    }
+
+    if (screen.name === 'programs') {
+      return renderPrograms()
+    }
+
+    if (screen.name === 'program') {
+      return renderProgram(screen.programId)
     }
 
     if (screen.name === 'settings') {
@@ -3949,6 +4497,49 @@ function App() {
           Changes are not being saved. Export a backup before closing the app.
         </p>
       )}
+      {programDialog && (
+        <Dialog title={programDialog.mode === 'create' ? 'New program' : 'Rename program'}>
+          <label className="ex-field">
+            <span>Name</span>
+            <input
+              className="number-input text-input"
+              type="text"
+              maxLength={80}
+              value={programDialog.name}
+              onChange={(event) => setProgramDialog({ ...programDialog, name: event.target.value, error: '' })}
+            />
+          </label>
+          {programDialog.mode === 'create' && (
+            <div className="program-dialog-days">
+              <span className="progress-filter-label">Days</span>
+              <div className="ex-segment program-day-count" role="group" aria-label="Program days">
+                {Array.from({ length: MAX_PROGRAM_DAYS }, (_, index) => index + 1).map((days) => (
+                  <button
+                    className={programDialog.days === days ? 'sel' : undefined}
+                    type="button"
+                    key={days}
+                    aria-pressed={programDialog.days === days}
+                    onClick={() => {
+                      if (programDialog.days === days) return
+                      setProgramDialog({ ...programDialog, days, error: '' })
+                      void haptics.selection()
+                    }}
+                  >
+                    {days}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {programDialog.error && <p className="auth-error" role="alert">{programDialog.error}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setProgramDialog(null)}>Cancel</button>
+            <button className="primary-action" type="button" onClick={submitProgramDialog}>
+              {programDialog.mode === 'create' ? 'Create' : 'Save'}
+            </button>
+          </div>
+        </Dialog>
+      )}
       {recoveryDialog &&
         (() => {
           if (recoveryDialog.mode === 'list') {
@@ -3965,6 +4556,13 @@ function App() {
                         ? 'Cloud sync paused'
                         : 'Saved on this device'
             const statusClass = cloudUser ? recoverySyncStatus : 'device-only'
+            const statusNote = !cloudUser
+              ? 'Sign in to sync copies across devices.'
+              : recoverySyncStatus === 'synced'
+                ? 'Available on your other signed-in devices.'
+                : recoverySyncStatus === 'syncing'
+                  ? 'Updating your other signed-in devices.'
+                  : 'Saved on this device.'
             return (
               <Dialog title="Recovery copies">
                 <p className="dialog-help">
@@ -3975,25 +4573,17 @@ function App() {
                     <i aria-hidden="true" />
                     {statusLabel}
                   </span>
-                  <small>
-                    {cloudUser
-                      ? 'Available on your other signed-in devices.'
-                      : 'Sign in to sync copies to your other devices.'}
-                  </small>
+                  <small>{statusNote}</small>
                   {recoveryLocalError && (
                     <span className="cloud-error" role="alert">Device storage is full or unavailable.</span>
                   )}
-                  {recoveryError && !recoveryLocalError && (
-                    <span className="cloud-error" role="alert">
-                      {recoverySyncStatus === 'error'
-                        ? 'Cloud sync paused. Device copies are still safe.'
-                        : recoveryError}
-                    </span>
+                  {recoveryError && !recoveryLocalError && recoverySyncStatus !== 'error' && (
+                    <span className="cloud-error" role="alert">{recoveryError}</span>
                   )}
                 </div>
                 {recoveryMessage && <p className="dialog-help recovery-message" role="status">{recoveryMessage}</p>}
                 <div className="choice-list">
-                  <button className="choice" type="button" onClick={createManualRecoveryCopy}>
+                  <button className="choice recovery-create" type="button" onClick={createManualRecoveryCopy}>
                     <Icon name="plus" size={18} />
                     <span>Create copy now</span>
                   </button>
@@ -4005,11 +4595,11 @@ function App() {
                       onClick={() => setRecoveryDialog({ mode: 'details', id: copy.id })}
                     >
                       <span className="recovery-choice-main">
-                        <span className="recovery-choice-title">
-                          <strong>{recoveryReasonLabel(copy.reason)}</strong>
+                        <strong>{recoveryReasonLabel(copy.reason)}</strong>
+                        <span className="recovery-choice-meta">
+                          <small>{formatAbsolute(copy.createdAt)}</small>
                           {isProtectedRecoveryReason(copy.reason) && <em>Protected</em>}
                         </span>
-                        <small>{formatAbsolute(copy.createdAt)}</small>
                       </span>
                       <Icon name="forward" size={18} />
                     </button>
@@ -4039,7 +4629,7 @@ function App() {
 
           const copyData = normalizeData(copy.data)
           const historyCount = copyData.sessions.length
-          const routineCount = copyData.templates.length
+          const programCount = copyData.programs.length
           const alreadyCurrent = recoveryCopyIsCurrent(copy)
           return (
             <Dialog title="Recovery copy">
@@ -4050,8 +4640,8 @@ function App() {
                   {isProtectedRecoveryReason(copy.reason) ? 'Protected until deleted' : 'Rotates automatically'}
                 </small>
                 <small>
-                  {routineCount} {routineCount === 1 ? 'routine' : 'routines'} · {historyCount}{' '}
-                  {historyCount === 1 ? 'history entry' : 'history entries'}
+                  {programCount} {programCount === 1 ? 'program' : 'programs'} · {historyCount}{' '}
+                  {historyCount === 1 ? 'workout' : 'workouts'}
                 </small>
               </div>
               <p className="dialog-help">Restoring replaces your current data. A copy of it is saved first.</p>
@@ -4333,9 +4923,9 @@ function App() {
         (() => {
           const session = data.sessions.find((candidate) => candidate.id === workoutSummaryDialog.sessionId)
           if (!session) return null
-          const total = displayedGroups(getWorkout(session.workoutId).groups).length
+          const total = displayedGroups(getSessionWorkout(session).groups).length
           const doneCount = countDone(session)
-          const duration = formatWorkoutDuration(workoutSummaryDialog.finishedAt - session.createdAt)
+          const duration = recordedWorkoutDuration(session)
           const complete = workoutSummaryDialog.kind === 'complete'
 
           return (
@@ -4346,7 +4936,7 @@ function App() {
                 </span>
               </div>
               <p className="workout-summary-copy">
-                {doneCount}/{total} done · {duration}
+                {doneCount}/{total} done{duration === null ? '' : ` · ${formatWorkoutDuration(duration)}`}
               </p>
               <div className="dialog-actions">
                 <button type="button" onClick={() => setWorkoutSummaryDialog(null)}>
@@ -4360,9 +4950,9 @@ function App() {
           )
         })()}
       {historyOptionsSession && (
-        <Dialog title={getWorkout(historyOptionsSession.workoutId).name}>
+        <Dialog title={getSessionWorkout(historyOptionsSession).name}>
           <div className="dialog-session-meta">
-            <p>{formatHistorySessionLine(historyOptionsSession)}</p>
+            <p>{formatHistorySessionLine(historyOptionsSession, showHistoryProgram)}</p>
             <small>{formatRelative(historyOptionsSession.createdAt)}</small>
           </div>
           <div className="choice-list">
@@ -4556,10 +5146,14 @@ function buildInitialData(): AppData {
     })
   })
 
+  const templates = cloneWorkouts()
+  const programState = normalizeProgramState(undefined, templates, undefined)
   return {
     sessions: [],
     variantPrefs,
-    templates: cloneWorkouts(),
+    templates,
+    programs: programState.programs,
+    activeProgramId: programState.activeProgramId,
     baselineResults,
     expandedBySession: {},
     scrollBySession: {},
@@ -4599,14 +5193,67 @@ function normalizeData(value: unknown): AppData {
     typeof partial.restSeconds === 'number' && partial.restSeconds > 0 ? partial.restSeconds : DEFAULT_REST_SECONDS,
   )
 
+  const templates = normalizeTemplates(value, defaultRest)
+  const programState = normalizeProgramState(partial.programs, templates, partial.activeProgramId)
+  const sessions = migrateSessionPrograms(
+    recoverValidSessions(
+      partial.sessions,
+      new Set(templates.map((template) => template.id)),
+    ) as WorkoutSession[],
+    templates,
+    programState.programs,
+  )
+  const rawVariantPrefs = isRecord(partial.variantPrefs) ? partial.variantPrefs : {}
+  const rawBaselineResults = isRecord(partial.baselineResults) ? partial.baselineResults : {}
+  const variantPrefs: Record<string, string> = {}
+  const baselineResults: Record<string, PreviousResult> = {}
+  for (const template of templates) {
+    for (const group of template.groups) {
+      const preferred = rawVariantPrefs[group.id]
+      variantPrefs[group.id] =
+        typeof preferred === 'string' && group.variants.some((variant) => variant.id === preferred)
+          ? preferred
+          : group.activeVariantId
+      for (const variant of group.variants) {
+        const baseline = rawBaselineResults[variant.id]
+        baselineResults[variant.id] =
+          baseline === 'success' || baseline === 'failure' || baseline === 'missing'
+            ? baseline
+            : variant.lastResult
+      }
+    }
+  }
+  const sessionById = new Map(sessions.map((session) => [session.id, session]))
+  const templateIds = new Set(templates.map((template) => template.id))
+  const currentSession = Object.entries(
+    isRecord(partial.currentSessionByWorkout) ? partial.currentSessionByWorkout : {},
+  )
+    .flatMap(([workoutId, sessionId]) => {
+      if (typeof sessionId !== 'string' || !templateIds.has(workoutId)) return []
+      const session = sessionById.get(sessionId)
+      return session && session.workoutId === workoutId && session.finishedAt === undefined ? [session] : []
+    })
+    .sort((a, b) => b.createdAt - a.createdAt)[0]
+  const sessionIds = new Set(sessions.map((session) => session.id))
+  const expandedBySession = Object.fromEntries(
+    Object.entries(isRecord(partial.expandedBySession) ? partial.expandedBySession : {})
+      .filter(([sessionId, groupId]) => sessionIds.has(sessionId) && typeof groupId === 'string'),
+  ) as Record<string, string>
+  const scrollBySession = Object.fromEntries(
+    Object.entries(isRecord(partial.scrollBySession) ? partial.scrollBySession : {})
+      .filter(([, value]) => typeof value === 'number' && Number.isFinite(value) && value >= 0),
+  ) as Record<string, number>
+
   return {
-    sessions: isValidSessions(partial.sessions) ? (partial.sessions as WorkoutSession[]) : [],
-    variantPrefs: { ...base.variantPrefs, ...(partial.variantPrefs ?? {}) },
-    templates: normalizeTemplates(value, defaultRest),
-    baselineResults: { ...base.baselineResults, ...(partial.baselineResults ?? {}) },
-    expandedBySession: partial.expandedBySession ?? {},
-    scrollBySession: partial.scrollBySession ?? {},
-    currentSessionByWorkout: partial.currentSessionByWorkout ?? {},
+    sessions,
+    variantPrefs,
+    templates,
+    programs: programState.programs,
+    activeProgramId: programState.activeProgramId,
+    baselineResults,
+    expandedBySession,
+    scrollBySession,
+    currentSessionByWorkout: currentSession ? { [currentSession.workoutId]: currentSession.id } : {},
     restSeconds: defaultRest,
   }
 }
@@ -4648,6 +5295,7 @@ function normalizeTemplates(value: unknown, defaultRest: number): WorkoutTemplat
 
 function createSession(workoutId: WorkoutId, data: AppData, sessionId: string): WorkoutSession {
   const workout = getWorkout(workoutId)
+  const program = programForWorkout(data.programs, workoutId) ?? data.programs[0]
   const groupEntries: Record<string, SessionGroup> = {}
 
   workout.groups.forEach((group) => {
@@ -4667,6 +5315,10 @@ function createSession(workoutId: WorkoutId, data: AppData, sessionId: string): 
   return {
     id: sessionId,
     workoutId,
+    programId: program.id,
+    programName: program.name,
+    workoutName: workout.name,
+    workoutSnapshot: structuredClone(workout),
     createdAt: Date.now(),
     groupEntries,
   }
@@ -4682,7 +5334,12 @@ function createSessionEntry(data: AppData, workoutId: WorkoutId, variant: Exerci
   }
 }
 
+type ProgramDialog =
+  | { mode: 'create'; name: string; days: number; error: string }
+  | { mode: 'rename'; programId: string; name: string; error: string }
+
 let templatesRef: WorkoutTemplate[] = defaultWorkouts
+let currentSessionIdsRef = new Set<string>()
 
 function cloneWorkouts(): WorkoutTemplate[] {
   return structuredClone(defaultWorkouts)
@@ -4690,6 +5347,12 @@ function cloneWorkouts(): WorkoutTemplate[] {
 
 function getWorkout(workoutId: WorkoutId) {
   return templatesRef.find((workout) => workout.id === workoutId) ?? templatesRef[0]
+}
+
+function getSessionWorkout(session: WorkoutSession) {
+  return currentSessionIdsRef.has(session.id)
+    ? getWorkout(session.workoutId)
+    : session.workoutSnapshot ?? getWorkout(session.workoutId)
 }
 
 function getVariant(group: ExerciseGroup, variantId: string) {
@@ -4839,7 +5502,7 @@ function findPreviousTarget(
 // Counts over the displayed slots (a linked pair counts once — the visible member), so progress
 // matches what's actually on the workout screen.
 function countDone(session: WorkoutSession) {
-  return displayedGroups(getWorkout(session.workoutId).groups).filter(({ group }) => {
+  return displayedGroups(getSessionWorkout(session).groups).filter(({ group }) => {
     const groupEntry = session.groupEntries[group.id]
     return Boolean(groupEntry?.entries[group.activeVariantId]?.result)
   }).length
@@ -4847,7 +5510,7 @@ function countDone(session: WorkoutSession) {
 
 // A session is completed when every displayed exercise has a logged result (done or failed).
 function isSessionFinished(session: WorkoutSession) {
-  const total = displayedGroups(getWorkout(session.workoutId).groups).length
+  const total = displayedGroups(getSessionWorkout(session).groups).length
   return total > 0 && countDone(session) === total
 }
 
@@ -4912,7 +5575,7 @@ function dayKey(timestamp: number) {
 function getNextPendingGroupId(session: WorkoutSession, currentGroupId: string) {
   // Advance only through the slots actually shown on the workout screen (visible members of linked
   // pairs, no hidden exercises), in display order.
-  const slots = displayedGroups(getWorkout(session.workoutId).groups)
+  const slots = displayedGroups(getSessionWorkout(session).groups)
   return nextPendingId(slots.map(({ group }) => group.id), currentGroupId, (groupId) => {
     const group = slots.find(({ group: candidate }) => candidate.id === groupId)?.group
     if (!group) {
@@ -5028,12 +5691,17 @@ function plural(count: number, unit: string) {
   return `${count} ${unit}${count === 1 ? '' : 's'} ago`
 }
 
-function formatHistorySessionLine(session: WorkoutSession) {
-  const duration =
-    session.finishedAt !== undefined && session.finishedAt > session.createdAt
-      ? ` · ${formatWorkoutDuration(session.finishedAt - session.createdAt)}`
-      : ''
-  return `${formatAbsolute(session.createdAt)}${duration}`
+function formatHistorySessionLine(session: WorkoutSession, includeProgram = false) {
+  const recordedDuration = recordedWorkoutDuration(session)
+  const duration = recordedDuration === null ? '' : ` · ${formatWorkoutDuration(recordedDuration)}`
+  const program = includeProgram ? `${session.programName} · ` : ''
+  return `${program}${formatAbsolute(session.createdAt)}${duration}`
+}
+
+function recordedWorkoutDuration(session: WorkoutSession) {
+  if (session.finishedAt === undefined || session.finishedAt <= session.createdAt) return null
+  const duration = session.finishedAt - session.createdAt
+  return duration <= MAX_RECORDED_WORKOUT_DURATION_MS ? duration : null
 }
 
 // Full weekday + date for the home header — e.g. "Tuesday 2 July".

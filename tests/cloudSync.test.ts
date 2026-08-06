@@ -23,13 +23,27 @@ test('the newest copy wins on sign-in', () => {
 })
 
 test('fresh devices do not overwrite meaningful remote data', () => {
-  const initial = { sessions: [], templates: [{ id: 'a' }], baselineResults: {}, restSeconds: 90 }
+  const initial = {
+    sessions: [],
+    templates: [{ id: 'a' }],
+    programs: [{ id: 'program-a', workoutIds: ['a'] }],
+    activeProgramId: 'program-a',
+    baselineResults: {},
+    restSeconds: 90,
+  }
   assert.equal(hasMeaningfulLocalData(initial, initial), false)
   assert.equal(initialLocalTimestamp(null, false, 500), 0)
 })
 
 test('existing local changes receive a migration timestamp', () => {
-  const initial = { sessions: [], templates: [{ id: 'a' }], baselineResults: {}, restSeconds: 90 }
+  const initial = {
+    sessions: [],
+    templates: [{ id: 'a' }],
+    programs: [{ id: 'program-a', workoutIds: ['a'] }],
+    activeProgramId: 'program-a',
+    baselineResults: {},
+    restSeconds: 90,
+  }
   const changed = { ...initial, sessions: [{ id: 'session' }] }
   assert.equal(hasMeaningfulLocalData(changed, initial), true)
   assert.equal(initialLocalTimestamp(null, true, 500), 500)
@@ -40,6 +54,8 @@ test('only real data edits count as meaningful for sync', () => {
   const base = {
     sessions: [] as unknown[],
     templates: [] as unknown[],
+    programs: [] as unknown[],
+    activeProgramId: 'program-a',
     variantPrefs: {},
     baselineResults: {},
     currentSessionByWorkout: {},
@@ -51,6 +67,8 @@ test('only real data edits count as meaningful for sync', () => {
   // A real edit replaces its slice with a new object.
   assert.equal(isMeaningfulChange(base, { ...base, sessions: [] }), true)
   assert.equal(isMeaningfulChange(base, { ...base, templates: [] }), true)
+  assert.equal(isMeaningfulChange(base, { ...base, programs: [] }), true)
+  assert.equal(isMeaningfulChange(base, { ...base, activeProgramId: 'program-b' }), true)
   assert.equal(isMeaningfulChange(base, { ...base, restSeconds: 120 }), true)
 })
 

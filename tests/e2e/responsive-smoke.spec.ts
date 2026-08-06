@@ -81,7 +81,7 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
 
   await page.getByRole('button', { name: /Recovery copies/ }).click()
   await expect(page.getByRole('dialog', { name: 'Recovery copies' })).toBeVisible()
-  await expect(page.getByText('Sign in to sync copies to your other devices.')).toBeVisible()
+  await expect(page.getByText('Sign in to sync copies across devices.')).toBeVisible()
   await page.getByRole('button', { name: 'Create copy now' }).click()
   const manualCopy = page.getByRole('button', { name: /Manual copy/ })
   await expect(manualCopy).toBeVisible()
@@ -265,6 +265,51 @@ test('workouts can end early or complete with clear return-home feedback', async
   await expectNoHorizontalOverflow(page)
 })
 
+test('programs can be built, edited, activated, and deleted safely', async ({ page }) => {
+  await page.getByRole('button', { name: /Program Current program/ }).click()
+  await expect(page.getByRole('heading', { name: 'Programs' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Current program 2 days Active/ })).toBeVisible()
+
+  await page.getByRole('button', { name: 'New program' }).click()
+  const newProgram = page.getByRole('dialog', { name: 'New program' })
+  await newProgram.getByRole('textbox', { name: 'Name' }).fill('Three day')
+  await newProgram.getByRole('button', { name: '3', exact: true }).click()
+  await newProgram.getByRole('button', { name: 'Create' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Three day' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Workout A 1 exercise/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Workout B 1 exercise/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Workout C 1 exercise/ })).toBeVisible()
+
+  await page.getByRole('button', { name: /Workout A 1 exercise/ }).click()
+  await expect(page.getByRole('region', { name: 'Workout A exercises' })).toBeVisible()
+  await page.getByRole('textbox', { name: 'Name' }).fill('Bench press')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await page.getByRole('button', { name: 'Use program' }).click()
+
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Three day 3 days Active/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Program Three day/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Start workout Up next · Workout A/ })).toBeVisible()
+
+  await page.getByRole('button', { name: /Program Three day/ }).click()
+  await page.getByRole('button', { name: /Three day 3 days Active/ }).click()
+  await page.getByRole('button', { name: 'Delete program' }).click()
+  const deleteProgram = page.getByRole('dialog', { name: 'Delete program?' })
+  await expect(deleteProgram).toContainText('Its workout setup will be removed.')
+  await deleteProgram.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByRole('button', { name: /Current program 2 days Active/ })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
+  await page.getByRole('button', { name: /Recovery copies/ }).click()
+  const programRecovery = page.getByRole('button', { name: /Before program change/ })
+  await expect(programRecovery).toBeVisible()
+  await expect(programRecovery).toContainText('Protected')
+  await expectNoHorizontalOverflow(page)
+})
+
 test('large histories render in fast pages without changing totals', async ({ page }) => {
   await page.evaluate(() => {
     const now = Date.now()
@@ -280,7 +325,6 @@ test('large histories render in fast pages without changing totals', async ({ pa
   await page.getByRole('button', { name: /History 120 workouts/ }).click()
 
   await expect(page.locator('.hist-card')).toHaveCount(50)
-  await expect(page.getByText('120', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /Show older workouts 50 of 120 shown/ })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
@@ -345,47 +389,36 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
     )
   })
   await page.reload()
-  await page.getByRole('button', { name: /History 4 workouts/ }).click()
-  const historyTopLayout = await page.evaluate(() => {
-    const progress = document.querySelector('.hist-analysis-link')?.getBoundingClientRect()
-    const firstStat = document.querySelector('.hist-stat')?.getBoundingClientRect()
-    const pageHeader = document.querySelector('.page-head')
-    const progressElement = document.querySelector('.hist-analysis-link')
-    const statsElement = document.querySelector('.hist-stats')
-    return progress && firstStat && pageHeader && progressElement && statsElement
-      ? {
-          heightDifference: Math.abs(progress.height - firstStat.height),
-          followsHeader: pageHeader.nextElementSibling === progressElement,
-          precedesStats: Boolean(progressElement.compareDocumentPosition(statsElement) & Node.DOCUMENT_POSITION_FOLLOWING),
-        }
-      : null
-  })
-  expect(historyTopLayout).not.toBeNull()
-  expect(historyTopLayout?.heightDifference).toBeLessThanOrEqual(0.5)
-  expect(historyTopLayout?.followsHeader).toBe(true)
-  expect(historyTopLayout?.precedesStats).toBe(true)
-  await page.getByRole('button', { name: /Progress Track load and estimated 1RM/ }).click()
+  await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Progress', exact: true })).toBeVisible()
-  await expect(page.locator('.progress-controls').getByRole('button')).toHaveCount(13)
-  await expect(page.locator('.progress-series-count')).toHaveText('2 exercises')
-  await expect(page.locator('.progress-legend-row')).toHaveCount(2)
+  await expect(page.locator('.progress-controls').getByRole('button')).toHaveCount(9)
+  await expect(page.getByRole('combobox', { name: 'Exercise' }).locator('option')).toHaveCount(2)
+  await page.getByRole('combobox', { name: 'Exercise' }).selectOption({ label: 'Incline Dumbbell Press' })
+  await expect(page.locator('.progress-series-count')).toHaveText('3 attempts')
   await expect(page.locator('.progress-series-path')).toHaveCount(1)
-  await expect(page.locator('.progress-point')).toHaveCount(4)
+  await expect(page.locator('.progress-point')).toHaveCount(3)
   await expect(page.locator('.progress-point.failed')).toHaveCount(1)
-  await expect(page.getByText('72 kg', { exact: true })).toBeVisible()
+  await expect(page.getByText('36 kg', { exact: true })).toBeVisible()
+  await expect(page.getByText('+4 kg', { exact: true })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
   await page.getByRole('button', { name: 'Estimated 1RM' }).click()
-  await expect(page.locator('.progress-point')).toHaveCount(4)
+  await expect(page.locator('.progress-point')).toHaveCount(3)
   await expect(page.locator('.progress-point.failed')).toHaveCount(1)
-  await expect(page.getByText('88.9 kg', { exact: true })).toBeVisible()
+  await expect(page.getByText('44.4 kg', { exact: true })).toBeVisible()
+
+  await page.getByRole('combobox', { name: 'Exercise' }).selectOption({ label: 'Cable Fly' })
+  await expect(page.locator('.progress-point')).toHaveCount(1)
+  await expect(page.getByText('12.3 kg', { exact: true })).toBeVisible()
+
+  await page.getByRole('combobox', { name: 'Exercise' }).selectOption({ label: 'Incline Dumbbell Press' })
 
   await page.getByRole('button', { name: 'Last 3 months' }).click()
   await expect(page.locator('.progress-point')).toHaveCount(2)
   await expect(page.locator('.progress-series-path')).toHaveCount(1)
 
-  await page.getByRole('button', { name: 'Back to History' }).click()
-  await expect(page.getByRole('heading', { name: 'History' })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to Home' }).click()
+  await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })

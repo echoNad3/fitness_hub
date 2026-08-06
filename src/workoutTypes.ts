@@ -1,4 +1,4 @@
-export type WorkoutId = 'workout-a' | 'workout-b'
+export type WorkoutId = string
 export type ResultStatus = 'success' | 'failure'
 export type PreviousResult = ResultStatus | 'missing'
 export type Category = 'CHEST' | 'BACK' | 'SHOULDERS' | 'BICEPS' | 'TRICEPS' | 'CORE' | 'LEGS'

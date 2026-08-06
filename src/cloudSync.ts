@@ -3,6 +3,8 @@ export type SyncDirection = 'pull' | 'push' | 'none'
 type ComparableAppData = {
   sessions: unknown[]
   templates: unknown
+  programs: unknown
+  activeProgramId: unknown
   baselineResults: unknown
   restSeconds: number
 }
@@ -31,6 +33,8 @@ export function hasMeaningfulLocalData(current: ComparableAppData, initial: Comp
     current.sessions.length > 0 ||
     current.restSeconds !== initial.restSeconds ||
     JSON.stringify(current.templates) !== JSON.stringify(initial.templates) ||
+    JSON.stringify(current.programs) !== JSON.stringify(initial.programs) ||
+    current.activeProgramId !== initial.activeProgramId ||
     JSON.stringify(current.baselineResults) !== JSON.stringify(initial.baselineResults)
   )
 }
@@ -43,6 +47,8 @@ export function hasMeaningfulLocalData(current: ComparableAppData, initial: Comp
 type SyncedSlices = {
   sessions: unknown
   templates: unknown
+  programs: unknown
+  activeProgramId: unknown
   variantPrefs: unknown
   baselineResults: unknown
   currentSessionByWorkout: unknown
@@ -55,6 +61,8 @@ export function isMeaningfulChange(previous: SyncedSlices, next: SyncedSlices) {
   return (
     previous.sessions !== next.sessions ||
     previous.templates !== next.templates ||
+    previous.programs !== next.programs ||
+    previous.activeProgramId !== next.activeProgramId ||
     previous.variantPrefs !== next.variantPrefs ||
     previous.baselineResults !== next.baselineResults ||
     previous.currentSessionByWorkout !== next.currentSessionByWorkout ||

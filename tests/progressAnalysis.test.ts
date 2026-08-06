@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildProgressSeries,
+  buildProgressStats,
   estimateOneRepMax,
   ONE_REP_MAX_PERCENTAGES,
   totalExerciseLoad,
@@ -65,8 +66,8 @@ test('the supplied 1RM percentage table is complete and exact at key points', ()
   assert.equal(estimateOneRepMax(50, 31), null)
 })
 
-test('total load combines both hands and honors the saved workout load type', () => {
-  assert.equal(totalExerciseLoad(32, true), 64)
+test('progress always uses the entered weight without doubling per-hand exercises', () => {
+  assert.equal(totalExerciseLoad(32, true), 32)
   assert.equal(totalExerciseLoad(32, false), 32)
 
   const series = buildProgressSeries(
@@ -91,7 +92,7 @@ test('load and estimated 1RM keep the same logged 1–30 rep attempts, including
     period: 'all',
     now: NOW,
   })
-  assert.deepEqual(load[0].points.map((point) => point.value), [60, 64, 70, 40])
+  assert.deepEqual(load[0].points.map((point) => point.value), [30, 32, 35, 20])
   assert.equal(load[0].points[2].result, 'failure')
 
   const oneRm = buildProgressSeries(templates, sessions, {
@@ -105,9 +106,9 @@ test('load and estimated 1RM keep the same logged 1–30 rep attempts, including
     'recent-success',
     'recent-failure',
   ])
-  assert.equal(oneRm[0].points[0].value, 72.29)
-  assert.equal(oneRm[0].points[1].value, 79.01)
-  assert.equal(oneRm[0].points[2].value, 86.42)
+  assert.equal(oneRm[0].points[0].value, 36.14)
+  assert.equal(oneRm[0].points[1].value, 39.51)
+  assert.equal(oneRm[0].points[2].value, 43.21)
   assert.equal(oneRm[0].points[2].result, 'failure')
 })
 
@@ -146,6 +147,27 @@ test('period boundaries are inclusive and future workouts are ignored', () => {
   assert.deepEqual(recent[0].points.map((point) => point.sessionId), ['boundary'])
 })
 
+test('summary stats use the selected period for totals, completion, weekly average, and duration', () => {
+  const sessions = [
+    { ...session('old', 200, 30, 7, 'success'), finishedAt: NOW - 200 * DAY + 60 * 60 * 1000 },
+    { ...session('recent-complete', 70, 32, 7, 'success'), finishedAt: NOW - 70 * DAY + 45 * 60 * 1000 },
+    { ...session('recent-unfinished', 7, 35, 7, 'failure') },
+  ]
+  const completed = new Set(['old', 'recent-complete'])
+
+  const recent = buildProgressStats(sessions, completed, '3-months', NOW)
+  assert.equal(recent.total, 2)
+  assert.equal(recent.completionRate, 50)
+  assert.equal(recent.perWeek, 0.16)
+  assert.equal(recent.averageDuration, 45 * 60 * 1000)
+
+  const all = buildProgressStats(sessions, completed, 'all', NOW)
+  assert.equal(all.total, 3)
+  assert.equal(all.completionRate, 67)
+  assert.equal(all.perWeek, 0.11)
+  assert.equal(all.averageDuration, 52.5 * 60 * 1000)
+})
+
 test('ended-early workouts include logged attempts without inventing failures for untouched exercises', () => {
   const attempted = {
     ...session('ended-early-attempt', 2, 32, 8, 'failure'),
@@ -175,4 +197,30 @@ test('ended-early workouts include logged attempts without inventing failures fo
     assert.deepEqual(series[0].points.map((point) => point.sessionId), ['ended-early-attempt'])
     assert.equal(series[0].points[0].result, 'failure')
   }
+})
+
+test('progress comes from history snapshots after a program is deleted and disappears with the workout', () => {
+  const historic = {
+    ...session('historic', 3, 32, 8, 'success'),
+    programId: 'deleted-program',
+    programName: 'Old program',
+    workoutSnapshot: templates[0],
+  }
+  const series = buildProgressSeries([], [historic], {
+    category: 'CHEST',
+    metric: 'load',
+    period: 'all',
+    programId: 'deleted-program',
+    now: NOW,
+  })
+  assert.equal(series.length, 1)
+  assert.equal(series[0].points[0].value, 32)
+
+  assert.deepEqual(buildProgressSeries([], [], {
+    category: 'CHEST',
+    metric: 'load',
+    period: 'all',
+    programId: 'deleted-program',
+    now: NOW,
+  }), [])
 })
