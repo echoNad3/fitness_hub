@@ -269,6 +269,10 @@ export default function ProgressAnalysisScreen({
                   key={program.id}
                   aria-pressed={selected}
                   onClick={() => {
+                    if (selected) {
+                      onPickerChange(null)
+                      return
+                    }
                     setProgramId(program.id)
                     setExerciseId('')
                     onPickerChange(null)
@@ -297,6 +301,10 @@ export default function ProgressAnalysisScreen({
                   key={item.exerciseId}
                   aria-pressed={selected}
                   onClick={() => {
+                    if (selected) {
+                      onPickerChange(null)
+                      return
+                    }
                     setExerciseId(item.exerciseId)
                     onPickerChange(null)
                     void haptics.selection()

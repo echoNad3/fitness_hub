@@ -2,6 +2,35 @@ import { expect, test, type Page } from '@playwright/test'
 
 const browserErrors = new WeakMap<Page, string[]>()
 
+type HapticPattern = number | number[]
+
+async function installHapticProbe(page: Page) {
+  await page.addInitScript(() => {
+    const target = window as typeof window & { __fitnessHubHaptics: HapticPattern[] }
+    target.__fitnessHubHaptics = []
+    Object.defineProperty(window.navigator, 'vibrate', {
+      configurable: true,
+      value: (pattern: HapticPattern) => {
+        target.__fitnessHubHaptics.push(pattern)
+        return true
+      },
+    })
+  })
+  await page.reload()
+}
+
+async function hapticCalls(page: Page) {
+  return page.evaluate(() =>
+    (window as typeof window & { __fitnessHubHaptics: HapticPattern[] }).__fitnessHubHaptics,
+  )
+}
+
+async function clearHapticCalls(page: Page) {
+  await page.evaluate(() => {
+    (window as typeof window & { __fitnessHubHaptics: HapticPattern[] }).__fitnessHubHaptics = []
+  })
+}
+
 async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(() => ({
     body: document.body.scrollWidth - document.body.clientWidth,
@@ -135,6 +164,58 @@ test('fresh installs use the exported starter program', async ({ page }) => {
       },
     ],
   })
+})
+
+test('haptics follow the app interaction policy', async ({ page }) => {
+  await installHapticProbe(page)
+  await expect.poll(() => hapticCalls(page)).toEqual([])
+
+  await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
+  await page.getByRole('button', { name: /Recovery copies/ }).click()
+  await page.getByRole('button', { name: 'Create copy now' }).click()
+  expect(await hapticCalls(page)).toEqual([28])
+  await clearHapticCalls(page)
+  await page.getByRole('button', { name: 'Create copy now' }).click()
+  expect(await hapticCalls(page)).toEqual([])
+  await page.getByRole('dialog', { name: 'Recovery copies' }).getByRole('button', { name: 'Close' }).click()
+  await page.locator('.page-head').getByRole('button', { name: 'Back' }).click()
+
+  await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
+  await page.getByRole('button', { name: 'Program: Current program' }).click()
+  await page.getByRole('dialog', { name: 'Choose program' }).getByRole('button', { name: 'Current program' }).click()
+  expect(await hapticCalls(page)).toEqual([])
+
+  await page.getByRole('button', { name: 'Program: Current program' }).click()
+  await page.getByRole('dialog', { name: 'Choose program' }).getByRole('button', { name: 'All programs' }).click()
+  expect(await hapticCalls(page)).toEqual([10])
+
+  await clearHapticCalls(page)
+  await page.locator('.page-head').getByRole('button', { name: 'Back' }).click()
+  await page.locator('.home-bottom-tiles .home-tile').filter({ hasText: 'Program' }).click()
+  await page.getByRole('button', { name: /Current program 2 days Active/ }).click()
+  await page.locator('.program-day-count').getByRole('button', { name: '1', exact: true }).click()
+  expect(await hapticCalls(page)).toEqual([])
+  await page.getByRole('dialog', { name: 'Change to 1 day?' }).getByRole('button', { name: 'Change days' }).click()
+  expect(await hapticCalls(page)).toEqual([28])
+
+  await page.locator('.page-head').getByRole('button', { name: 'Back' }).click()
+  await page.locator('.page-head').getByRole('button', { name: 'Back' }).click()
+  await page.getByRole('button', { name: /Start workout/ }).click()
+  await page.getByRole('button', { name: /Up next Workout A/ }).click()
+  await clearHapticCalls(page)
+  await page.getByRole('button', { name: /Rest timer Start/ }).click()
+  expect(await hapticCalls(page)).toEqual([28])
+
+  await page.evaluate(() => {
+    localStorage.setItem('fitness-hub-rest-timer', JSON.stringify({
+      endsAt: Date.now() + 2_000,
+      duration: 2,
+    }))
+  })
+  await page.reload()
+  await page.waitForTimeout(500)
+  expect(await hapticCalls(page)).toEqual([])
+  await expect.poll(() => hapticCalls(page), { timeout: 4_000 }).toEqual([[5000]])
 })
 
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {

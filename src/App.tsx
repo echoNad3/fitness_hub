@@ -60,7 +60,7 @@ import {
 } from './backupFiles'
 import { hideLaunchScreen } from './launchScreen'
 import { checkForAppUpdate } from './pwaUpdates'
-import { parseStoredRestTimer } from './restTimerState'
+import { parseStoredRestTimer, restAlertDue } from './restTimerState'
 import {
   addRecoverySnapshot,
   automaticRecoveryDue,
@@ -983,9 +983,7 @@ function App() {
           setSyncStatus('error')
           setSyncError(errorMessage(error))
         }
-        if (!finishManualSync(false)) {
-          void haptics.reject()
-        }
+        finishManualSync(false)
       }
     }, SYNC_DEBOUNCE_MS)
   }
@@ -1427,9 +1425,7 @@ function App() {
         if (!cancelled) {
           setSyncStatus('error')
           setSyncError(errorMessage(error))
-          if (!finishManualSync(false)) {
-            void haptics.reject()
-          }
+          finishManualSync(false)
         }
       }
     }
@@ -1614,7 +1610,7 @@ function App() {
 
     const updateTimer = () => {
       const remaining = restSecondsRemaining(restEndsAt, Date.now())
-      if (remaining <= 3 && !restAlertStartedRef.current) {
+      if (restAlertDue(remaining, restAlertStartedRef.current)) {
         restAlertStartedRef.current = true
         void haptics.timerFinished()
       }
@@ -1918,7 +1914,6 @@ function App() {
           }
         })
         setConfirmDialog(null)
-        void haptics.confirm()
       },
     })
   }
@@ -1961,7 +1956,6 @@ function App() {
         setConfirmDialog(null)
         setScreenStack((current) => current.slice(0, -1))
         setScreenState({ name: 'programs' })
-        void haptics.confirm()
       },
     })
   }
@@ -2212,13 +2206,11 @@ function App() {
         setRestNotificationMessage(
           'Update the Android app for locked-screen rest alerts. The timer still works.',
         )
-        void haptics.reject()
       } else if (result.status === 'failed') {
         if (result.detail) {
           console.warn('Rest alarm failed:', result.detail)
         }
         setRestNotificationMessage('Locked-screen rest alert unavailable. The timer still works.')
-        void haptics.reject()
       }
     })
   }
@@ -3032,7 +3024,6 @@ function App() {
       void haptics.confirm()
     } else if (result === 'unchanged') {
       setRecoveryMessage('Latest copy is already current.')
-      void haptics.selection()
     } else {
       void haptics.reject()
     }
@@ -3643,6 +3634,7 @@ function App() {
             if (!setStored(REST_TIMER_KEY, JSON.stringify({ endsAt, duration: activeRest }))) {
               setStorageError(true)
             }
+            void haptics.confirm()
             startRestAlarm(endsAt)
           }}
         >
