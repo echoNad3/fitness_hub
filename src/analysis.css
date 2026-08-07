@@ -43,11 +43,16 @@
   font-size: var(--fs-label);
 }
 
-.progress-exercise-select {
+.progress-picker-trigger {
   width: 100%;
   min-height: var(--tap);
   padding: 0 var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   color: var(--text);
+  text-align: left;
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -56,14 +61,77 @@
   font-weight: var(--fw-semibold);
 }
 
-.progress-exercise-select:focus-visible {
+.progress-picker-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-picker-chevron {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.progress-picker-trigger:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-.progress-exercise-select:disabled {
+.progress-picker-trigger:not(:disabled):active {
+  transform: scale(0.99);
+}
+
+.progress-picker-trigger:disabled {
   color: var(--quiet);
   opacity: 1;
+}
+
+.progress-picker-options {
+  max-height: min(56dvh, 420px);
+  padding: 4px;
+  display: grid;
+  gap: var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.progress-picker-option {
+  width: 100%;
+  min-height: 54px;
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font: inherit;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+}
+
+.progress-picker-option.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.progress-picker-option > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.progress-picker-check {
+  color: var(--accent-text);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
 }
 
 .progress-period {
@@ -208,4 +276,11 @@
 
 .progress-note {
   padding-top: var(--space-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-picker-trigger,
+  .progress-picker-option {
+    transition: none;
+  }
 }

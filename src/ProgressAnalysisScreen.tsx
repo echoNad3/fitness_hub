@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Dialog } from './Dialog'
 import { haptics } from './haptics'
 import { ProgressChart } from './ProgressChart'
 import {
@@ -19,6 +20,8 @@ type ProgressAnalysisScreenProps = {
   completedSessionIds: ReadonlySet<string>
   programs: ReadonlyArray<{ id: string; name: string }>
   activeProgramId: string
+  picker: 'program' | 'exercise' | null
+  onPickerChange: (picker: 'program' | 'exercise' | null) => void
 }
 
 export default function ProgressAnalysisScreen({
@@ -27,6 +30,8 @@ export default function ProgressAnalysisScreen({
   completedSessionIds,
   programs,
   activeProgramId,
+  picker,
+  onPickerChange,
 }: ProgressAnalysisScreenProps) {
   const [category, setCategory] = useState<Category>('CHEST')
   const [metric, setMetric] = useState<ProgressMetric>('load')
@@ -41,6 +46,9 @@ export default function ProgressAnalysisScreen({
     return [...items, { id: session.programId, name: `${session.programName || 'Program'} (deleted)` }]
   }, [])
   const programOptions = [...programs, ...historicalPrograms]
+  const selectedProgramLabel = programId === 'all'
+    ? 'All programs'
+    : programOptions.find((program) => program.id === programId)?.name ?? 'Program unavailable'
   const exerciseOptions = buildProgressSeries(templates, sessions, {
     category,
     metric: 'load',
@@ -73,8 +81,8 @@ export default function ProgressAnalysisScreen({
   const metricLabel = metric === 'load' ? 'Total load' : 'Estimated 1RM'
   const periodLabel = progressPeriodLabel(period)
   const emptyText = selectedOption && metric === 'estimated-1rm'
-    ? `No estimated 1RM for ${selectedOption.name}. Saved reps must be from 1 to 30.`
-    : `No load data for ${categoryLabel(category).toLowerCase()} ${period === 'all' ? 'in your history' : `in the ${periodLabel.toLowerCase()}`}.`
+    ? `No estimated 1RM data. Reps must be 1–30.`
+    : `No ${categoryLabel(category).toLowerCase()} data ${period === 'all' ? 'yet' : `in the ${periodLabel.toLowerCase()}`}.`
   const measuredAttempts = selectedSeries?.points.length ?? 0
   const totalAttempts = selectedOption?.points.length ?? 0
   const attemptLabel = measuredAttempts < totalAttempts
@@ -84,21 +92,20 @@ export default function ProgressAnalysisScreen({
   return (
     <>
       <section className="progress-summary" aria-label="Workout summary">
-        <label className="progress-filter">
+        <div className="progress-filter">
           <span className="progress-filter-label">Program</span>
-          <select
-            className="progress-exercise-select"
-            value={programId}
-            onChange={(event) => {
-              setProgramId(event.target.value)
-              setExerciseId('')
-              void haptics.selection()
-            }}
+          <button
+            className="progress-picker-trigger"
+            type="button"
+            aria-label={`Program: ${selectedProgramLabel}`}
+            aria-haspopup="dialog"
+            aria-expanded={picker === 'program'}
+            onClick={() => onPickerChange('program')}
           >
-            <option value="all">All programs</option>
-            {programOptions.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
-          </select>
-        </label>
+            <span>{selectedProgramLabel}</span>
+            <span className="progress-picker-chevron" aria-hidden="true" />
+          </button>
+        </div>
 
         <div className="progress-filter">
           <span className="progress-filter-label">Time period</span>
@@ -172,24 +179,21 @@ export default function ProgressAnalysisScreen({
           </div>
         </div>
 
-        <label className="progress-filter">
+        <div className="progress-filter">
           <span className="progress-filter-label">Exercise</span>
-          <select
-            className="progress-exercise-select"
-            value={selectedExerciseId}
+          <button
+            className="progress-picker-trigger"
+            type="button"
             disabled={exerciseOptions.length === 0}
-            onChange={(event) => {
-              setExerciseId(event.target.value)
-              void haptics.selection()
-            }}
+            aria-label={`Exercise: ${selectedOption ? exerciseLabel(selectedOption) : 'No exercises with data'}`}
+            aria-haspopup="dialog"
+            aria-expanded={picker === 'exercise'}
+            onClick={() => onPickerChange('exercise')}
           >
-            {exerciseOptions.length === 0 ? (
-              <option value="">No exercises with data</option>
-            ) : (
-              exerciseOptions.map((item) => <option key={item.exerciseId} value={item.exerciseId}>{exerciseLabel(item)}</option>)
-            )}
-          </select>
-        </label>
+            <span>{selectedOption ? exerciseLabel(selectedOption) : 'No exercises with data'}</span>
+            <span className="progress-picker-chevron" aria-hidden="true" />
+          </button>
+        </div>
 
         <div className="progress-filter">
           <span className="progress-filter-label">Measure</span>
@@ -241,12 +245,72 @@ export default function ProgressAnalysisScreen({
           </div>
         )}
 
-        <p className="progress-note">
-          {metric === 'load'
-            ? 'Uses the weight you entered. Hollow points are failed attempts.'
-            : 'Uses saved weight and reps from 1–30. Hollow points are failed attempts.'}
-        </p>
+        {selectedOption && (
+          <p className="progress-note">
+            {metric === 'load'
+              ? 'Hollow points are failed attempts.'
+              : 'Uses reps from 1–30. Hollow points are failed attempts.'}
+          </p>
+        )}
       </section>
+
+      {picker === 'program' && (
+        <Dialog title="Choose program">
+          <div className="progress-picker-options">
+            {[
+              { id: 'all', name: 'All programs' },
+              ...programOptions,
+            ].map((program) => {
+              const selected = program.id === programId
+              return (
+                <button
+                  className={`progress-picker-option${selected ? ' selected' : ''}`}
+                  type="button"
+                  key={program.id}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setProgramId(program.id)
+                    setExerciseId('')
+                    onPickerChange(null)
+                    void haptics.selection()
+                  }}
+                >
+                  <span>{program.name}</span>
+                  {selected && <span className="progress-picker-check" aria-hidden="true">✓</span>}
+                </button>
+              )
+            })}
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => onPickerChange(null)}>Cancel</button>
+        </Dialog>
+      )}
+
+      {picker === 'exercise' && exerciseOptions.length > 0 && (
+        <Dialog title="Choose exercise">
+          <div className="progress-picker-options">
+            {exerciseOptions.map((item) => {
+              const selected = item.exerciseId === selectedExerciseId
+              return (
+                <button
+                  className={`progress-picker-option${selected ? ' selected' : ''}`}
+                  type="button"
+                  key={item.exerciseId}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setExerciseId(item.exerciseId)
+                    onPickerChange(null)
+                    void haptics.selection()
+                  }}
+                >
+                  <span>{exerciseLabel(item)}</span>
+                  {selected && <span className="progress-picker-check" aria-hidden="true">✓</span>}
+                </button>
+              )
+            })}
+          </div>
+          <button className="choice-cancel" type="button" onClick={() => onPickerChange(null)}>Cancel</button>
+        </Dialog>
+      )}
     </>
   )
 }

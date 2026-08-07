@@ -1,5 +1,4 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
-import { useId } from 'react'
 import { lazy, Suspense } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import './App.css'
@@ -49,6 +48,7 @@ import { isDownloadedBuildInstallable, nextDisplayedDownloadProgress } from './a
 import { formatTimerDuration, formatWorkoutDuration } from './timeFormat'
 import { getStored, removeStored, setStored } from './storage'
 import { haptics } from './haptics'
+import { Dialog } from './Dialog'
 import {
   backupByteLength,
   backupFilename,
@@ -255,22 +255,22 @@ const defaultWorkouts: WorkoutTemplate[] = [
         category: 'CHEST',
         setup: '20°',
         sets: 4,
-        reps: 7,
+        reps: 8,
         weight: 32,
         perHand: true,
         lastResult: 'failure',
-      }, 120),
+      }, 110),
       singleExercise({
         id: 'chest-supported-row-machine',
         name: 'Machine Row',
         category: 'BACK',
         setup: '5-top',
         sets: 4,
-        reps: 7,
+        reps: 10,
         weight: 46.25,
         perHand: false,
         lastResult: 'failure',
-      }, 120),
+      }, 110),
       singleExercise({
         id: 'cable-lateral-raise',
         name: 'Cable Lateral Raise',
@@ -281,40 +281,40 @@ const defaultWorkouts: WorkoutTemplate[] = [
         weight: 2.5,
         perHand: false,
         lastResult: 'failure',
-      }, 90),
+      }, 80),
       singleExercise({
         id: 'technogym-preacher-curl-machine',
         name: 'Machine Preacher Curl',
         category: 'BICEPS',
         setup: '6-top',
         sets: 3,
-        reps: 11,
+        reps: 12,
         weight: 15,
         perHand: false,
         lastResult: 'success',
-      }, 90),
+      }, 80),
       singleExercise({
         id: 'overhead-cable-triceps-extension',
         name: 'Overhead Cable Extension',
         category: 'TRICEPS',
-        setup: '15',
+        setup: '18',
         sets: 3,
-        reps: 11,
+        reps: 12,
         weight: 12.5,
         perHand: false,
         lastResult: 'failure',
-      }, 90),
+      }, 80),
       singleExercise({
         id: 'ab-wheel',
         name: 'Ab Wheel Rollout',
         category: 'CORE',
         setup: '',
         sets: 3,
-        reps: 11,
+        reps: 10,
         weight: 0,
         perHand: false,
         lastResult: 'failure',
-      }, 90),
+      }, 80),
     ],
   },
   {
@@ -327,33 +327,33 @@ const defaultWorkouts: WorkoutTemplate[] = [
         category: 'TRICEPS',
         setup: '',
         sets: 4,
-        reps: 7,
+        reps: 8,
         weight: 16.25,
         perHand: false,
         lastResult: 'failure',
-      }, 120),
+      }, 110),
       singleExercise({
         id: 'technogym-lat-pulldown',
         name: 'Machine Lat Pulldown',
         category: 'BACK',
         setup: '7-top',
         sets: 4,
-        reps: 7,
+        reps: 10,
         weight: 46.25,
         perHand: false,
         lastResult: 'failure',
-      }, 120),
+      }, 110),
       singleExercise({
         id: 'overhead-db-shoulder-press',
         name: 'Dumbbell Overhead Press',
         category: 'SHOULDERS',
         setup: '',
         sets: 3,
-        reps: 9,
+        reps: 8,
         weight: 20,
         perHand: true,
         lastResult: 'failure',
-      }, 90),
+      }, 80),
       singleExercise(
         {
           id: 'seated-cable-chest-fly',
@@ -361,12 +361,12 @@ const defaultWorkouts: WorkoutTemplate[] = [
           category: 'CHEST',
           setup: '16',
           sets: 3,
-          reps: 11,
+          reps: 12,
           weight: 7.5,
           perHand: false,
           lastResult: 'failure',
         },
-        90,
+        80,
         { linkId: 'link-chest-fly' },
       ),
       singleExercise(
@@ -381,7 +381,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
           perHand: false,
           lastResult: 'success',
         },
-        90,
+        80,
         { linkId: 'link-chest-fly', hidden: true },
       ),
       singleExercise(
@@ -391,12 +391,12 @@ const defaultWorkouts: WorkoutTemplate[] = [
           category: 'SHOULDERS',
           setup: '22',
           sets: 3,
-          reps: 11,
+          reps: 12,
           weight: 2.5,
           perHand: false,
           lastResult: 'failure',
         },
-        90,
+        80,
         { linkId: 'link-reverse-fly' },
       ),
       singleExercise(
@@ -411,7 +411,7 @@ const defaultWorkouts: WorkoutTemplate[] = [
           perHand: false,
           lastResult: 'success',
         },
-        90,
+        80,
         { linkId: 'link-reverse-fly', hidden: true },
       ),
       singleExercise({
@@ -420,11 +420,11 @@ const defaultWorkouts: WorkoutTemplate[] = [
         category: 'LEGS',
         setup: '',
         sets: 3,
-        reps: 11,
+        reps: 10,
         weight: 0,
         perHand: false,
         lastResult: 'failure',
-      }, 90),
+      }, 80),
     ],
   },
 ]
@@ -803,6 +803,8 @@ function App() {
   const [apkDialogOpen, setApkDialogOpen] = useState(false)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialog | null>(null)
   const [programDialog, setProgramDialog] = useState<ProgramDialog | null>(null)
+  const [workoutNameDialog, setWorkoutNameDialog] = useState<WorkoutNameDialog | null>(null)
+  const [progressPicker, setProgressPicker] = useState<ProgressPicker | null>(null)
   const [editingProgramWorkoutId, setEditingProgramWorkoutId] = useState<string | null>(null)
   const [plannerExpandedId, setPlannerExpandedId] = useState('')
   // When this device last completed a successful sync — shown on the home account row.
@@ -886,7 +888,9 @@ function App() {
     recoveryDialog !== null ||
     syncConflict !== null ||
     startDialogOpen ||
-    programDialog !== null
+    programDialog !== null ||
+    workoutNameDialog !== null ||
+    progressPicker !== null
   const overlayCount = (editMode ? 1 : 0) + (dialogOpen ? 1 : 0)
   const editModeRef = useRef(editMode)
   editModeRef.current = editMode
@@ -1793,13 +1797,14 @@ function App() {
     }
 
     if (programDialog.mode === 'rename') {
+      if (storeRecoveryCopy('before-program-change') === 'error') {
+        void haptics.reject()
+        return
+      }
       setData((current) => ({
         ...current,
         programs: current.programs.map((program) =>
           program.id === programDialog.programId ? { ...program, name } : program,
-        ),
-        sessions: current.sessions.map((session) =>
-          session.programId === programDialog.programId ? { ...session, programName: name } : session,
         ),
       }))
       setProgramDialog(null)
@@ -1825,6 +1830,39 @@ function App() {
     })
     setProgramDialog(null)
     navigate({ name: 'program', programId: created.program.id })
+    void haptics.confirm()
+  }
+
+  const submitWorkoutNameDialog = () => {
+    if (!workoutNameDialog) return
+    const name = workoutNameDialog.name.trim()
+    if (!name) {
+      setWorkoutNameDialog({ ...workoutNameDialog, error: 'Enter a workout name.' })
+      void haptics.reject()
+      return
+    }
+    const program = data.programs.find((candidate) => candidate.id === workoutNameDialog.programId)
+    const duplicate = program?.workoutIds.some((workoutId) => {
+      if (workoutId === workoutNameDialog.workoutId) return false
+      return data.templates.find((template) => template.id === workoutId)?.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+    })
+    if (duplicate) {
+      setWorkoutNameDialog({ ...workoutNameDialog, error: 'Use a different workout name.' })
+      void haptics.reject()
+      return
+    }
+    if (storeRecoveryCopy('before-program-change') === 'error') {
+      void haptics.reject()
+      return
+    }
+
+    setData((current) => ({
+      ...current,
+      templates: current.templates.map((template) =>
+        template.id === workoutNameDialog.workoutId ? { ...template, name } : template,
+      ),
+    }))
+    setWorkoutNameDialog(null)
     void haptics.confirm()
   }
 
@@ -2092,6 +2130,8 @@ function App() {
     setDurationDialog(null)
     setRecoveryDialog(null)
     setProgramDialog(null)
+    setWorkoutNameDialog(null)
+    setProgressPicker(null)
     if (syncConflictRef.current) {
       setSyncConflict(null)
       setSyncStatus('idle')
@@ -2827,7 +2867,7 @@ function App() {
     <Page title="Programs" onBack={() => goBack({ name: 'main' })}>
       {programsLocked && (
         <p className="program-lock" role="status">
-          Finish your current workout before changing programs.
+          Finish the current workout to change programs.
         </p>
       )}
       <div className="program-list">
@@ -2889,7 +2929,7 @@ function App() {
       <Page title={program.name} onBack={() => goBack({ name: 'programs' })}>
         {programsLocked && (
           <p className="program-lock" role="status">
-            Finish your current workout before editing or switching programs.
+            Finish the current workout to make changes.
           </p>
         )}
 
@@ -2936,19 +2976,36 @@ function App() {
 
         <div className="program-workouts">
           {workouts.map((workout) => (
-            <button
+            <div
               className="program-workout-row"
-              type="button"
               key={workout.id}
-              disabled={programsLocked}
-              onClick={() => openProgramWorkoutEditor(workout)}
             >
-              <span>
-                <strong>{workout.name}</strong>
-                <small>{displayedGroups(workout.groups).length} {displayedGroups(workout.groups).length === 1 ? 'exercise' : 'exercises'}</small>
-              </span>
-              <Icon name="edit" size={18} />
-            </button>
+              <button
+                className="program-workout-open"
+                type="button"
+                disabled={programsLocked}
+                onClick={() => openProgramWorkoutEditor(workout)}
+              >
+                <span>
+                  <strong>{workout.name}</strong>
+                  <small>{displayedGroups(workout.groups).length} {displayedGroups(workout.groups).length === 1 ? 'exercise' : 'exercises'}</small>
+                </span>
+              </button>
+              <button
+                className="program-workout-rename"
+                type="button"
+                disabled={programsLocked}
+                aria-label={`Rename ${workout.name}`}
+                onClick={() => setWorkoutNameDialog({
+                  programId: program.id,
+                  workoutId: workout.id,
+                  name: workout.name,
+                  error: '',
+                })}
+              >
+                <Icon name="edit" size={18} />
+              </button>
+            </div>
           ))}
         </div>
 
@@ -3058,7 +3115,7 @@ function App() {
                 ? 'Saving…'
                 : backupMessage?.target === 'export'
                   ? backupMessage.text
-                  : 'Save a JSON file to this device'}
+                  : 'Save app data'}
             </small>
           </span>
           <Icon name="download" />
@@ -3078,7 +3135,7 @@ function App() {
                 ? 'Opening…'
                 : backupMessage?.target === 'import'
                   ? backupMessage.text
-                  : 'Replace app data from a JSON file'}
+                  : 'Replace app data'}
             </small>
           </span>
           <Icon name="upload" />
@@ -3106,7 +3163,7 @@ function App() {
         <button className="set-row danger" type="button" onClick={resetData}>
           <span className="set-main">
             <strong>Reset workout data</strong>
-            <small>Delete history and workout changes</small>
+            <small>Delete history and edits</small>
           </span>
           <Icon name="trash" />
         </button>
@@ -4371,6 +4428,8 @@ function App() {
               completedSessionIds={new Set(data.sessions.filter(isSessionFinished).map((session) => session.id))}
               programs={data.programs}
               activeProgramId={data.activeProgramId}
+              picker={progressPicker}
+              onPickerChange={setProgressPicker}
             />
           </Suspense>
         </Page>
@@ -4423,7 +4482,6 @@ function App() {
         )}
         {previousDialog && (
           <Dialog title="Last attempt">
-            <p className="dialog-help">Choose what happened last time.</p>
             <div className="choice-list">
               <button className="choice done" type="button" onClick={() => setPreviousResult('success')}>
                 <Icon name="arrow-up" size={18} />
@@ -4540,6 +4598,25 @@ function App() {
           </div>
         </Dialog>
       )}
+      {workoutNameDialog && (
+        <Dialog title="Rename workout">
+          <label className="ex-field">
+            <span>Name</span>
+            <input
+              className="number-input text-input"
+              type="text"
+              maxLength={80}
+              value={workoutNameDialog.name}
+              onChange={(event) => setWorkoutNameDialog({ ...workoutNameDialog, name: event.target.value, error: '' })}
+            />
+          </label>
+          {workoutNameDialog.error && <p className="auth-error" role="alert">{workoutNameDialog.error}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setWorkoutNameDialog(null)}>Cancel</button>
+            <button className="primary-action" type="button" onClick={submitWorkoutNameDialog}>Save</button>
+          </div>
+        </Dialog>
+      )}
       {recoveryDialog &&
         (() => {
           if (recoveryDialog.mode === 'list') {
@@ -4557,17 +4634,15 @@ function App() {
                         : 'Saved on this device'
             const statusClass = cloudUser ? recoverySyncStatus : 'device-only'
             const statusNote = !cloudUser
-              ? 'Sign in to sync copies across devices.'
+              ? 'Sign in to sync across devices.'
               : recoverySyncStatus === 'synced'
-                ? 'Available on your other signed-in devices.'
+                ? 'Available on signed-in devices.'
                 : recoverySyncStatus === 'syncing'
-                  ? 'Updating your other signed-in devices.'
+                  ? 'Updating signed-in devices.'
                   : 'Saved on this device.'
             return (
               <Dialog title="Recovery copies">
-                <p className="dialog-help">
-                  Automatic copies rotate. Protected copies stay until you delete them.
-                </p>
+                <p className="dialog-help">Protected copies stay until deleted.</p>
                 <div className="account-status recovery-status">
                   <span className={`sync-status ${statusClass}`} aria-live="polite">
                     <i aria-hidden="true" />
@@ -4606,7 +4681,7 @@ function App() {
                   ))}
                 </div>
                 {recoveryStore.copies.length === 0 && (
-                  <p className="dialog-help recovery-empty">Create one now or finish a workout.</p>
+                  <p className="dialog-help recovery-empty">No recovery copies yet.</p>
                 )}
                 <button className="choice-cancel" type="button" onClick={() => setRecoveryDialog(null)}>
                   Close
@@ -4644,7 +4719,7 @@ function App() {
                   {historyCount === 1 ? 'workout' : 'workouts'}
                 </small>
               </div>
-              <p className="dialog-help">Restoring replaces your current data. A copy of it is saved first.</p>
+              <p className="dialog-help">Current data is saved before restoring.</p>
               <div className="dialog-actions">
                 <button type="button" onClick={() => setRecoveryDialog({ mode: 'list' })}>
                   Back
@@ -4901,9 +4976,7 @@ function App() {
       )}
       {syncConflict && (
         <Dialog title="Choose data">
-          <p className="dialog-help">
-            Account and device data differ. Choose one; a protected copy of the other is saved first.
-          </p>
+          <p className="dialog-help">The replaced copy is saved first.</p>
           <div className="choice-list">
             <button className="choice done" type="button" onClick={() => void resolveSyncConflict('account')}>
               <Icon name="cloud" size={18} />
@@ -5056,76 +5129,6 @@ function Page({
       </header>
       {children}
     </main>
-  )
-}
-
-function Dialog({ title, children }: { title: string; children: ReactNode }) {
-  const dialogRef = useRef<HTMLElement>(null)
-  const titleId = useId()
-
-  useEffect(() => {
-    const dialog = dialogRef.current
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousHtmlOverflow = document.documentElement.style.overflow
-    const previousBodyOverflow = document.body.style.overflow
-    if (!dialog) {
-      return
-    }
-
-    document.documentElement.style.overflow = 'hidden'
-    document.body.style.overflow = 'hidden'
-
-    const focusableSelector =
-      'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
-    const frame = window.requestAnimationFrame(() => focusable()[0]?.focus())
-
-    const keepFocusInside = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        window.history.back()
-        return
-      }
-      if (event.key !== 'Tab') {
-        return
-      }
-
-      const controls = focusable()
-      if (controls.length === 0) {
-        event.preventDefault()
-        dialog.focus()
-        return
-      }
-      const first = controls[0]
-      const last = controls[controls.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-
-    document.addEventListener('keydown', keepFocusInside)
-    return () => {
-      window.cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', keepFocusInside)
-      document.documentElement.style.overflow = previousHtmlOverflow
-      document.body.style.overflow = previousBodyOverflow
-      previouslyFocused?.focus()
-    }
-  }, [])
-
-  // Intentionally no tap-outside-to-close: dialogs are dismissed only via their Cancel button or
-  // Escape/system back (handled by the overlay history sync), so a stray tap can't discard input.
-  return (
-    <div className="dialog-backdrop" role="presentation">
-      <section className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef} tabIndex={-1}>
-        <h2 id={titleId}>{title}</h2>
-        {children}
-      </section>
-    </div>
   )
 }
 
@@ -5337,6 +5340,9 @@ function createSessionEntry(data: AppData, workoutId: WorkoutId, variant: Exerci
 type ProgramDialog =
   | { mode: 'create'; name: string; days: number; error: string }
   | { mode: 'rename'; programId: string; name: string; error: string }
+
+type WorkoutNameDialog = { programId: string; workoutId: string; name: string; error: string }
+type ProgressPicker = 'program' | 'exercise'
 
 let templatesRef: WorkoutTemplate[] = defaultWorkouts
 let currentSessionIdsRef = new Set<string>()

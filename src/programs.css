@@ -35,7 +35,7 @@
 }
 
 .program-card-main,
-.program-workout-row > span,
+.program-workout-open > span,
 .program-overview-head > span {
   min-width: 0;
   display: grid;
@@ -43,14 +43,14 @@
 }
 
 .program-card strong,
-.program-workout-row strong,
+.program-workout-open strong,
 .program-overview strong {
   font-size: var(--fs-body);
   font-weight: var(--fw-bold);
 }
 
 .program-card small,
-.program-workout-row small,
+.program-workout-open small,
 .program-overview small {
   color: var(--muted);
   font-size: var(--fs-meta);
@@ -70,7 +70,7 @@
 }
 
 .program-card > svg,
-.program-workout-row > svg {
+.program-workout-rename > svg {
   color: var(--muted);
 }
 
@@ -143,6 +143,37 @@
 
 .program-workout-row {
   grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.program-workout-open,
+.program-workout-rename {
+  min-height: 66px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+}
+
+.program-workout-open {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  text-align: left;
+}
+
+.program-workout-open > span {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.program-workout-rename {
+  width: 56px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
 }
 
 .program-delete {
@@ -160,7 +191,8 @@
 }
 
 .program-card:disabled,
-.program-workout-row:disabled,
+.program-workout-open:disabled,
+.program-workout-rename:disabled,
 .program-new:disabled,
 .program-delete:disabled,
 .program-overview-actions button:disabled,
@@ -170,15 +202,20 @@
 }
 
 .program-card:not(:disabled):active,
-.program-workout-row:not(:disabled):active,
 .program-new:not(:disabled):active,
 .program-delete:not(:disabled):active,
 .program-overview-actions button:not(:disabled):active {
   transform: scale(0.98);
 }
 
+.program-workout-open:not(:disabled):active,
+.program-workout-rename:not(:disabled):active {
+  background: var(--glass-05);
+}
+
 .program-card:focus-visible,
-.program-workout-row:focus-visible,
+.program-workout-open:focus-visible,
+.program-workout-rename:focus-visible,
 .program-new:focus-visible,
 .program-delete:focus-visible,
 .program-overview-actions button:focus-visible {
@@ -193,7 +230,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .program-card,
-  .program-workout-row,
+  .program-workout-open,
+  .program-workout-rename,
   .program-new,
   .program-delete,
   .program-overview-actions button {

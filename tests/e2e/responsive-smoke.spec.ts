@@ -55,6 +55,88 @@ test.afterEach(async ({ page }) => {
   expect(browserErrors.get(page) ?? []).toEqual([])
 })
 
+test('fresh installs use the exported starter program', async ({ page }) => {
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('fitness-hub-v1'))).not.toBeNull()
+  const starter = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('fitness-hub-v1') ?? '{}')
+    return {
+      sessions: stored.sessions,
+      programs: stored.programs.map((program: { name: string; workoutIds: string[] }) => ({
+        name: program.name,
+        workoutIds: program.workoutIds,
+      })),
+      workouts: stored.templates.map((workout: {
+        name: string
+        groups: Array<{
+          activeVariantId: string
+          hidden?: boolean
+          linkId?: string
+          restSeconds: number
+          variants: Array<{
+            id: string
+            name: string
+            setup: string
+            sets: number
+            reps: number
+            weight: number
+            perHand: boolean
+          }>
+        }>
+      }) => ({
+        name: workout.name,
+        exercises: workout.groups.map((group) => {
+          const variant = group.variants.find((item) => item.id === group.activeVariantId)
+          return [
+            variant?.name,
+            variant?.setup,
+            variant?.sets,
+            variant?.reps,
+            variant?.weight,
+            variant?.perHand,
+            group.restSeconds,
+            group.hidden ?? false,
+            group.linkId ?? null,
+          ]
+        }),
+      })),
+    }
+  })
+
+  expect(starter).toEqual({
+    sessions: [],
+    programs: [{
+      name: 'Current program',
+      workoutIds: ['workout-a', 'workout-b'],
+    }],
+    workouts: [
+      {
+        name: 'Workout A',
+        exercises: [
+          ['Incline Dumbbell Press', '20°', 4, 8, 32, true, 110, false, null],
+          ['Machine Row', '5-top', 4, 10, 46.25, false, 110, false, null],
+          ['Cable Lateral Raise', 'bottom', 3, 15, 2.5, false, 80, false, null],
+          ['Machine Preacher Curl', '6-top', 3, 12, 15, false, 80, false, null],
+          ['Overhead Cable Extension', '18', 3, 12, 12.5, false, 80, false, null],
+          ['Ab Wheel Rollout', '', 3, 10, 0, false, 80, false, null],
+        ],
+      },
+      {
+        name: 'Workout B',
+        exercises: [
+          ['Weighted Dip', '', 4, 8, 16.25, false, 110, false, null],
+          ['Machine Lat Pulldown', '7-top', 4, 10, 46.25, false, 110, false, null],
+          ['Dumbbell Overhead Press', '', 3, 8, 20, true, 80, false, null],
+          ['Cable Fly', '16', 3, 12, 7.5, false, 80, false, 'link-chest-fly'],
+          ['Machine Fly', '9', 3, 11, 10, false, 80, true, 'link-chest-fly'],
+          ['Reverse Cable Fly', '22', 3, 12, 2.5, false, 80, false, 'link-reverse-fly'],
+          ['Reverse Machine Fly', '3', 3, 11, 10, false, 80, true, 'link-reverse-fly'],
+          ['Bulgarian Split Squat', '', 3, 10, 0, false, 80, false, null],
+        ],
+      },
+    ],
+  })
+})
+
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
   const androidTile = page.getByRole('button', { name: /Android (?:Build|Download)/ })
@@ -78,10 +160,12 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
   await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await expect(page.getByRole('button', { name: 'Export backup', exact: true })).toContainText('Save app data')
+  await expect(page.getByRole('button', { name: 'Import backup', exact: true })).toContainText('Replace app data')
 
   await page.getByRole('button', { name: /Recovery copies/ }).click()
   await expect(page.getByRole('dialog', { name: 'Recovery copies' })).toBeVisible()
-  await expect(page.getByText('Sign in to sync copies across devices.')).toBeVisible()
+  await expect(page.getByText('Sign in to sync across devices.')).toBeVisible()
   await page.getByRole('button', { name: 'Create copy now' }).click()
   const manualCopy = page.getByRole('button', { name: /Manual copy/ })
   await expect(manualCopy).toBeVisible()
@@ -109,7 +193,6 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
   await expect(attemptGuidance).toContainText('Last attempt:')
   await attemptGuidance.click()
   const attemptDialog = page.getByRole('dialog', { name: 'Last attempt' })
-  await expect(attemptDialog).toContainText('Choose what happened last time.')
   await expect(attemptDialog.getByRole('button', { name: 'No attempt' })).toBeVisible()
   await attemptDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
@@ -281,8 +364,14 @@ test('programs can be built, edited, activated, and deleted safely', async ({ pa
   await expect(page.getByRole('button', { name: /Workout B 1 exercise/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /Workout C 1 exercise/ })).toBeVisible()
 
-  await page.getByRole('button', { name: /Workout A 1 exercise/ }).click()
-  await expect(page.getByRole('region', { name: 'Workout A exercises' })).toBeVisible()
+  await page.getByRole('button', { name: 'Rename Workout A' }).click()
+  const renameWorkout = page.getByRole('dialog', { name: 'Rename workout' })
+  await renameWorkout.getByRole('textbox', { name: 'Name' }).fill('Workout Push')
+  await renameWorkout.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('button', { name: /Workout Push 1 exercise/ })).toBeVisible()
+
+  await page.getByRole('button', { name: /Workout Push 1 exercise/ }).click()
+  await expect(page.getByRole('region', { name: 'Workout Push exercises' })).toBeVisible()
   await page.getByRole('textbox', { name: 'Name' }).fill('Bench press')
   await page.getByRole('button', { name: 'Save changes' }).click()
   await page.getByRole('button', { name: 'Use program' }).click()
@@ -291,7 +380,7 @@ test('programs can be built, edited, activated, and deleted safely', async ({ pa
   await expect(page.getByRole('button', { name: /Three day 3 days Active/ })).toBeVisible()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await expect(page.getByRole('button', { name: /Program Three day/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /Start workout Up next · Workout A/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Start workout Up next · Workout Push/ })).toBeVisible()
 
   await page.getByRole('button', { name: /Program Three day/ }).click()
   await page.getByRole('button', { name: /Three day 3 days Active/ }).click()
@@ -304,10 +393,57 @@ test('programs can be built, edited, activated, and deleted safely', async ({ pa
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
   await page.getByRole('button', { name: /Recovery copies/ }).click()
-  const programRecovery = page.getByRole('button', { name: /Before program change/ })
+  const programRecovery = page.getByRole('button', { name: /Before program change/ }).first()
   await expect(programRecovery).toBeVisible()
   await expect(programRecovery).toContainText('Protected')
   await expectNoHorizontalOverflow(page)
+})
+
+test('renaming current templates leaves historic workout names unchanged', async ({ page }) => {
+  await page.evaluate(() => {
+    const createdAt = Date.now() - 24 * 60 * 60 * 1000
+    localStorage.setItem('fitness-hub-v1', JSON.stringify({
+      sessions: [{
+        id: 'historic-name',
+        workoutId: 'workout-a',
+        createdAt,
+        finishedAt: createdAt + 60 * 60 * 1000,
+        groupEntries: {},
+      }],
+    }))
+  })
+  await page.reload()
+
+  await page.getByRole('button', { name: /Program Current program/ }).click()
+  await page.getByRole('button', { name: /Current program 2 days Active/ }).click()
+
+  await page.getByRole('button', { name: 'Rename', exact: true }).click()
+  const renameProgram = page.getByRole('dialog', { name: 'Rename program' })
+  await renameProgram.getByRole('textbox', { name: 'Name' }).fill('Renamed program')
+  await renameProgram.getByRole('button', { name: 'Save' }).click()
+
+  await page.getByRole('button', { name: 'Rename Workout A' }).click()
+  const renameWorkout = page.getByRole('dialog', { name: 'Rename workout' })
+  await renameWorkout.getByRole('textbox', { name: 'Name' }).fill('Workout Push')
+  await renameWorkout.getByRole('button', { name: 'Save' }).click()
+
+  await expect.poll(() => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('fitness-hub-v1') || '{}')
+    const session = saved.sessions?.find((candidate: { id?: string }) => candidate.id === 'historic-name')
+    return {
+      program: saved.programs?.[0]?.name,
+      workout: saved.templates?.find((candidate: { id?: string }) => candidate.id === 'workout-a')?.name,
+      historicProgram: session?.programName,
+      historicWorkout: session?.workoutName,
+      snapshotWorkout: session?.workoutSnapshot?.name,
+    }
+  })).toEqual({
+    program: 'Renamed program',
+    workout: 'Workout Push',
+    historicProgram: 'Current program',
+    historicWorkout: 'Workout A',
+    snapshotWorkout: 'Workout A',
+  })
 })
 
 test('large histories render in fast pages without changing totals', async ({ page }) => {
@@ -392,9 +528,18 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Progress', exact: true })).toBeVisible()
-  await expect(page.locator('.progress-controls').getByRole('button')).toHaveCount(9)
-  await expect(page.getByRole('combobox', { name: 'Exercise' }).locator('option')).toHaveCount(2)
-  await page.getByRole('combobox', { name: 'Exercise' }).selectOption({ label: 'Incline Dumbbell Press' })
+  await expect(page.locator('.progress-controls').getByRole('button')).toHaveCount(10)
+  await expect(page.locator('.progress-controls select, .progress-summary select')).toHaveCount(0)
+
+  await page.getByRole('button', { name: /Program: Current program/ }).click()
+  const programPicker = page.getByRole('dialog', { name: 'Choose program' })
+  await expect(programPicker.getByRole('button', { name: 'Current program' })).toHaveAttribute('aria-pressed', 'true')
+  await programPicker.getByRole('button', { name: 'Cancel' }).click()
+
+  await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()
+  const exercisePicker = page.getByRole('dialog', { name: 'Choose exercise' })
+  await expect(exercisePicker.locator('.progress-picker-option')).toHaveCount(2)
+  await exercisePicker.getByRole('button', { name: 'Incline Dumbbell Press' }).click()
   await expect(page.locator('.progress-series-count')).toHaveText('3 attempts')
   await expect(page.locator('.progress-series-path')).toHaveCount(1)
   await expect(page.locator('.progress-point')).toHaveCount(3)
@@ -408,11 +553,13 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await expect(page.locator('.progress-point.failed')).toHaveCount(1)
   await expect(page.getByText('44.4 kg', { exact: true })).toBeVisible()
 
-  await page.getByRole('combobox', { name: 'Exercise' }).selectOption({ label: 'Cable Fly' })
+  await page.getByRole('button', { name: /Exercise: Incline Dumbbell Press/ }).click()
+  await page.getByRole('dialog', { name: 'Choose exercise' }).getByRole('button', { name: 'Cable Fly' }).click()
   await expect(page.locator('.progress-point')).toHaveCount(1)
   await expect(page.getByText('12.3 kg', { exact: true })).toBeVisible()
 
-  await page.getByRole('combobox', { name: 'Exercise' }).selectOption({ label: 'Incline Dumbbell Press' })
+  await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()
+  await page.getByRole('dialog', { name: 'Choose exercise' }).getByRole('button', { name: 'Incline Dumbbell Press' }).click()
 
   await page.getByRole('button', { name: 'Last 3 months' }).click()
   await expect(page.locator('.progress-point')).toHaveCount(2)
