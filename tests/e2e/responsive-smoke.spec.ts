@@ -237,6 +237,7 @@ test('main menu refreshes Android update info when returning or pulling down', a
   await expect(androidTile).toContainText('Build 81 available')
 
   latestBuild = 82
+  const restingContentTop = await page.locator('.home-pull-content').evaluate((content) => content.getBoundingClientRect().top)
   await page.evaluate(() => {
     window.scrollTo({ top: 0 })
     const home = document.querySelector('.home')
@@ -248,9 +249,26 @@ test('main menu refreshes Android update info when returning or pulling down', a
     }
     dispatchTouch('touchstart', 20, true)
     dispatchTouch('touchmove', 180, true)
-    dispatchTouch('touchend', 180, false)
   })
+  await expect(page.getByRole('status', { name: 'Release to refresh' })).toBeVisible()
+  await expect(page.locator('.home')).toHaveClass(/pulling/)
+  const pulledContentTop = await page.locator('.home-pull-content').evaluate((content) => content.getBoundingClientRect().top)
+  expect(pulledContentTop - restingContentTop).toBeGreaterThan(60)
+
+  await page.evaluate(() => {
+    const home = document.querySelector('.home')
+    if (!home) throw new Error('Home screen is missing')
+    const event = new Event('touchend', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'touches', { value: [] })
+    home.dispatchEvent(event)
+  })
+  await expect(page.getByRole('status', { name: 'Refreshing' })).toBeVisible()
   await expect(androidTile).toContainText('Build 82 available')
+  await expect(page.getByRole('status', { name: 'Refreshing' })).toHaveCount(0)
+  const settledContentOffset = await page.locator('.home-pull-content').evaluate((content) =>
+    new DOMMatrix(getComputedStyle(content).transform).m42,
+  )
+  expect(Math.abs(settledContentOffset)).toBeLessThanOrEqual(0.5)
 })
 
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {

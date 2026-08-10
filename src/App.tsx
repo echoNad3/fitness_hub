@@ -244,8 +244,10 @@ const PUBLIC_APP_URL = 'https://echonad3.github.io/fitness_hub/'
 const APK_DOWNLOAD_URL = 'https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
-const HOME_REFRESH_THRESHOLD_PX = 56
-const HOME_REFRESH_MAX_PULL_PX = 84
+const HOME_REFRESH_THRESHOLD_PX = 64
+const HOME_REFRESH_MAX_PULL_PX = 96
+const HOME_REFRESH_SETTLE_PX = 52
+const HOME_REFRESH_MINIMUM_MS = 450
 
 const defaultWorkouts: WorkoutTemplate[] = [
   {
@@ -586,10 +588,10 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     case 'refresh':
       return (
         <svg {...props}>
-          <path d="M20 7v5h-5" />
-          <path d="M4 17v-5h5" />
-          <path d="M6.1 8.5A7 7 0 0 1 18.7 7L20 12" />
-          <path d="M17.9 15.5A7 7 0 0 1 5.3 17L4 12" />
+          <path d="M21 12a9 9 0 0 0-15-6.7L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
+          <path d="M21 21v-5h-5" />
         </svg>
       )
     case 'chart':
@@ -859,6 +861,7 @@ function App() {
   const [startDialogOpen, setStartDialogOpen] = useState(false)
   const [highlightSession, setHighlightSession] = useState<string | null>(null)
   const [homePullDistance, setHomePullDistance] = useState(0)
+  const [homePulling, setHomePulling] = useState(false)
   const [homeRefreshing, setHomeRefreshing] = useState(false)
   const homeRef = useRef<HTMLElement | null>(null)
   const homePullStartRef = useRef<number | null>(null)
@@ -978,12 +981,13 @@ function App() {
   }, [])
 
   const refreshMainMenu = useCallback(async (animated: boolean) => {
+    const startedAt = Date.now()
     if (animated) {
       if (homeRefreshRunningRef.current) return
       homeRefreshRunningRef.current = true
       setHomeRefreshing(true)
-      homePullDistanceRef.current = 0
-      setHomePullDistance(0)
+      homePullDistanceRef.current = HOME_REFRESH_SETTLE_PX
+      setHomePullDistance(HOME_REFRESH_SETTLE_PX)
     }
 
     checkForAppUpdate(true)
@@ -991,8 +995,14 @@ function App() {
       await refreshVersionInfo(true)
     } finally {
       if (animated) {
+        const remaining = HOME_REFRESH_MINIMUM_MS - (Date.now() - startedAt)
+        if (remaining > 0) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, remaining))
+        }
         homeRefreshRunningRef.current = false
         setHomeRefreshing(false)
+        homePullDistanceRef.current = 0
+        setHomePullDistance(0)
       }
     }
   }, [refreshVersionInfo])
@@ -1250,6 +1260,7 @@ function App() {
     const resetPull = () => {
       homePullStartRef.current = null
       homePullDistanceRef.current = 0
+      setHomePulling(false)
       setHomePullDistance(0)
     }
 
@@ -1264,6 +1275,7 @@ function App() {
         return
       }
       homePullStartRef.current = event.touches[0].clientY
+      setHomePulling(true)
     }
 
     const handleTouchMove = (event: TouchEvent) => {
@@ -1284,8 +1296,16 @@ function App() {
 
     const handleTouchEnd = () => {
       const shouldRefresh = homePullDistanceRef.current >= HOME_REFRESH_THRESHOLD_PX
-      resetPull()
-      if (shouldRefresh) void refreshMainMenu(true)
+      homePullStartRef.current = null
+      setHomePulling(false)
+      if (shouldRefresh) {
+        homePullDistanceRef.current = HOME_REFRESH_SETTLE_PX
+        setHomePullDistance(HOME_REFRESH_SETTLE_PX)
+        void refreshMainMenu(true)
+      } else {
+        homePullDistanceRef.current = 0
+        setHomePullDistance(0)
+      }
     }
 
     home.addEventListener('touchstart', handleTouchStart, { passive: true })
@@ -2482,23 +2502,34 @@ function App() {
     const sessionCount = data.sessions.length
 
     const refreshReady = homePullDistance >= HOME_REFRESH_THRESHOLD_PX
+    const refreshProgress = Math.min(1, homePullDistance / HOME_REFRESH_THRESHOLD_PX)
 
     return (
-      <main ref={homeRef} className="home" aria-label="Fitness Hub">
+      <main
+        ref={homeRef}
+        className={`home${homePulling ? ' pulling' : ''}${homeRefreshing ? ' refreshing' : ''}`}
+        aria-label="Fitness Hub"
+      >
         {(homePullDistance > 0 || homeRefreshing) && (
           <div
             className={`home-refresh${homeRefreshing ? ' refreshing' : refreshReady ? ' ready' : ''}`}
             style={{
-              opacity: homeRefreshing ? 1 : Math.min(1, homePullDistance / HOME_REFRESH_THRESHOLD_PX),
-              transform: `translate(-50%, ${Math.round(-18 + homePullDistance * 0.45)}px)`,
+              opacity: homeRefreshing ? 1 : refreshProgress,
+              transform: `translate(-50%, ${Math.round(-38 + homePullDistance * 0.9)}px) scale(${0.82 + refreshProgress * 0.18})`,
             }}
             role="status"
             aria-label={homeRefreshing ? 'Refreshing' : refreshReady ? 'Release to refresh' : 'Pull to refresh'}
           >
-            <Icon name="refresh" size={18} />
+            <span
+              className="home-refresh-glyph"
+              style={homeRefreshing ? undefined : { transform: `rotate(${Math.round(refreshProgress * 220)}deg)` }}
+            >
+              <Icon name="refresh" size={19} />
+            </span>
           </div>
         )}
-        <header className="home-top">
+        <div className="home-pull-content" style={{ transform: `translateY(${Math.round(homePullDistance)}px)` }}>
+          <header className="home-top">
           <h1>Fitness Hub</h1>
           <p className="home-sub">{formatMenuDate()}</p>
         </header>
@@ -2605,6 +2636,7 @@ function App() {
 
             {renderApkTile()}
           </div>
+        </div>
         </div>
 
         {startDialogOpen && (
