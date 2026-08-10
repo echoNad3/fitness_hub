@@ -104,10 +104,8 @@
   width: 100%;
   min-height: 54px;
   padding: var(--space-3) var(--space-4);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: var(--space-3);
   color: var(--text);
   text-align: left;
   background: var(--surface-2);
@@ -116,44 +114,21 @@
   font: inherit;
   font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .progress-picker-option.selected {
+  color: var(--accent-text);
   background: var(--accent-soft);
   border-color: var(--accent-line);
-}
-
-.progress-picker-option.selected > span:first-child {
-  color: var(--accent-text);
 }
 
 .progress-picker-option > span:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.progress-picker-radio {
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line-strong);
-  border-radius: 50%;
-}
-
-.progress-picker-radio i {
-  width: 8px;
-  height: 8px;
-  background: transparent;
-  border-radius: 50%;
-}
-
-.progress-picker-radio.selected {
-  border-color: var(--accent-text);
-}
-
-.progress-picker-radio.selected i {
-  background: var(--accent-text);
 }
 
 .progress-period {

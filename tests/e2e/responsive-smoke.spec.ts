@@ -712,15 +712,33 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
 
   await page.getByRole('button', { name: /Program: Current program/ }).click()
   const programPicker = page.getByRole('dialog', { name: 'Choose program' })
-  await expect(programPicker.getByRole('button', { name: 'Current program' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(programPicker.locator('.progress-picker-radio')).toHaveCount(2)
-  await expect(programPicker.locator('.progress-picker-radio.selected')).toHaveCount(1)
+  const selectedProgramOption = programPicker.getByRole('button', { name: 'Current program' })
+  const unselectedProgramOption = programPicker.getByRole('button', { name: 'All programs' })
+  await expect(selectedProgramOption).toHaveAttribute('aria-pressed', 'true')
+  await expect(programPicker.locator('.progress-picker-option.selected')).toHaveCount(1)
+  await expect(programPicker.locator('.progress-picker-radio')).toHaveCount(0)
   await expect(programPicker.locator('.progress-picker-check')).toHaveCount(0)
+  const [selectedProgramStyle, unselectedProgramStyle] = await Promise.all([
+    selectedProgramOption.evaluate((option) => ({
+      background: getComputedStyle(option).backgroundColor,
+      border: getComputedStyle(option).borderColor,
+      color: getComputedStyle(option).color,
+    })),
+    unselectedProgramOption.evaluate((option) => ({
+      background: getComputedStyle(option).backgroundColor,
+      border: getComputedStyle(option).borderColor,
+      color: getComputedStyle(option).color,
+    })),
+  ])
+  expect(selectedProgramStyle).not.toEqual(unselectedProgramStyle)
   await programPicker.getByRole('button', { name: 'Cancel' }).click()
 
   await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()
   const exercisePicker = page.getByRole('dialog', { name: 'Choose exercise' })
   await expect(exercisePicker.locator('.progress-picker-option')).toHaveCount(2)
+  await expect(exercisePicker.getByRole('button', { name: 'Cable Fly' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(exercisePicker.locator('.progress-picker-option.selected')).toHaveCount(1)
+  await expect(exercisePicker.locator('.progress-picker-radio, .progress-picker-check')).toHaveCount(0)
   await exercisePicker.getByRole('button', { name: 'Incline Dumbbell Press' }).click()
   await expect(page.locator('.progress-series-count')).toHaveText('3 attempts')
   await expect(page.locator('.progress-series-path')).toHaveCount(1)
