@@ -54,13 +54,20 @@
   transition: transform 90ms linear;
 }
 
-.home-refresh.refreshing .home-refresh-glyph {
-  animation: home-refresh-spin 800ms linear infinite;
+.home-refresh-spinner {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: home-refresh-spin 700ms linear infinite;
 }
 
 .home.pulling .home-pull-content,
 .home.pulling .home-refresh,
-.home.pulling .home-refresh-glyph {
+.home.pulling .home-refresh-glyph,
+.home.pulling .home-refresh-spinner {
   transition: none;
 }
 
@@ -368,6 +375,7 @@
 @media (prefers-reduced-motion: reduce) {
   .home-refresh,
   .home-refresh-glyph,
+  .home-refresh-spinner,
   .home-pull-content,
   .home-resume,
   .home-start-primary,
@@ -375,7 +383,7 @@
     transition: none;
   }
 
-  .home-refresh.refreshing .home-refresh-glyph {
+  .home-refresh-spinner {
     animation: none;
   }
 }

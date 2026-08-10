@@ -252,9 +252,17 @@ test('main menu refreshes Android update info when returning or pulling down', a
   })
   await expect(page.getByRole('status', { name: 'Release to refresh' })).toBeVisible()
   await expect(page.locator('.home')).toHaveClass(/pulling/)
+  await expect(page.locator('.home-refresh-glyph')).toBeVisible()
+  await expect(page.locator('.home-refresh-spinner')).toHaveCount(0)
   await expect(page.locator('.home-refresh')).toHaveCSS('border-radius', '11px')
   await expect(page.locator('.home-refresh')).toHaveCSS('box-shadow', 'none')
   const pulledContentTop = await page.locator('.home-pull-content').evaluate((content) => content.getBoundingClientRect().top)
+  const pulledContentOffset = await page.locator('.home-pull-content').evaluate((content) =>
+    new DOMMatrix(getComputedStyle(content).transform).m42,
+  )
+  const pulledIndicatorOffset = await page.locator('.home-refresh').evaluate((indicator) =>
+    new DOMMatrix(getComputedStyle(indicator).transform).m42,
+  )
   expect(pulledContentTop - restingContentTop).toBeGreaterThan(60)
 
   await page.evaluate(() => {
@@ -265,12 +273,26 @@ test('main menu refreshes Android update info when returning or pulling down', a
     home.dispatchEvent(event)
   })
   await expect(page.getByRole('status', { name: 'Refreshing' })).toBeVisible()
-  await expect(androidTile).toContainText('Build 82 available')
-  await expect(page.getByRole('status', { name: 'Refreshing' })).toHaveCount(0)
-  const settledContentOffset = await page.locator('.home-pull-content').evaluate((content) =>
+  await expect(page.locator('.home-refresh-spinner')).toBeVisible()
+  await expect(page.locator('.home-refresh-spinner')).toHaveCSS('width', '16px')
+  await expect(page.locator('.home-refresh-spinner')).toHaveCSS('height', '16px')
+  await expect(page.locator('.home-refresh-glyph')).toHaveCount(0)
+  const refreshingContentOffset = await page.locator('.home-pull-content').evaluate((content) =>
     new DOMMatrix(getComputedStyle(content).transform).m42,
   )
-  expect(Math.abs(settledContentOffset)).toBeLessThanOrEqual(0.5)
+  const refreshingIndicatorOffset = await page.locator('.home-refresh').evaluate((indicator) =>
+    new DOMMatrix(getComputedStyle(indicator).transform).m42,
+  )
+  expect(refreshingContentOffset).toBeCloseTo(pulledContentOffset, 1)
+  expect(refreshingIndicatorOffset).toBeCloseTo(pulledIndicatorOffset, 1)
+  await expect(androidTile).toContainText('Build 82 available')
+  await expect(page.getByRole('status', { name: 'Refreshing' })).toHaveCount(0)
+  await expect.poll(async () => {
+    const settledContentOffset = await page.locator('.home-pull-content').evaluate((content) =>
+      new DOMMatrix(getComputedStyle(content).transform).m42,
+    )
+    return Math.abs(settledContentOffset)
+  }).toBeLessThanOrEqual(0.5)
 })
 
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {

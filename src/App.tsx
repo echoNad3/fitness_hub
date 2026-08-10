@@ -246,7 +246,6 @@ const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
 const HOME_REFRESH_THRESHOLD_PX = 64
 const HOME_REFRESH_MAX_PULL_PX = 96
-const HOME_REFRESH_SETTLE_PX = 52
 const HOME_REFRESH_MINIMUM_MS = 450
 
 const defaultWorkouts: WorkoutTemplate[] = [
@@ -588,8 +587,8 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     case 'refresh':
       return (
         <svg {...props}>
-          <path d="M20 11a8 8 0 1 0-2.34 5.66" />
-          <path d="M20 4v7h-7" />
+          <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8" />
+          <path d="M21 3v5h-5" />
         </svg>
       )
     case 'chart':
@@ -984,8 +983,6 @@ function App() {
       if (homeRefreshRunningRef.current) return
       homeRefreshRunningRef.current = true
       setHomeRefreshing(true)
-      homePullDistanceRef.current = HOME_REFRESH_SETTLE_PX
-      setHomePullDistance(HOME_REFRESH_SETTLE_PX)
     }
 
     checkForAppUpdate(true)
@@ -1297,8 +1294,6 @@ function App() {
       homePullStartRef.current = null
       setHomePulling(false)
       if (shouldRefresh) {
-        homePullDistanceRef.current = HOME_REFRESH_SETTLE_PX
-        setHomePullDistance(HOME_REFRESH_SETTLE_PX)
         void refreshMainMenu(true)
       } else {
         homePullDistanceRef.current = 0
@@ -2518,12 +2513,16 @@ function App() {
             role="status"
             aria-label={homeRefreshing ? 'Refreshing' : refreshReady ? 'Release to refresh' : 'Pull to refresh'}
           >
-            <span
-              className="home-refresh-glyph"
-              style={homeRefreshing ? undefined : { transform: `rotate(${Math.round(refreshProgress * 160)}deg)` }}
-            >
-              <Icon name="refresh" size={18} />
-            </span>
+            {homeRefreshing ? (
+              <span className="home-refresh-spinner" aria-hidden="true" />
+            ) : (
+              <span
+                className="home-refresh-glyph"
+                style={{ transform: `rotate(${Math.round(refreshProgress * 160)}deg)` }}
+              >
+                <Icon name="refresh" size={18} />
+              </span>
+            )}
           </div>
         )}
         <div className="home-pull-content" style={{ transform: `translateY(${Math.round(homePullDistance)}px)` }}>
