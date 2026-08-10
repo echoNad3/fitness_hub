@@ -252,6 +252,8 @@ test('main menu refreshes Android update info when returning or pulling down', a
   })
   await expect(page.getByRole('status', { name: 'Release to refresh' })).toBeVisible()
   await expect(page.locator('.home')).toHaveClass(/pulling/)
+  await expect(page.locator('.home-refresh')).toHaveCSS('border-radius', '11px')
+  await expect(page.locator('.home-refresh')).toHaveCSS('box-shadow', 'none')
   const pulledContentTop = await page.locator('.home-pull-content').evaluate((content) => content.getBoundingClientRect().top)
   expect(pulledContentTop - restingContentTop).toBeGreaterThan(60)
 
@@ -690,6 +692,9 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await page.getByRole('button', { name: /Program: Current program/ }).click()
   const programPicker = page.getByRole('dialog', { name: 'Choose program' })
   await expect(programPicker.getByRole('button', { name: 'Current program' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(programPicker.locator('.progress-picker-radio')).toHaveCount(2)
+  await expect(programPicker.locator('.progress-picker-radio.selected')).toHaveCount(1)
+  await expect(programPicker.locator('.progress-picker-check')).toHaveCount(0)
   await programPicker.getByRole('button', { name: 'Cancel' }).click()
 
   await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()

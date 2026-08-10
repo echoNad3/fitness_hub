@@ -588,10 +588,8 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     case 'refresh':
       return (
         <svg {...props}>
-          <path d="M21 12a9 9 0 0 0-15-6.7L3 8" />
-          <path d="M3 3v5h5" />
-          <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
-          <path d="M21 21v-5h-5" />
+          <path d="M20 11a8 8 0 1 0-2.34 5.66" />
+          <path d="M20 4v7h-7" />
         </svg>
       )
     case 'chart':
@@ -2515,16 +2513,16 @@ function App() {
             className={`home-refresh${homeRefreshing ? ' refreshing' : refreshReady ? ' ready' : ''}`}
             style={{
               opacity: homeRefreshing ? 1 : refreshProgress,
-              transform: `translate(-50%, ${Math.round(-38 + homePullDistance * 0.9)}px) scale(${0.82 + refreshProgress * 0.18})`,
+              transform: `translate(-50%, ${Math.round(-36 + homePullDistance * 0.85)}px)`,
             }}
             role="status"
             aria-label={homeRefreshing ? 'Refreshing' : refreshReady ? 'Release to refresh' : 'Pull to refresh'}
           >
             <span
               className="home-refresh-glyph"
-              style={homeRefreshing ? undefined : { transform: `rotate(${Math.round(refreshProgress * 220)}deg)` }}
+              style={homeRefreshing ? undefined : { transform: `rotate(${Math.round(refreshProgress * 160)}deg)` }}
             >
-              <Icon name="refresh" size={19} />
+              <Icon name="refresh" size={18} />
             </span>
           </div>
         )}

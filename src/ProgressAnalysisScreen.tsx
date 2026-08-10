@@ -280,7 +280,9 @@ export default function ProgressAnalysisScreen({
                   }}
                 >
                   <span>{program.name}</span>
-                  {selected && <span className="progress-picker-check" aria-hidden="true">✓</span>}
+                  <span className={`progress-picker-radio${selected ? ' selected' : ''}`} aria-hidden="true">
+                    <i />
+                  </span>
                 </button>
               )
             })}
@@ -311,7 +313,9 @@ export default function ProgressAnalysisScreen({
                   }}
                 >
                   <span>{exerciseLabel(item)}</span>
-                  {selected && <span className="progress-picker-check" aria-hidden="true">✓</span>}
+                  <span className={`progress-picker-radio${selected ? ' selected' : ''}`} aria-hidden="true">
+                    <i />
+                  </span>
                 </button>
               )
             })}
