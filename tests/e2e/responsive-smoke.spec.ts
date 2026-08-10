@@ -248,12 +248,12 @@ test('main menu refreshes Android update info when returning or pulling down', a
       home.dispatchEvent(event)
     }
     dispatchTouch('touchstart', 20, true)
-    dispatchTouch('touchmove', 180, true)
+    dispatchTouch('touchmove', 280, true)
   })
   await expect(page.getByRole('status', { name: 'Release to refresh' })).toBeVisible()
   await expect(page.locator('.home')).toHaveClass(/pulling/)
   await expect(page.locator('.home-refresh-glyph')).toBeVisible()
-  await expect(page.locator('.home-refresh-spinner')).toHaveCount(0)
+  await expect(page.locator('.home-refresh-glyph')).toHaveAttribute('style', 'transform: rotate(360deg);')
   await expect(page.locator('.home-refresh')).toHaveCSS('border-radius', '11px')
   await expect(page.locator('.home-refresh')).toHaveCSS('box-shadow', 'none')
   const pulledContentTop = await page.locator('.home-pull-content').evaluate((content) => content.getBoundingClientRect().top)
@@ -273,10 +273,9 @@ test('main menu refreshes Android update info when returning or pulling down', a
     home.dispatchEvent(event)
   })
   await expect(page.getByRole('status', { name: 'Refreshing' })).toBeVisible()
-  await expect(page.locator('.home-refresh-spinner')).toBeVisible()
-  await expect(page.locator('.home-refresh-spinner')).toHaveCSS('width', '16px')
-  await expect(page.locator('.home-refresh-spinner')).toHaveCSS('height', '16px')
-  await expect(page.locator('.home-refresh-glyph')).toHaveCount(0)
+  await expect(page.locator('.home-refresh-glyph')).toBeVisible()
+  await expect(page.locator('.home-refresh-glyph')).toHaveAttribute('style', 'transform: rotate(360deg);')
+  await expect(page.locator('.home-refresh-glyph > svg')).toHaveCSS('animation-name', 'home-refresh-spin')
   const refreshingContentOffset = await page.locator('.home-pull-content').evaluate((content) =>
     new DOMMatrix(getComputedStyle(content).transform).m42,
   )

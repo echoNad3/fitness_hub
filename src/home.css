@@ -54,20 +54,18 @@
   transition: transform 90ms linear;
 }
 
-.home-refresh-spinner {
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: home-refresh-spin 700ms linear infinite;
+.home-refresh-glyph > svg {
+  display: block;
+  transform-origin: center;
+}
+
+.home-refresh.refreshing .home-refresh-glyph > svg {
+  animation: home-refresh-spin 800ms linear infinite;
 }
 
 .home.pulling .home-pull-content,
 .home.pulling .home-refresh,
-.home.pulling .home-refresh-glyph,
-.home.pulling .home-refresh-spinner {
+.home.pulling .home-refresh-glyph {
   transition: none;
 }
 
@@ -375,7 +373,6 @@
 @media (prefers-reduced-motion: reduce) {
   .home-refresh,
   .home-refresh-glyph,
-  .home-refresh-spinner,
   .home-pull-content,
   .home-resume,
   .home-start-primary,
@@ -383,7 +380,7 @@
     transition: none;
   }
 
-  .home-refresh-spinner {
+  .home-refresh.refreshing .home-refresh-glyph > svg {
     animation: none;
   }
 }

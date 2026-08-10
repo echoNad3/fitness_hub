@@ -2495,7 +2495,8 @@ function App() {
     const sessionCount = data.sessions.length
 
     const refreshReady = homePullDistance >= HOME_REFRESH_THRESHOLD_PX
-    const refreshProgress = Math.min(1, homePullDistance / HOME_REFRESH_THRESHOLD_PX)
+    const refreshVisibility = Math.min(1, homePullDistance / HOME_REFRESH_THRESHOLD_PX)
+    const refreshRotation = Math.round(Math.min(1, homePullDistance / HOME_REFRESH_MAX_PULL_PX) * 360)
 
     return (
       <main
@@ -2507,22 +2508,18 @@ function App() {
           <div
             className={`home-refresh${homeRefreshing ? ' refreshing' : refreshReady ? ' ready' : ''}`}
             style={{
-              opacity: homeRefreshing ? 1 : refreshProgress,
+              opacity: homeRefreshing ? 1 : refreshVisibility,
               transform: `translate(-50%, ${Math.round(-36 + homePullDistance * 0.85)}px)`,
             }}
             role="status"
             aria-label={homeRefreshing ? 'Refreshing' : refreshReady ? 'Release to refresh' : 'Pull to refresh'}
           >
-            {homeRefreshing ? (
-              <span className="home-refresh-spinner" aria-hidden="true" />
-            ) : (
-              <span
-                className="home-refresh-glyph"
-                style={{ transform: `rotate(${Math.round(refreshProgress * 160)}deg)` }}
-              >
-                <Icon name="refresh" size={18} />
-              </span>
-            )}
+            <span
+              className="home-refresh-glyph"
+              style={{ transform: `rotate(${refreshRotation}deg)` }}
+            >
+              <Icon name="refresh" size={18} />
+            </span>
           </div>
         )}
         <div className="home-pull-content" style={{ transform: `translateY(${Math.round(homePullDistance)}px)` }}>
