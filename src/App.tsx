@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useCallback } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import './App.css'
 import './workout.css'
@@ -35,6 +35,8 @@ import {
   resultGuidance,
   resultStreak,
   toggleResult,
+  MAX_WORKOUT_DURATION_SECONDS,
+  recordedWorkoutDurationMilliseconds,
   WORKOUT_DURATION_STEP_SECONDS,
   workoutDurationSeconds,
 } from './domain'
@@ -242,7 +244,8 @@ const PUBLIC_APP_URL = 'https://echonad3.github.io/fitness_hub/'
 const APK_DOWNLOAD_URL = 'https://github.com/echoNad3/fitness_hub/releases/latest/download/app-debug.apk'
 const SYNC_DEBOUNCE_MS = 900
 const DEFAULT_REST_SECONDS = 90
-const MAX_RECORDED_WORKOUT_DURATION_MS = 24 * 60 * 60 * 1000
+const HOME_REFRESH_THRESHOLD_PX = 56
+const HOME_REFRESH_MAX_PULL_PX = 84
 
 const defaultWorkouts: WorkoutTemplate[] = [
   {
@@ -580,6 +583,15 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
           <path d="M12 7v5l4 2" />
         </svg>
       )
+    case 'refresh':
+      return (
+        <svg {...props}>
+          <path d="M20 7v5h-5" />
+          <path d="M4 17v-5h5" />
+          <path d="M6.1 8.5A7 7 0 0 1 18.7 7L20 12" />
+          <path d="M17.9 15.5A7 7 0 0 1 5.3 17L4 12" />
+        </svg>
+      )
     case 'chart':
       return (
         <svg {...props}>
@@ -708,7 +720,7 @@ function DurationEditor({
     const current =
       (Number.isFinite(hours) ? Math.max(0, hours) : 0) * 60 * 60 +
       (Number.isFinite(minutes) ? Math.max(0, minutes) : 0) * 60
-    const next = Math.min(23 * 60 * 60 + 59 * 60, Math.max(10 * 60, current + delta))
+    const next = Math.min(MAX_WORKOUT_DURATION_SECONDS, Math.max(10 * 60, current + delta))
     if (next === current) return false
     const nextHours = String(Math.floor(next / 3600))
     const nextMinutes = String(Math.floor((next % 3600) / 60))
@@ -730,6 +742,7 @@ function DurationEditor({
               type="number"
               inputMode="numeric"
               min="0"
+              max="3"
               step="1"
               value={dialog.hours}
               aria-label="Duration hours"
@@ -845,6 +858,14 @@ function App() {
   const [installedBuild, setInstalledBuild] = useState<number | null>(null)
   const [startDialogOpen, setStartDialogOpen] = useState(false)
   const [highlightSession, setHighlightSession] = useState<string | null>(null)
+  const [homePullDistance, setHomePullDistance] = useState(0)
+  const [homeRefreshing, setHomeRefreshing] = useState(false)
+  const homeRef = useRef<HTMLElement | null>(null)
+  const homePullStartRef = useRef<number | null>(null)
+  const homePullDistanceRef = useRef(0)
+  const homeRefreshRunningRef = useRef(false)
+  const versionCheckAtRef = useRef(0)
+  const previousScreenNameRef = useRef<Screen['name'] | null>(null)
   const backupInputRef = useRef<HTMLInputElement>(null)
   const scrollTimer = useRef<number | null>(null)
   const pulseTimer = useRef<number | null>(null)
@@ -928,6 +949,53 @@ function App() {
     )
   })
   const localUpdatedAtRef = useRef(initialSyncTimestamp)
+
+  const refreshVersionInfo = useCallback(async (force = false) => {
+    const now = Date.now()
+    if (!force && now - versionCheckAtRef.current < 30_000) return
+    versionCheckAtRef.current = now
+
+    const tasks: Promise<unknown>[] = [
+      fetchLatestApk()
+        .then((latest) => {
+          if (latest) setLatestApk(latest)
+        })
+        .catch(() => undefined),
+    ]
+
+    if (Capacitor.isNativePlatform()) {
+      tasks.push(
+        CapacitorApp.getInfo()
+          .then((info) => {
+            const build = Number(info.build)
+            if (Number.isFinite(build) && build > 0) setInstalledBuild(build)
+          })
+          .catch(() => undefined),
+      )
+    }
+
+    await Promise.all(tasks)
+  }, [])
+
+  const refreshMainMenu = useCallback(async (animated: boolean) => {
+    if (animated) {
+      if (homeRefreshRunningRef.current) return
+      homeRefreshRunningRef.current = true
+      setHomeRefreshing(true)
+      homePullDistanceRef.current = 0
+      setHomePullDistance(0)
+    }
+
+    checkForAppUpdate(true)
+    try {
+      await refreshVersionInfo(true)
+    } finally {
+      if (animated) {
+        homeRefreshRunningRef.current = false
+        setHomeRefreshing(false)
+      }
+    }
+  }, [refreshVersionInfo])
 
   // Record a completed sync (push or pull) for the "last synced" label on the account row.
   const markSynced = () => {
@@ -1140,33 +1208,11 @@ function App() {
   }, [])
 
   useEffect(() => {
-    let active = true
-    let lastCheck = 0
-
-    const refreshVersionInfo = (force = false) => {
-      const now = Date.now()
-      if (!force && now - lastCheck < 30_000) return
-      lastCheck = now
-
-      void fetchLatestApk().then((latest) => {
-        if (active && latest) setLatestApk(latest)
-      })
-
-      if (Capacitor.isNativePlatform()) {
-        void CapacitorApp.getInfo()
-          .then((info) => {
-            const build = Number(info.build)
-            if (active && Number.isFinite(build) && build > 0) setInstalledBuild(build)
-          })
-          .catch(() => undefined)
-      }
-    }
-
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') refreshVersionInfo()
+      if (document.visibilityState === 'visible') void refreshVersionInfo()
     }
 
-    refreshVersionInfo(true)
+    void refreshVersionInfo(true)
     window.addEventListener('focus', refreshWhenVisible)
     window.addEventListener('online', refreshWhenVisible)
     document.addEventListener('visibilitychange', refreshWhenVisible)
@@ -1174,20 +1220,86 @@ function App() {
     const nativeStateListener = Capacitor.isNativePlatform()
       ? CapacitorApp.addListener('appStateChange', ({ isActive }) => {
           if (isActive) {
-            refreshVersionInfo(true)
+            void refreshVersionInfo(true)
             checkForAppUpdate(true)
           }
         })
       : null
 
     return () => {
-      active = false
       window.removeEventListener('focus', refreshWhenVisible)
       window.removeEventListener('online', refreshWhenVisible)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
       if (nativeStateListener) void nativeStateListener.then((listener) => listener.remove())
     }
-  }, [])
+  }, [refreshVersionInfo])
+
+  useEffect(() => {
+    const previous = previousScreenNameRef.current
+    previousScreenNameRef.current = screen.name
+    if (screen.name === 'main' && previous !== null && previous !== 'main') {
+      void refreshMainMenu(false)
+    }
+  }, [refreshMainMenu, screen.name])
+
+  useEffect(() => {
+    if (screen.name !== 'main') return
+    const home = homeRef.current
+    if (!home) return
+
+    const resetPull = () => {
+      homePullStartRef.current = null
+      homePullDistanceRef.current = 0
+      setHomePullDistance(0)
+    }
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (
+        event.touches.length !== 1 ||
+        window.scrollY > 0 ||
+        dialogOpenRef.current ||
+        homeRefreshRunningRef.current
+      ) {
+        resetPull()
+        return
+      }
+      homePullStartRef.current = event.touches[0].clientY
+    }
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const start = homePullStartRef.current
+      if (start === null || event.touches.length !== 1 || window.scrollY > 0) return
+      const delta = event.touches[0].clientY - start
+      if (delta <= 0) {
+        homePullDistanceRef.current = 0
+        setHomePullDistance(0)
+        return
+      }
+
+      if (event.cancelable) event.preventDefault()
+      const distance = Math.min(HOME_REFRESH_MAX_PULL_PX, delta * 0.45)
+      homePullDistanceRef.current = distance
+      setHomePullDistance(distance)
+    }
+
+    const handleTouchEnd = () => {
+      const shouldRefresh = homePullDistanceRef.current >= HOME_REFRESH_THRESHOLD_PX
+      resetPull()
+      if (shouldRefresh) void refreshMainMenu(true)
+    }
+
+    home.addEventListener('touchstart', handleTouchStart, { passive: true })
+    home.addEventListener('touchmove', handleTouchMove, { passive: false })
+    home.addEventListener('touchend', handleTouchEnd, { passive: true })
+    home.addEventListener('touchcancel', resetPull, { passive: true })
+    return () => {
+      home.removeEventListener('touchstart', handleTouchStart)
+      home.removeEventListener('touchmove', handleTouchMove)
+      home.removeEventListener('touchend', handleTouchEnd)
+      home.removeEventListener('touchcancel', resetPull)
+      resetPull()
+    }
+  }, [refreshMainMenu, screen.name])
 
   useEffect(() => {
     if (!apkDialogOpen || !Capacitor.isNativePlatform()) {
@@ -2153,7 +2265,7 @@ function App() {
   const openDurationEditor = (session: WorkoutSession) => {
     if (session.finishedAt === undefined || session.finishedAt <= session.createdAt) return
     const totalMinutes = Math.min(
-      23 * 60 + 59,
+      MAX_WORKOUT_DURATION_SECONDS / 60,
       Math.max(10, Math.round((session.finishedAt - session.createdAt) / 60_000)),
     )
     setHistoryOptionsSessionId(null)
@@ -2171,7 +2283,7 @@ function App() {
     const minutes = Number(durationDialog.minutes)
     const totalSeconds = workoutDurationSeconds(hours, minutes)
     if (totalSeconds === null) {
-      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 10 minutes to 23 hours 59 minutes.' })
+      setDurationDialog({ ...durationDialog, error: 'Enter a duration from 10 minutes to 3 hours.' })
       void haptics.reject()
       return
     }
@@ -2369,8 +2481,23 @@ function App() {
     const otherWorkouts = activeProgramWorkouts.filter((template) => template.id !== suggestedId)
     const sessionCount = data.sessions.length
 
+    const refreshReady = homePullDistance >= HOME_REFRESH_THRESHOLD_PX
+
     return (
-      <main className="home" aria-label="Fitness Hub">
+      <main ref={homeRef} className="home" aria-label="Fitness Hub">
+        {(homePullDistance > 0 || homeRefreshing) && (
+          <div
+            className={`home-refresh${homeRefreshing ? ' refreshing' : refreshReady ? ' ready' : ''}`}
+            style={{
+              opacity: homeRefreshing ? 1 : Math.min(1, homePullDistance / HOME_REFRESH_THRESHOLD_PX),
+              transform: `translate(-50%, ${Math.round(-18 + homePullDistance * 0.45)}px)`,
+            }}
+            role="status"
+            aria-label={homeRefreshing ? 'Refreshing' : refreshReady ? 'Release to refresh' : 'Pull to refresh'}
+          >
+            <Icon name="refresh" size={18} />
+          </div>
+        )}
         <header className="home-top">
           <h1>Fitness Hub</h1>
           <p className="home-sub">{formatMenuDate()}</p>
@@ -2411,50 +2538,20 @@ function App() {
         )}
 
         <div className="home-tiles">
-          {supabase &&
-            (cloudUser ? (
-              <button className="home-tile" type="button" onClick={() => setAccountDialogOpen(true)}>
-                <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
-                <span className="home-tile-text">
-                  <span>Account</span>
-                  <small className="home-tile-status">
-                    <span className={`sync-status ${syncStatus}`}>
-                      <i aria-hidden="true" />
-                      {syncStatusLabel(syncStatus)}
-                    </span>
-                  </small>
-                </span>
-              </button>
-            ) : (
-              <button
-                className="home-tile"
-                type="button"
-                onClick={() => setAuthDialog({ mode: 'in', email: '', password: '', error: '', note: '', busy: false })}
-              >
-                <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
-                <span className="home-tile-text">
-                  <span>Sign in</span>
-                  <small>Sync across devices</small>
-                </span>
-              </button>
-            ))}
-
-          {renderApkTile()}
-
           <div className="home-bottom-tiles">
-            <button className="home-tile" type="button" onClick={() => navigate({ name: 'progress-analysis' })}>
-              <span className="home-tile-icon"><Icon name="chart" size={22} /></span>
-              <span className="home-tile-text">
-                <span>Progress</span>
-                <small>Stats and exercises</small>
-              </span>
-            </button>
-
             <button className="home-tile" type="button" onClick={() => navigate({ name: 'global-history' })}>
               <span className="home-tile-icon"><Icon name="history" size={22} /></span>
               <span className="home-tile-text">
                 <span>History</span>
                 <small>{sessionCount} {sessionCount === 1 ? 'workout' : 'workouts'}</small>
+              </span>
+            </button>
+
+            <button className="home-tile" type="button" onClick={() => navigate({ name: 'progress-analysis' })}>
+              <span className="home-tile-icon"><Icon name="chart" size={22} /></span>
+              <span className="home-tile-text">
+                <span>Progress</span>
+                <small>Stats and exercises</small>
               </span>
             </button>
           </div>
@@ -2464,7 +2561,7 @@ function App() {
               <span className="home-tile-icon"><Icon name="program" size={22} /></span>
               <span className="home-tile-text">
                 <span>Program</span>
-                <small>{activeProgram.name}</small>
+                <small>Workout plan</small>
               </span>
             </button>
 
@@ -2472,9 +2569,41 @@ function App() {
               <span className="home-tile-icon"><Icon name="settings" size={22} /></span>
               <span className="home-tile-text">
                 <span>Settings</span>
-                <small>Timer and backups</small>
+                <small>Backups and other</small>
               </span>
             </button>
+          </div>
+
+          <div className="home-bottom-tiles">
+            {supabase &&
+              (cloudUser ? (
+                <button className="home-tile" type="button" onClick={() => setAccountDialogOpen(true)}>
+                  <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
+                  <span className="home-tile-text">
+                    <span>Account</span>
+                    <small className="home-tile-status">
+                      <span className={`sync-status ${syncStatus}`}>
+                        <i aria-hidden="true" />
+                        {syncStatusLabel(syncStatus)}
+                      </span>
+                    </small>
+                  </span>
+                </button>
+              ) : (
+                <button
+                  className="home-tile"
+                  type="button"
+                  onClick={() => setAuthDialog({ mode: 'in', email: '', password: '', error: '', note: '', busy: false })}
+                >
+                  <span className="home-tile-icon"><Icon name="cloud" size={22} /></span>
+                  <span className="home-tile-text">
+                    <span>Account</span>
+                    <small>Sign in to sync</small>
+                  </span>
+                </button>
+              ))}
+
+            {renderApkTile()}
           </div>
         </div>
 
@@ -4984,7 +5113,7 @@ function App() {
           </button>
         </Dialog>
       )}
-      {workoutSummaryDialog &&
+      {workoutSummaryDialog && !durationDialog &&
         (() => {
           const session = data.sessions.find((candidate) => candidate.id === workoutSummaryDialog.sessionId)
           if (!session) return null
@@ -5003,6 +5132,10 @@ function App() {
               <p className="workout-summary-copy">
                 {doneCount}/{total} done{duration === null ? '' : ` · ${formatWorkoutDuration(duration)}`}
               </p>
+              <button className="choice workout-summary-edit" type="button" onClick={() => openDurationEditor(session)}>
+                <Icon name="clock" size={18} />
+                <span>Edit duration</span>
+              </button>
               <div className="dialog-actions">
                 <button type="button" onClick={() => setWorkoutSummaryDialog(null)}>
                   Stay
@@ -5697,9 +5830,7 @@ function formatHistorySessionLine(session: WorkoutSession, includeProgram = fals
 }
 
 function recordedWorkoutDuration(session: WorkoutSession) {
-  if (session.finishedAt === undefined || session.finishedAt <= session.createdAt) return null
-  const duration = session.finishedAt - session.createdAt
-  return duration <= MAX_RECORDED_WORKOUT_DURATION_MS ? duration : null
+  return recordedWorkoutDurationMilliseconds(session.createdAt, session.finishedAt)
 }
 
 // Full weekday + date for the home header — e.g. "Tuesday 2 July".

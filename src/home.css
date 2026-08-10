@@ -1,6 +1,7 @@
 /* Home / main menu — Phase 2 */
 
 .home {
+  position: relative;
   width: min(100%, 460px);
   margin: 0 auto;
   min-height: 100svh;
@@ -11,6 +12,42 @@
   background:
     radial-gradient(circle at 82% -8%, var(--page-glow), transparent 30%),
     var(--bg);
+}
+
+.home-refresh {
+  position: fixed;
+  z-index: 10;
+  top: calc(6px + env(safe-area-inset-top));
+  left: 50%;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--surface-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  box-shadow: var(--soft-shadow);
+  pointer-events: none;
+  transition:
+    color 120ms ease,
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.home-refresh.ready,
+.home-refresh.refreshing {
+  color: var(--accent-text);
+}
+
+.home-refresh.refreshing svg {
+  animation: home-refresh-spin 700ms linear infinite;
+}
+
+@keyframes home-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .home-top {
@@ -309,9 +346,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .home-refresh,
   .home-resume,
   .home-start-primary,
   .home-tile {
     transition: none;
+  }
+
+  .home-refresh.refreshing svg {
+    animation: none;
   }
 }

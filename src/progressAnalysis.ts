@@ -1,3 +1,4 @@
+import { recordedWorkoutDurationMilliseconds } from './domain.ts'
 import type { Category, ResultStatus } from './workoutTypes'
 
 export type ProgressMetric = 'load' | 'estimated-1rm'
@@ -124,8 +125,6 @@ const PERIOD_MILLISECONDS: Record<Exclude<ProgressPeriod, 'all'>, number> = {
 }
 
 const WEEK_MILLISECONDS = 7 * 24 * 60 * 60 * 1000
-const MAX_RECORDED_DURATION_MILLISECONDS = 24 * 60 * 60 * 1000
-
 const roundAnalysisValue = (value: number) => Math.round(value * 100) / 100
 
 export function totalExerciseLoad(weight: number, _perHand: boolean) {
@@ -168,14 +167,8 @@ export function buildProgressStats(
   )
   const completed = filtered.filter((session) => completedSessionIds.has(session.id)).length
   const durations = filtered.flatMap((session) => {
-    if (
-      session.finishedAt === undefined ||
-      session.finishedAt <= session.createdAt ||
-      session.finishedAt - session.createdAt > MAX_RECORDED_DURATION_MILLISECONDS
-    ) {
-      return []
-    }
-    return [session.finishedAt - session.createdAt]
+    const duration = recordedWorkoutDurationMilliseconds(session.createdAt, session.finishedAt)
+    return duration === null ? [] : [duration]
   })
   const oldest = filtered.reduce<number | null>(
     (value, session) => (value === null ? session.createdAt : Math.min(value, session.createdAt)),

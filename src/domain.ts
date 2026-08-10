@@ -63,7 +63,7 @@ export const MIN_REST_SECONDS = 10
 export const MAX_REST_SECONDS = 600
 export const REST_STEP_SECONDS = 10
 export const MIN_WORKOUT_DURATION_SECONDS = 10 * 60
-export const MAX_WORKOUT_DURATION_SECONDS = 24 * 60 * 60 - 1
+export const MAX_WORKOUT_DURATION_SECONDS = 3 * 60 * 60
 export const WORKOUT_DURATION_STEP_SECONDS = 10 * 60
 
 export function workoutDurationSeconds(hours: number, minutes: number) {
@@ -78,6 +78,12 @@ export function workoutDurationSeconds(hours: number, minutes: number) {
   }
   const total = hours * 60 * 60 + minutes * 60
   return total >= MIN_WORKOUT_DURATION_SECONDS && total <= MAX_WORKOUT_DURATION_SECONDS ? total : null
+}
+
+export function recordedWorkoutDurationMilliseconds(createdAt: number, finishedAt?: number) {
+  if (finishedAt === undefined || finishedAt <= createdAt) return null
+  const duration = finishedAt - createdAt
+  return duration <= MAX_WORKOUT_DURATION_SECONDS * 1000 ? duration : null
 }
 
 // Clamp a rest length to the supported range.

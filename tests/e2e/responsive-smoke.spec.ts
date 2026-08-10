@@ -170,7 +170,7 @@ test('haptics follow the app interaction policy', async ({ page }) => {
   await installHapticProbe(page)
   await expect.poll(() => hapticCalls(page)).toEqual([])
 
-  await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
+  await page.getByRole('button', { name: /Settings Backups and other/ }).click()
   await page.getByRole('button', { name: /Recovery copies/ }).click()
   await page.getByRole('button', { name: 'Create copy now' }).click()
   expect(await hapticCalls(page)).toEqual([28])
@@ -218,10 +218,55 @@ test('haptics follow the app interaction policy', async ({ page }) => {
   await expect.poll(() => hapticCalls(page), { timeout: 4_000 }).toEqual([[5000]])
 })
 
+test('main menu refreshes Android update info when returning or pulling down', async ({ page }) => {
+  let latestBuild = 80
+  await page.route('**/android-release.json*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ build: latestBuild, publishedAt: Date.now() }),
+    })
+  })
+  await page.reload()
+
+  const androidTile = page.getByRole('button', { name: /Android Build/ })
+  await expect(androidTile).toContainText('Build 80 available')
+
+  latestBuild = 81
+  await page.getByRole('button', { name: /Settings Backups and other/ }).click()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(androidTile).toContainText('Build 81 available')
+
+  latestBuild = 82
+  await page.evaluate(() => {
+    window.scrollTo({ top: 0 })
+    const home = document.querySelector('.home')
+    if (!home) throw new Error('Home screen is missing')
+    const dispatchTouch = (type: string, clientY: number, active: boolean) => {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'touches', { value: active ? [{ clientY }] : [] })
+      home.dispatchEvent(event)
+    }
+    dispatchTouch('touchstart', 20, true)
+    dispatchTouch('touchmove', 180, true)
+    dispatchTouch('touchend', 180, false)
+  })
+  await expect(androidTile).toContainText('Build 82 available')
+})
+
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
   const androidTile = page.getByRole('button', { name: /Android (?:Build|Download)/ })
   await expect(androidTile).toBeVisible()
+  await expect(page.locator('.home-tile-text > span')).toHaveText([
+    'History',
+    'Progress',
+    'Program',
+    'Settings',
+    'Account',
+    'Android',
+  ])
+  await expect(page.getByRole('button', { name: /Program Workout plan/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Settings Backups and other/ })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
   const tileHeights = await page.locator('.home-tile').evaluateAll((tiles) =>
@@ -238,7 +283,7 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
   await expectNoHorizontalOverflow(page)
   await page.getByRole('button', { name: 'Close', exact: true }).click()
 
-  await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
+  await page.getByRole('button', { name: /Settings Backups and other/ }).click()
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await expect(page.getByRole('button', { name: 'Export backup', exact: true })).toContainText('Save app data')
@@ -306,7 +351,7 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
 })
 
 test('JSON backups download and can be selected repeatedly before a confirmed import', async ({ page }) => {
-  await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
+  await page.getByRole('button', { name: /Settings Backups and other/ }).click()
 
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: /Export backup/ }).click()
@@ -368,7 +413,7 @@ test('workouts can end early or complete with clear return-home feedback', async
 
   await page.getByRole('button', { name: 'End workout early' }).click()
   await page.getByRole('dialog', { name: 'End workout early?' }).getByRole('button', { name: 'End workout' }).click()
-  const earlySummary = page.getByRole('dialog', { name: 'Ended early' })
+  let earlySummary = page.getByRole('dialog', { name: 'Ended early' })
   await expect(earlySummary).toBeVisible()
   await expect(earlySummary).toContainText(/0\/\d+ done · 1 min/)
   const flagCenters = await earlySummary.locator('.workout-summary-icon svg').evaluate((icon) => {
@@ -385,13 +430,21 @@ test('workouts can end early or complete with clear return-home feedback', async
   expect(Math.abs(flagCenters.drawingCenter - flagCenters.viewBoxCenter)).toBeLessThanOrEqual(0.01)
   expect(Math.abs(flagCenters.renderedCenter - flagCenters.circleCenter)).toBeLessThanOrEqual(0.5)
   await expectNoHorizontalOverflow(page)
+  await earlySummary.getByRole('button', { name: 'Edit duration' }).click()
+  const durationEditor = page.getByRole('dialog', { name: 'Edit duration' })
+  await expect(durationEditor.getByRole('spinbutton', { name: 'Duration hours' })).toHaveValue('0')
+  await expect(durationEditor.getByRole('spinbutton', { name: 'Duration minutes' })).toHaveValue('10')
+  await durationEditor.getByRole('spinbutton', { name: 'Duration minutes' }).fill('45')
+  await durationEditor.getByRole('button', { name: 'Save' }).click()
+  earlySummary = page.getByRole('dialog', { name: 'Ended early' })
+  await expect(earlySummary).toContainText(/0\/\d+ done · 45 min/)
   await earlySummary.getByRole('button', { name: 'Home' }).click()
 
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Resume workout/ })).toHaveCount(0)
   await page.getByRole('button', { name: /History 1 workout/ }).click()
   await expect(page.locator('.hist-chip.ended-early')).toContainText('Ended early')
-  await expect(page.locator('.hist-card').first().locator('.hist-main small').first()).toContainText('1 min')
+  await expect(page.locator('.hist-card').first().locator('.hist-main small').first()).toContainText('45 min')
   await expectAlignedWeekdayLabels(page)
   await expectNoHorizontalOverflow(page)
 
@@ -416,6 +469,10 @@ test('workouts can end early or complete with clear return-home feedback', async
   await expect(completeSummary).toContainText(`${exerciseCount}/${exerciseCount} done · 1 min`)
   await expect(completeSummary.locator('.workout-summary-burst')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
+  await completeSummary.getByRole('button', { name: 'Edit duration' }).click()
+  await expect(page.getByRole('dialog', { name: 'Edit duration' })).toBeVisible()
+  await page.getByRole('dialog', { name: 'Edit duration' }).getByRole('button', { name: 'Cancel' }).click()
+  await expect(completeSummary).toBeVisible()
   await completeSummary.getByRole('button', { name: 'Home' }).click()
 
   await page.getByRole('button', { name: /History 2 workouts/ }).click()
@@ -430,7 +487,7 @@ test('workouts can end early or complete with clear return-home feedback', async
 })
 
 test('programs can be built, edited, activated, and deleted safely', async ({ page }) => {
-  await page.getByRole('button', { name: /Program Current program/ }).click()
+  await page.getByRole('button', { name: /Program Workout plan/ }).click()
   await expect(page.getByRole('heading', { name: 'Programs' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Current program 2 days Active/ })).toBeVisible()
 
@@ -460,10 +517,10 @@ test('programs can be built, edited, activated, and deleted safely', async ({ pa
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await expect(page.getByRole('button', { name: /Three day 3 days Active/ })).toBeVisible()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Program Three day/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Program Workout plan/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /Start workout Up next · Workout Push/ })).toBeVisible()
 
-  await page.getByRole('button', { name: /Program Three day/ }).click()
+  await page.getByRole('button', { name: /Program Workout plan/ }).click()
   await page.getByRole('button', { name: /Three day 3 days Active/ }).click()
   await page.getByRole('button', { name: 'Delete program' }).click()
   const deleteProgram = page.getByRole('dialog', { name: 'Delete program?' })
@@ -472,7 +529,7 @@ test('programs can be built, edited, activated, and deleted safely', async ({ pa
   await expect(page.getByRole('button', { name: /Current program 2 days Active/ })).toBeVisible()
 
   await page.getByRole('button', { name: 'Back', exact: true }).click()
-  await page.getByRole('button', { name: /Settings Timer and backups/ }).click()
+  await page.getByRole('button', { name: /Settings Backups and other/ }).click()
   await page.getByRole('button', { name: /Recovery copies/ }).click()
   const programRecovery = page.getByRole('button', { name: /Before program change/ }).first()
   await expect(programRecovery).toBeVisible()
@@ -495,7 +552,7 @@ test('renaming current templates leaves historic workout names unchanged', async
   })
   await page.reload()
 
-  await page.getByRole('button', { name: /Program Current program/ }).click()
+  await page.getByRole('button', { name: /Program Workout plan/ }).click()
   await page.getByRole('button', { name: /Current program 2 days Active/ }).click()
 
   await page.getByRole('button', { name: 'Rename', exact: true }).click()

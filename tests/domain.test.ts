@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   clampRestValue,
   nextPendingId,
+  recordedWorkoutDurationMilliseconds,
   restSecondsRemaining,
   resultGuidance,
   resultStreak,
@@ -61,13 +62,20 @@ test('rest countdown follows its wall-clock end time', () => {
   assert.equal(restSecondsRemaining(100_000, 120_000), 0)
 })
 
-test('edited workout duration uses minute precision between 10 minutes and 24 hours', () => {
+test('edited workout duration uses minute precision between 10 minutes and 3 hours', () => {
   assert.equal(WORKOUT_DURATION_STEP_SECONDS, 600)
   assert.equal(workoutDurationSeconds(1, 15), 4500)
   assert.equal(workoutDurationSeconds(0, 10), 600)
-  assert.equal(workoutDurationSeconds(23, 59), 86_340)
+  assert.equal(workoutDurationSeconds(3, 0), 10_800)
   assert.equal(workoutDurationSeconds(0, 9), null)
-  assert.equal(workoutDurationSeconds(24, 0), null)
+  assert.equal(workoutDurationSeconds(3, 1), null)
   assert.equal(workoutDurationSeconds(1, 60), null)
   assert.equal(workoutDurationSeconds(1.5, 0), null)
+})
+
+test('recorded workout duration becomes null only after 3 hours', () => {
+  const createdAt = 1_000
+  assert.equal(recordedWorkoutDurationMilliseconds(createdAt, createdAt + 3 * 60 * 60 * 1000), 10_800_000)
+  assert.equal(recordedWorkoutDurationMilliseconds(createdAt, createdAt + 3 * 60 * 60 * 1000 + 1), null)
+  assert.equal(recordedWorkoutDurationMilliseconds(createdAt, undefined), null)
 })

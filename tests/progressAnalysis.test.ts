@@ -168,6 +168,19 @@ test('summary stats use the selected period for totals, completion, weekly avera
   assert.equal(all.averageDuration, 52.5 * 60 * 1000)
 })
 
+test('summary duration ignores workouts over 3 hours while keeping the workout in other stats', () => {
+  const createdAt = NOW - DAY
+  const sessions = [
+    { ...session('three-hours', 1, 30, 7, 'success'), createdAt, finishedAt: createdAt + 3 * 60 * 60 * 1000 },
+    { ...session('over-limit', 1, 32, 7, 'success'), createdAt, finishedAt: createdAt + 3 * 60 * 60 * 1000 + 1 },
+  ]
+
+  const stats = buildProgressStats(sessions, new Set(['three-hours', 'over-limit']), 'all', NOW)
+  assert.equal(stats.total, 2)
+  assert.equal(stats.completionRate, 100)
+  assert.equal(stats.averageDuration, 3 * 60 * 60 * 1000)
+})
+
 test('ended-early workouts include logged attempts without inventing failures for untouched exercises', () => {
   const attempted = {
     ...session('ended-early-attempt', 2, 32, 8, 'failure'),
