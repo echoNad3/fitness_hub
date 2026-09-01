@@ -1,9 +1,11 @@
-# Free-tier Supabase pauses a project after 7 days without API activity.
-# This queries the database twice a week so that never happens.
+# Free-tier Supabase can pause a project after 7 days without enough database activity.
+# Supabase says a few user database requests each day are typically sufficient, so this
+# makes one small read every six hours. Four daily requests are negligible traffic while
+# leaving room for an occasional delayed GitHub schedule.
 #
 # The URL and key are the same public-safe values the app ships in src/cloudConfig.ts:
 # Row Level Security protects the data, so an anonymous request returns no rows —
-# but it still counts as activity.
+# but PostgREST still executes the database request.
 #
 # Note: GitHub suspends scheduled workflows in repos with no commits for 60 days
 # (it emails a warning first; one click re-enables). Any push also resets that clock.
@@ -12,7 +14,7 @@ name: Keep Supabase active
 
 on:
   schedule:
-    - cron: '43 4 * * 1,4' # Mondays and Thursdays, 04:43 UTC
+    - cron: '43 1,7,13,19 * * *' # Every six hours, away from the busiest top-of-hour window
   workflow_dispatch:
   push:
     paths:
@@ -20,15 +22,47 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: keep-supabase-active
+  cancel-in-progress: false
+
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - name: Query the database through the REST API
+        env:
+          SUPABASE_URL: https://jrsowjbxenkrmzzknnab.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_Gc5rYVcaimTXhAcy4tSwdg_Kk0SlyHJ
         run: |
-          url='https://jrsowjbxenkrmzzknnab.supabase.co/rest/v1/app_state?select=user_id&limit=1'
-          key='sb_publishable_Gc5rYVcaimTXhAcy4tSwdg_Kk0SlyHJ'
-          status=$(curl -s -o /dev/null -w '%{http_code}' \
-            -H "apikey: $key" -H "Authorization: Bearer $key" "$url")
-          echo "Supabase answered HTTP $status"
-          test "$status" = '200' || test "$status" = '206'
+          set -euo pipefail
+
+          endpoint="${SUPABASE_URL}/rest/v1/app_state?select=user_id&limit=1"
+          status="$(
+            curl \
+              --silent \
+              --show-error \
+              --output /dev/null \
+              --write-out '%{http_code}' \
+              --connect-timeout 15 \
+              --max-time 30 \
+              --retry 3 \
+              --retry-delay 2 \
+              --retry-all-errors \
+              --header "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+              --header "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}" \
+              --header 'Accept: application/json' \
+              --header 'Cache-Control: no-cache' \
+              --header 'Prefer: count=exact' \
+              "$endpoint"
+          )"
+
+          echo "Supabase database read answered HTTP ${status}"
+          case "$status" in
+            200|206) ;;
+            *)
+              echo "Supabase keepalive failed with HTTP ${status}" >&2
+              exit 1
+              ;;
+          esac
