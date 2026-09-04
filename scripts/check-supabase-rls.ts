@@ -1,6 +1,27 @@
+import { readFile } from 'node:fs/promises'
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '../src/cloudConfig.ts'
 
 const tables = ['app_state', 'app_recovery_snapshots', 'app_recovery_deletions']
+const schemaSql = `${await readFile('supabase/app_state.sql', 'utf8')}\n${await readFile('supabase/recovery_snapshots.sql', 'utf8')}`
+  .replace(/\s+/g, ' ')
+  .toLowerCase()
+
+function requireSchemaRule(rule: string) {
+  if (!schemaSql.includes(rule.replace(/\s+/g, ' ').toLowerCase())) {
+    throw new Error(`Checked-in Supabase security rule is missing: ${rule}`)
+  }
+}
+
+for (const table of tables) {
+  requireSchemaRule(`alter table public.${table} enable row level security;`)
+  requireSchemaRule(`revoke all on public.${table} from anon;`)
+}
+
+for (const table of tables) {
+  requireSchemaRule(`on public.${table} for select using (auth.uid() = user_id);`)
+  requireSchemaRule(`on public.${table} for insert with check (auth.uid() = user_id);`)
+  requireSchemaRule(`on public.${table} for update using (auth.uid() = user_id) with check (auth.uid() = user_id);`)
+}
 
 for (const table of tables) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=user_id&limit=1`, {
@@ -28,4 +49,4 @@ for (const table of tables) {
   }
 }
 
-console.log('Supabase RLS check passed: anonymous clients can read zero app data or recovery rows.')
+console.log('Supabase RLS check passed: live anonymous reads return zero rows and checked-in writes are owner-only.')

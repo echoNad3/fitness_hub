@@ -171,6 +171,14 @@ test('haptics follow the app interaction policy', async ({ page }) => {
   await expect.poll(() => hapticCalls(page)).toEqual([])
 
   await page.getByRole('button', { name: /Settings Backups and other/ }).click()
+  const tapTargets = await page.locator('.page-head .ws-back, .set-stepper button').evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const rect = button.getBoundingClientRect()
+      return { width: rect.width, height: rect.height }
+    }),
+  )
+  expect(tapTargets.length).toBeGreaterThan(0)
+  expect(tapTargets.every(({ width, height }) => width >= 48 && height >= 48)).toBe(true)
   await page.getByRole('button', { name: /Recovery copies/ }).click()
   await page.getByRole('button', { name: 'Create copy now' }).click()
   expect(await hapticCalls(page)).toEqual([28])
@@ -508,6 +516,11 @@ test('workouts can end early or complete with clear return-home feedback', async
   expect(earlyDurationStyle.minHeight).toBe('48px')
   await earlyDurationAction.click()
   const durationEditor = page.getByRole('dialog', { name: 'Edit duration' })
+  for (const label of ['Decrease duration', 'Increase duration']) {
+    const button = durationEditor.getByRole('button', { name: label })
+    await expect(button).toHaveCSS('width', '48px')
+    await expect(button).toHaveCSS('height', '48px')
+  }
   await expect(durationEditor.getByRole('spinbutton', { name: 'Duration hours' })).toHaveValue('0')
   await expect(durationEditor.getByRole('spinbutton', { name: 'Duration minutes' })).toHaveValue('10')
   await durationEditor.getByRole('spinbutton', { name: 'Duration minutes' }).fill('45')

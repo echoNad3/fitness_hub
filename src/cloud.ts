@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, isCloudConfigured } from './cloudConfig'
+import { saveNewestCloudState } from './cloudWrite'
 import type { RecoverySnapshot } from './recovery'
 
 // Null when cloud is not configured, so the app degrades to offline-only.
@@ -36,13 +37,43 @@ export async function loadCloudState(userId: string): Promise<CloudState | null>
 
 export async function saveCloudState(userId: string, data: unknown, updatedAt: number) {
   const timestamp = new Date(updatedAt).toISOString()
-  const { error } = await requireClient()
-    .from('app_state')
-    .upsert({ user_id: userId, data, updated_at: timestamp }, { onConflict: 'user_id' })
+  const client = requireClient()
 
-  if (error) {
-    throw new Error(error.message)
-  }
+  await saveNewestCloudState(
+    {
+      updateIfOlder: async () => {
+        const { data: updated, error } = await client
+          .from('app_state')
+          .update({ data, updated_at: timestamp })
+          .eq('user_id', userId)
+          .lt('updated_at', timestamp)
+          .select('updated_at')
+          .maybeSingle()
+        if (error) throw new Error(error.message)
+        return updated !== null
+      },
+      insert: async () => {
+        const { error } = await client
+          .from('app_state')
+          .insert({ user_id: userId, data, updated_at: timestamp })
+        if (!error) return 'inserted'
+        if (error.code === '23505') return 'conflict'
+        throw new Error(error.message)
+      },
+      readUpdatedAt: async () => {
+        const { data: current, error } = await client
+          .from('app_state')
+          .select('updated_at')
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (error) throw new Error(error.message)
+        if (!current) return null
+        const parsed = Date.parse(current.updated_at)
+        return Number.isFinite(parsed) ? parsed : null
+      },
+    },
+    updatedAt,
+  )
 }
 
 export async function loadCloudRecoverySnapshots(userId: string): Promise<unknown[]> {

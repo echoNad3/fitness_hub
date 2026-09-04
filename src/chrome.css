@@ -9,6 +9,7 @@
   align-content: start;
   gap: 12px;
   background:
+    linear-gradient(90deg, transparent 72%, var(--bg) 100%),
     radial-gradient(circle at 82% -8%, var(--page-glow), transparent 30%),
     var(--bg);
 }
@@ -16,7 +17,7 @@
 .page-head {
   padding: 4px 0 6px;
   display: grid;
-  grid-template-columns: 42px 1fr;
+  grid-template-columns: var(--tap) 1fr;
   align-items: center;
   gap: 12px;
 }
@@ -420,8 +421,10 @@
    and a slightly bolder/larger glyph. */
 .set-stepper button {
   flex: none;
-  width: 42px;
-  height: 42px;
+  width: var(--tap);
+  height: var(--tap);
+  min-width: var(--tap);
+  min-height: var(--tap);
   display: grid;
   place-items: center;
   color: var(--accent-text);

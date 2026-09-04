@@ -3,7 +3,6 @@ import { getStored, setStored } from './storage.ts'
 export const RECOVERY_STORAGE_KEY = 'fitness-hub-recovery-v1'
 export const MAX_AUTOMATIC_RECOVERY_COPIES = 3
 export const MAX_RECOVERY_COPY_BYTES = 10 * 1024 * 1024
-const MAX_RECOVERY_TOMBSTONES = 20
 
 export const RECOVERY_REASONS = [
   'automatic',
@@ -94,7 +93,9 @@ export function createRecoverySnapshot(
 }
 
 function uniqueIds(ids: string[]) {
-  return [...new Set(ids.filter((id) => id.trim().length > 0))].slice(-MAX_RECOVERY_TOMBSTONES)
+  // A deletion record must outlive every offline device that could still hold the old copy.
+  // Truncating this list can resurrect an older cloud copy, so tombstones are intentionally kept.
+  return [...new Set(ids.filter((id) => id.trim().length > 0))]
 }
 
 function keepNewest(copies: RecoverySnapshot[]) {

@@ -83,6 +83,17 @@ test('offline deletions stay deleted when cloud copies merge later', () => {
   assert.deepEqual(merged.copies.map((entry) => entry.id), ['first'])
 })
 
+test('offline deletion records are never truncated', () => {
+  let store = emptyRecoveryStore()
+  for (let index = 1; index <= 50; index += 1) {
+    store = deleteRecoverySnapshot(store, `deleted-${index}`)
+  }
+
+  assert.equal(store.deletedIds.length, 50)
+  assert.equal(store.deletedIds[0], 'deleted-1')
+  assert.equal(store.deletedIds.at(-1), 'deleted-50')
+})
+
 test('local and cloud copies merge while only old automatic copies are pruned', () => {
   const merged = mergeRecoverySnapshots(
     [copy('local-new', 4), copy('shared', 2)],
@@ -129,4 +140,6 @@ test('Supabase accepts every client recovery reason', () => {
   for (const reason of RECOVERY_REASONS) {
     assert.equal(recoverySql.includes(`'${reason}'`), true, `Missing SQL recovery reason: ${reason}`)
   }
+  assert.equal(recoverySql.includes('offset 20'), false)
+  assert.equal(recoverySql.includes('create trigger trim_app_recovery_deletions_after_write'), false)
 })

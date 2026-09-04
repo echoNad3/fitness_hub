@@ -119,29 +119,7 @@ create policy "Users update their recovery deletions"
 revoke all on public.app_recovery_deletions from anon;
 grant select, insert, update on public.app_recovery_deletions to authenticated;
 
-create or replace function public.trim_app_recovery_deletions()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  delete from public.app_recovery_deletions
-  where user_id = new.user_id
-    and id in (
-      select id
-      from public.app_recovery_deletions
-      where user_id = new.user_id
-      order by deleted_at desc, id desc
-      offset 20
-    );
-  return new;
-end;
-$$;
-
-revoke all on function public.trim_app_recovery_deletions() from public;
-
+-- Tombstones must outlive every offline device that can still hold a deleted recovery copy.
+-- Earlier versions kept only 20, which could let an old copy return after enough later deletions.
 drop trigger if exists trim_app_recovery_deletions_after_write on public.app_recovery_deletions;
-create trigger trim_app_recovery_deletions_after_write
-after insert or update on public.app_recovery_deletions
-for each row execute function public.trim_app_recovery_deletions();
+drop function if exists public.trim_app_recovery_deletions();

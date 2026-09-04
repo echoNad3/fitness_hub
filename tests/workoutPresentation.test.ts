@@ -63,6 +63,19 @@ function colorDistance(first: string, second: string) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 }
 
+function contrastRatio(first: string, second: string) {
+  const luminance = (hex: string) => {
+    const value = Number.parseInt(hex.slice(1), 16)
+    return (
+      0.2126 * srgbToLinear(value >> 16) +
+      0.7152 * srgbToLinear((value >> 8) & 255) +
+      0.0722 * srgbToLinear(value & 255)
+    )
+  }
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
 test('muscle chips use the approved editor order', () => {
   assert.deepEqual(CATEGORIES, ['CHEST', 'BACK', 'SHOULDERS', 'TRICEPS', 'BICEPS', 'CORE', 'LEGS'])
 })
@@ -106,4 +119,8 @@ test('muscle colors stay separate from UI status colors', () => {
       )
     }
   }
+})
+
+test('quiet small text meets normal-text contrast on card surfaces', () => {
+  assert.ok(contrastRatio(themeColor('--quiet'), themeColor('--surface')) >= 4.5)
 })

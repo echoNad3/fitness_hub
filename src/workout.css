@@ -35,8 +35,8 @@
 }
 
 .ws-back {
-  width: 42px;
-  height: 42px;
+  width: var(--tap);
+  height: var(--tap);
   display: grid;
   place-items: center;
   color: var(--text);
