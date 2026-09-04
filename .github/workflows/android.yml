@@ -110,6 +110,6 @@ jobs:
             android-release/app-debug.apk.sha256
 
       - name: Refresh the deployed Android version metadata
-        run: gh workflow run deploy.yml --ref main -f android_build=${{ github.run_number }}
+        run: gh workflow run deploy.yml --repo "${GITHUB_REPOSITORY}" --ref main -f android_build=${{ github.run_number }}
         env:
           GH_TOKEN: ${{ github.token }}
