@@ -581,11 +581,35 @@ label.choice:focus-within {
 }
 
 .workout-summary-copy {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
   color: var(--muted);
   font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
   line-height: 1.35;
   text-align: center;
+}
+
+.workout-summary-duration {
+  min-height: var(--tap);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  color: var(--accent-text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  font: inherit;
+  font-weight: var(--fw-semibold);
+}
+
+.workout-summary-duration svg {
+  flex: 0 0 auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -77,6 +77,20 @@
 
 .home-top {
   padding: 4px 2px 2px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.home-logo {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.home-heading {
+  min-width: 0;
 }
 
 .home-top h1 {

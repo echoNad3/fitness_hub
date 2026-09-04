@@ -296,6 +296,7 @@ test('main menu refreshes Android update info when returning or pulling down', a
 
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
+  await expect(page.locator('.home-logo')).toHaveAttribute('src', /app-icon\.svg$/)
   const androidTile = page.getByRole('button', { name: /Android (?:Build|Download)/ })
   await expect(androidTile).toBeVisible()
   await expect(page.locator('.home-tile-text > span')).toHaveText([
@@ -363,10 +364,16 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
   await expect(attemptDialog.getByRole('button', { name: 'No attempt' })).toBeVisible()
   await attemptDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
+  await page.locator('.ws-item-head').nth(3).click()
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveClass(/\bdone\b/)
+  await expect(page.getByRole('button', { name: 'Keep weight', exact: true })).toHaveClass(/\bfailed\b/)
+  await page.locator('.ws-item-head').first().click()
+
   await page.getByRole('button', { name: 'Edit workout' }).click()
   await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Add exercise' })).toBeVisible()
-  await expect(page.locator('.ex-muscles').first().getByRole('button')).toHaveText([
+  const openEditor = page.locator('.ws-item.editing.open')
+  await expect(openEditor.locator('.ex-muscles').getByRole('button')).toHaveText([
     'Chest',
     'Back',
     'Shoulders',
@@ -375,7 +382,7 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
     'Core',
     'Legs',
   ])
-  const selectedMuscle = page.locator('.ex-muscle.sel').first()
+  const selectedMuscle = openEditor.locator('.ex-muscle.sel')
   await expect(selectedMuscle).toHaveCSS('color', 'rgb(244, 245, 248)')
   const selectedMuscleColors = await selectedMuscle.evaluate((element) => {
     const styles = getComputedStyle(element)
@@ -456,7 +463,7 @@ test('workouts can end early or complete with clear return-home feedback', async
   await page.getByRole('dialog', { name: 'End workout early?' }).getByRole('button', { name: 'End workout' }).click()
   let earlySummary = page.getByRole('dialog', { name: 'Ended early' })
   await expect(earlySummary).toBeVisible()
-  await expect(earlySummary).toContainText(/0\/\d+ done · 1 min/)
+  await expect(earlySummary.locator('.workout-summary-copy > span').first()).toHaveText(/0\/\d+ done/)
   const flagCenters = await earlySummary.locator('.workout-summary-icon svg').evaluate((icon) => {
     const iconBox = icon.getBoundingClientRect()
     const circleBox = icon.parentElement?.getBoundingClientRect()
@@ -471,14 +478,27 @@ test('workouts can end early or complete with clear return-home feedback', async
   expect(Math.abs(flagCenters.drawingCenter - flagCenters.viewBoxCenter)).toBeLessThanOrEqual(0.01)
   expect(Math.abs(flagCenters.renderedCenter - flagCenters.circleCenter)).toBeLessThanOrEqual(0.5)
   await expectNoHorizontalOverflow(page)
-  await earlySummary.getByRole('button', { name: 'Edit duration' }).click()
+  const earlyDurationAction = earlySummary.getByRole('button', { name: 'Edit duration' })
+  await expect(earlyDurationAction).toContainText('1 min')
+  const earlyDurationStyle = await earlyDurationAction.evaluate((button) => {
+    const style = getComputedStyle(button)
+    return {
+      borderBottomStyle: style.borderBottomStyle,
+      textDecorationLine: style.textDecorationLine,
+      minHeight: style.minHeight,
+    }
+  })
+  expect(earlyDurationStyle.borderBottomStyle).toBe('none')
+  expect(earlyDurationStyle.textDecorationLine).toBe('none')
+  expect(earlyDurationStyle.minHeight).toBe('48px')
+  await earlyDurationAction.click()
   const durationEditor = page.getByRole('dialog', { name: 'Edit duration' })
   await expect(durationEditor.getByRole('spinbutton', { name: 'Duration hours' })).toHaveValue('0')
   await expect(durationEditor.getByRole('spinbutton', { name: 'Duration minutes' })).toHaveValue('10')
   await durationEditor.getByRole('spinbutton', { name: 'Duration minutes' }).fill('45')
   await durationEditor.getByRole('button', { name: 'Save' }).click()
   earlySummary = page.getByRole('dialog', { name: 'Ended early' })
-  await expect(earlySummary).toContainText(/0\/\d+ done · 45 min/)
+  await expect(earlySummary.getByRole('button', { name: 'Edit duration' })).toContainText('45 min')
   await earlySummary.getByRole('button', { name: 'Home' }).click()
 
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
@@ -507,7 +527,8 @@ test('workouts can end early or complete with clear return-home feedback', async
 
   const completeSummary = page.getByRole('dialog', { name: 'Workout complete' })
   await expect(completeSummary).toBeVisible()
-  await expect(completeSummary).toContainText(`${exerciseCount}/${exerciseCount} done · 1 min`)
+  await expect(completeSummary.locator('.workout-summary-copy > span').first()).toHaveText(`${exerciseCount}/${exerciseCount} done`)
+  await expect(completeSummary.getByRole('button', { name: 'Edit duration' })).toContainText('1 min')
   await expect(completeSummary.locator('.workout-summary-burst')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
   await completeSummary.getByRole('button', { name: 'Edit duration' }).click()

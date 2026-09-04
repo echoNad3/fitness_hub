@@ -2524,9 +2524,17 @@ function App() {
         )}
         <div className="home-pull-content" style={{ transform: `translateY(${Math.round(homePullDistance)}px)` }}>
           <header className="home-top">
-          <h1>Fitness Hub</h1>
-          <p className="home-sub">{formatMenuDate()}</p>
-        </header>
+            <img
+              className="home-logo"
+              src={`${import.meta.env.BASE_URL}app-icon.svg`}
+              alt=""
+              aria-hidden="true"
+            />
+            <div className="home-heading">
+              <h1>Fitness Hub</h1>
+              <p className="home-sub">{formatMenuDate()}</p>
+            </div>
+          </header>
 
         {resumable && (
           <button
@@ -3665,7 +3673,7 @@ function App() {
                       Apply
                     </button>
                     <button
-                      className="ws-resultbtn"
+                      className="ws-resultbtn failed"
                       type="button"
                       disabled={readOnly}
                       onClick={() => cancelIncrease(session.id, group.id, variant.id)}
@@ -5156,12 +5164,18 @@ function App() {
                 </span>
               </div>
               <p className="workout-summary-copy">
-                {doneCount}/{total} done{duration === null ? '' : ` · ${formatWorkoutDuration(duration)}`}
+                <span>{doneCount}/{total} done</span>
+                <span aria-hidden="true">·</span>
+                <button
+                  className="workout-summary-duration"
+                  type="button"
+                  aria-label="Edit duration"
+                  onClick={() => openDurationEditor(session)}
+                >
+                  <span>{duration === null ? 'Set duration' : formatWorkoutDuration(duration)}</span>
+                  <Icon name="edit" size={16} />
+                </button>
               </p>
-              <button className="choice workout-summary-edit" type="button" onClick={() => openDurationEditor(session)}>
-                <Icon name="clock" size={18} />
-                <span>Edit duration</span>
-              </button>
               <div className="dialog-actions">
                 <button type="button" onClick={() => setWorkoutSummaryDialog(null)}>
                   Stay
