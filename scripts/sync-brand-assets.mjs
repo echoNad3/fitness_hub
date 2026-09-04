@@ -172,6 +172,20 @@ function markSvg(scale = 1) {
   )
 }
 
+function croppedMarkSvg() {
+  const left = Math.min(...approvedArtwork.mark.map(({ x }) => x))
+  const top = Math.min(...approvedArtwork.mark.map(({ y }) => y))
+  const right = Math.max(...approvedArtwork.mark.map(({ x, width }) => x + width))
+  const bottom = Math.max(...approvedArtwork.mark.map(({ y, height }) => y + height))
+  const rectMarkup = approvedArtwork.mark
+    .map(
+      ({ x, y, width, height, rx, fill }) =>
+        `  <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${rx}" fill="${fill}" />`,
+    )
+    .join('\n')
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${left} ${top} ${right - left} ${bottom - top}">\n  <!-- ${generatedNotice} Transparent UI mark. -->\n${rectMarkup}\n</svg>\n`
+}
+
 function adaptiveIconXml() {
   return `<?xml version="1.0" encoding="utf-8"?>
 <!-- ${generatedNotice} -->
@@ -200,6 +214,7 @@ function makeIco(png) {
 
 const textOutputs = new Map([
   ['public/app-icon.svg', canonicalSvg],
+  ['public/logo-mark.svg', croppedMarkSvg()],
   [
     'android/app/src/main/res/drawable/splash_logo.xml',
     androidVector(288, { bakeScale: true }),
@@ -331,7 +346,8 @@ if (checkOnly) {
 
 const requiredReferences = [
   ['index.html', ['%BASE_URL%app-icon.svg', '<img', 'app-icon.svg']],
-  ['vite.config.ts', ['app-icon.svg', 'pwa-64x64.png', 'pwa-192x192.png', 'pwa-512x512.png']],
+  ['vite.config.ts', ['app-icon.svg', 'logo-mark.svg', 'pwa-64x64.png', 'pwa-192x192.png', 'pwa-512x512.png']],
+  ['src/App.tsx', ['logo-mark.svg']],
   ['android/app/src/main/res/values/styles.xml', ['@drawable/splash_logo']],
 ]
 for (const [relativePath, needles] of requiredReferences) {

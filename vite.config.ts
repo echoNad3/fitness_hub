@@ -42,7 +42,7 @@ export default defineConfig({
     },
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['app-icon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
+      includeAssets: ['app-icon.svg', 'logo-mark.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         id: base,
         name: 'Fitness Hub',

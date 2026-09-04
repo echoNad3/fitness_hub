@@ -2529,7 +2529,7 @@ function App() {
               <p className="home-sub">{formatMenuDate()}</p>
             </div>
             <span className="home-logo" aria-hidden="true">
-              <img src={`${import.meta.env.BASE_URL}app-icon.svg`} alt="" />
+              <img src={`${import.meta.env.BASE_URL}logo-mark.svg`} alt="" />
             </span>
           </header>
 

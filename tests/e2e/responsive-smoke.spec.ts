@@ -296,7 +296,7 @@ test('main menu refreshes Android update info when returning or pulling down', a
 
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
-  await expect(page.locator('.home-logo img')).toHaveAttribute('src', /app-icon\.svg$/)
+  await expect(page.locator('.home-logo img')).toHaveAttribute('src', /logo-mark\.svg$/)
   const homeBrandMetrics = await page.locator('.home-top').evaluate((header) => {
     const heading = header.querySelector<HTMLElement>('.home-heading')?.getBoundingClientRect()
     const logo = header.querySelector<HTMLElement>('.home-logo')?.getBoundingClientRect()
@@ -309,7 +309,8 @@ test('home, dialogs, settings, and workout stay usable on phone layouts', async 
     }
   })
   expect(homeBrandMetrics.logoAfterHeading).toBe(true)
-  expect(Math.abs(homeBrandMetrics.logoHeight - homeBrandMetrics.headingHeight)).toBeLessThanOrEqual(2)
+  expect(homeBrandMetrics.logoHeight).toBe(38)
+  expect(homeBrandMetrics.logoHeight).toBeLessThan(homeBrandMetrics.headingHeight)
   expect(homeBrandMetrics.rightGap).toBe(2)
   const androidTile = page.getByRole('button', { name: /Android (?:Build|Download)/ })
   await expect(androidTile).toBeVisible()
