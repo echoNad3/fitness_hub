@@ -79,17 +79,31 @@
   padding: 4px 2px 2px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
 }
 
 .home-logo {
-  width: 52px;
+  position: relative;
+  width: 108px;
   height: 52px;
   flex: 0 0 auto;
   display: block;
+  overflow: hidden;
+}
+
+.home-logo img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 140px;
+  height: 140px;
+  max-width: none;
+  transform: translate(-50%, -50%);
 }
 
 .home-heading {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

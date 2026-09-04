@@ -296,7 +296,21 @@ test('main menu refreshes Android update info when returning or pulling down', a
 
 test('home, dialogs, settings, and workout stay usable on phone layouts', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
-  await expect(page.locator('.home-logo')).toHaveAttribute('src', /app-icon\.svg$/)
+  await expect(page.locator('.home-logo img')).toHaveAttribute('src', /app-icon\.svg$/)
+  const homeBrandMetrics = await page.locator('.home-top').evaluate((header) => {
+    const heading = header.querySelector<HTMLElement>('.home-heading')?.getBoundingClientRect()
+    const logo = header.querySelector<HTMLElement>('.home-logo')?.getBoundingClientRect()
+    if (!heading || !logo) throw new Error('Home branding is missing')
+    return {
+      logoAfterHeading: logo.left > heading.left,
+      logoHeight: Math.round(logo.height),
+      headingHeight: Math.round(heading.height),
+      rightGap: Math.round(header.getBoundingClientRect().right - logo.right),
+    }
+  })
+  expect(homeBrandMetrics.logoAfterHeading).toBe(true)
+  expect(Math.abs(homeBrandMetrics.logoHeight - homeBrandMetrics.headingHeight)).toBeLessThanOrEqual(2)
+  expect(homeBrandMetrics.rightGap).toBe(2)
   const androidTile = page.getByRole('button', { name: /Android (?:Build|Download)/ })
   await expect(androidTile).toBeVisible()
   await expect(page.locator('.home-tile-text > span')).toHaveText([

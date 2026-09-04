@@ -2524,16 +2524,13 @@ function App() {
         )}
         <div className="home-pull-content" style={{ transform: `translateY(${Math.round(homePullDistance)}px)` }}>
           <header className="home-top">
-            <img
-              className="home-logo"
-              src={`${import.meta.env.BASE_URL}app-icon.svg`}
-              alt=""
-              aria-hidden="true"
-            />
             <div className="home-heading">
               <h1>Fitness Hub</h1>
               <p className="home-sub">{formatMenuDate()}</p>
             </div>
+            <span className="home-logo" aria-hidden="true">
+              <img src={`${import.meta.env.BASE_URL}app-icon.svg`} alt="" />
+            </span>
           </header>
 
         {resumable && (
