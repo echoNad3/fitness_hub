@@ -61,7 +61,7 @@ import {
   saveBackupFile,
 } from './backupFiles'
 import { hideLaunchScreen } from './launchScreen'
-import { checkForAppUpdate } from './pwaUpdates'
+import { checkForAppUpdate, prepareAppUpdate } from './pwaUpdates'
 import { parseStoredRestTimer, restAlertDue } from './restTimerState'
 import {
   addRecoverySnapshot,
@@ -985,9 +985,14 @@ function App() {
       setHomeRefreshing(true)
     }
 
-    checkForAppUpdate(true)
+    let updateReady = false
+    if (!animated) checkForAppUpdate(true)
     try {
-      await refreshVersionInfo(true)
+      const [ready] = await Promise.all([
+        animated ? prepareAppUpdate() : Promise.resolve(false),
+        refreshVersionInfo(true),
+      ])
+      updateReady = ready
     } finally {
       if (animated) {
         const remaining = HOME_REFRESH_MINIMUM_MS - (Date.now() - startedAt)
@@ -999,6 +1004,11 @@ function App() {
         homePullDistanceRef.current = 0
         setHomePullDistance(0)
       }
+    }
+    // The user may have left Home or opened a dialog while the update downloaded.
+    if (updateReady && screenRef.current.name === 'main' && !dialogOpenRef.current &&
+      !editModeRef.current && document.visibilityState === 'visible') {
+      window.location.reload()
     }
   }, [refreshVersionInfo])
 
