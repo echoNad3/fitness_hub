@@ -1,6 +1,8 @@
-import type { ProgressMetric, ProgressSeries } from './progressAnalysis'
+import { useState } from 'react'
+import type { ProgressMetric, ProgressPoint, ProgressSeries } from './progressAnalysis'
 import { formatProgressValue } from './progressAnalysis'
 import { muscleColor } from './workoutPresentation'
+import { haptics } from './haptics'
 
 const CHART_WIDTH = 320
 const CHART_HEIGHT = 224
@@ -63,8 +65,24 @@ function changeLabel(points: ProgressSeries['points']) {
   return `${change > 0 ? '+' : '−'}${formatProgressValue(Math.abs(change))}`
 }
 
-export function ProgressChart({ series, metric }: { series: ProgressSeries; metric: ProgressMetric }) {
+export function ProgressChart({ series, metric, onOpenWorkout }: {
+  series: ProgressSeries
+  metric: ProgressMetric
+  onOpenWorkout: (sessionId: string) => void
+}) {
   const points = series.points
+  const [selectedSessionId, setSelectedSessionId] = useState(points[points.length - 1].sessionId)
+  const matchingIndex = points.findIndex((point) => point.sessionId === selectedSessionId)
+  const selectedIndex = matchingIndex < 0 ? points.length - 1 : matchingIndex
+  const selectedPoint = points[selectedIndex]
+  const selectPoint = (point: ProgressPoint) => {
+    if (point.sessionId === selectedPoint.sessionId) return
+    setSelectedSessionId(point.sessionId)
+    void haptics.selection()
+  }
+  const weightLabel = (point: ProgressPoint) => `${point.load} kg ${point.perHand ? 'per hand' : 'total'}`
+  const pointLabel = (point: ProgressPoint) =>
+    `${formatPointDate(point.createdAt)} · ${weightLabel(point)} · ${point.reps} reps · ${point.result === 'success' ? 'Done' : 'Failed'}`
   const values = points.map((point) => point.value)
   const dates = points.map((point) => point.createdAt)
   const minDate = Math.min(...dates)
@@ -89,7 +107,7 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries; metr
           { value: minDate + dateRange / 2, anchor: 'middle' as const },
           { value: maxDate, anchor: 'end' as const },
         ]
-  const chartLabel = metric === 'load' ? 'Total load' : 'Estimated one rep max'
+  const chartLabel = metric === 'load' ? 'Logged weight' : 'Estimated one rep max'
   const latest = series.points[series.points.length - 1]
   const change = latest.value - series.points[0].value
   const color = muscleColor(series.category)
@@ -102,7 +120,7 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries; metr
       <svg
         className="progress-chart"
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        role="img"
+        role="group"
         aria-label={`${series.name} ${chartLabel.toLowerCase()} chart`}
       >
         <title>{chartLabel} over time</title>
@@ -129,9 +147,18 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries; metr
             <path className="progress-series-path" d={path} stroke={color} />
           )}
           {series.points.map((point) => (
+            <g className="progress-point-control" key={point.sessionId} role="button" tabIndex={0}
+              aria-label={pointLabel(point)} aria-pressed={point.sessionId === selectedPoint.sessionId}
+              onClick={() => selectPoint(point)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  selectPoint(point)
+                }
+              }}>
+            <circle className="progress-point-hit" cx={x(point.createdAt)} cy={y(point.value)} r={14} />
             <circle
               className={`progress-point${point.result === 'failure' ? ' failed' : ''}`}
-              key={point.sessionId}
               cx={x(point.createdAt)}
               cy={y(point.value)}
               r={3.5}
@@ -139,9 +166,10 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries; metr
               stroke={color}
             >
               <title>
-                {`${series.name} · ${formatPointDate(point.createdAt)} · ${formatProgressValue(point.value)} · ${point.reps} ${point.reps === 1 ? 'rep' : 'reps'} · ${point.result === 'success' ? 'Done' : 'Failed'}`}
+                {pointLabel(point)}
               </title>
             </circle>
+            </g>
           ))}
         </g>
       </svg>
@@ -149,15 +177,47 @@ export function ProgressChart({ series, metric }: { series: ProgressSeries; metr
       <div className="progress-chart-summary" aria-label="Exercise summary">
         <span>
           <small>Latest</small>
-          <strong>{formatProgressValue(latest.value)}</strong>
+          <strong>{metric === 'load' ? `${latest.load} kg` : formatProgressValue(latest.value)}</strong>
+          <span className="progress-weight-context">{latest.perHand ? 'per hand' : 'total'}</span>
         </span>
         <span>
-          <small>Trend</small>
+          <small>Period change</small>
           <strong className={change > 0 ? 'up' : change < 0 ? 'down' : undefined}>
             {changeLabel(series.points)}
           </strong>
         </span>
       </div>
+
+      <section className="progress-attempt" aria-label="Selected attempt">
+        <div className="progress-attempt-nav">
+          <button type="button" className="progress-nav-button" aria-label="Previous attempt" disabled={selectedIndex === 0}
+            onClick={() => selectPoint(points[selectedIndex - 1])}>←</button>
+          <span aria-live="polite">Attempt {selectedIndex + 1} of {points.length}</span>
+          <button type="button" className="progress-nav-button" aria-label="Next attempt" disabled={selectedIndex === points.length - 1}
+            onClick={() => selectPoint(points[selectedIndex + 1])}>→</button>
+        </div>
+        <div className="progress-attempt-detail" aria-live="polite" aria-atomic="true">
+          <strong>{formatPointDate(selectedPoint.createdAt)}</strong>
+          <span>{weightLabel(selectedPoint)} · {selectedPoint.reps} reps</span>
+          <span className={selectedPoint.result === 'success' ? 'result-done' : 'result-failed'}>
+            {selectedPoint.result === 'success' ? 'Done' : 'Failed'}
+            {metric === 'estimated-1rm' ? ` · Estimated 1RM ${formatProgressValue(selectedPoint.value)}` : ''}
+          </span>
+        </div>
+        <button className="progress-text-action" type="button" onClick={() => onOpenWorkout(selectedPoint.sessionId)}>Open workout</button>
+      </section>
+      <details className="progress-attempts">
+        <summary>All attempts ({points.length})</summary>
+        <div className="progress-attempt-list">
+          {points.map((point) => (
+            <button type="button" key={point.sessionId} aria-pressed={point.sessionId === selectedPoint.sessionId}
+              onClick={() => selectPoint(point)}>
+              <strong>{formatPointDate(point.createdAt)}</strong>
+              <span>{weightLabel(point)} · {point.reps} reps · {point.result === 'success' ? 'Done' : 'Failed'}</span>
+            </button>
+          ))}
+        </div>
+      </details>
     </>
   )
 }

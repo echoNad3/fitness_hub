@@ -8,8 +8,8 @@
    neutral discard (✕) on the left. */
 .ws-edit-toggle.saving {
   color: var(--white);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-action);
+  border-color: var(--accent-action);
 }
 
 /* Edit-mode items and the add button ease in when the pencil is tapped. */
@@ -102,7 +102,7 @@
 
 .ws-editor-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 164px), 1fr));
   gap: 10px;
   align-items: end;
 }
@@ -117,6 +117,34 @@
   border-radius: var(--radius-control);
   font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
+}
+
+.target-number {
+  flex: 0 0 var(--tap);
+  width: var(--tap);
+  min-width: 0;
+  height: var(--tap);
+  padding: 0 2px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  text-align: center;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+
+.target-number::-webkit-outer-spin-button,
+.target-number::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.target-number:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .ws-editor-input:focus-visible {
@@ -152,7 +180,7 @@
 
 .ex-segment button.sel {
   color: var(--white);
-  background: var(--accent);
+  background: var(--accent-action);
 }
 
 /* Per-exercise rest, divided off below the exercise fields. */

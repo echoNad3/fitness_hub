@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { loadProgressPreferences, saveProgressPreferences } from '../src/progressPreferences.ts'
 import {
   buildProgressSeries,
   buildProgressStats,
@@ -10,6 +11,33 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000
 const NOW = Date.UTC(2026, 7, 1)
+
+test('Progress preferences survive navigation, reject invalid values, and reset for another active plan', () => {
+  const values = new Map<string, string>()
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  } })
+  try {
+    const preferences = { category: 'BACK' as const, metric: 'estimated-1rm' as const,
+      period: '3-months' as const, exerciseId: 'row', programId: 'all' }
+    saveProgressPreferences('plan-a', preferences)
+    assert.deepEqual(loadProgressPreferences('plan-a'), preferences)
+    assert.equal(loadProgressPreferences('plan-b').programId, 'plan-b')
+    assert.equal(loadProgressPreferences('plan-b').exerciseId, '')
+    const key = [...values.keys()][0]
+    values.set(key, JSON.stringify({ activeProgramId: 'plan-a', category: 'invalid', metric: 9, period: 'bad', exerciseId: {} }))
+    assert.deepEqual(loadProgressPreferences('plan-a'), {
+      category: 'CHEST', metric: 'load', period: 'all', exerciseId: '', programId: 'plan-a',
+    })
+    values.set(key, 'broken JSON')
+    assert.equal(loadProgressPreferences('plan-a').period, 'all')
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else delete (globalThis as { localStorage?: unknown }).localStorage
+  }
+})
 
 const templates = [
   {

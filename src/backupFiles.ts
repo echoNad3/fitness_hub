@@ -7,7 +7,11 @@ type BackupFileResult = {
   contents?: string
   name?: string
   saved?: boolean
+  bytes?: number
+  delivery?: 'download' | 'share'
 }
+
+export class BackupExportError extends Error {}
 
 interface BackupFilesPlugin {
   open(): Promise<BackupFileResult>
@@ -33,8 +37,18 @@ export function hasNativeBackupFiles(): boolean {
 }
 
 export async function saveBackupFile(contents: string, filename: string): Promise<BackupFileResult> {
+  const bytes = backupByteLength(contents)
+  if (bytes === 0 || bytes > MAX_BACKUP_BYTES) throw new BackupExportError('Backup is empty or too large to save.')
   if (hasNativeBackupFiles()) {
-    return BackupFiles.save({ contents, filename })
+    try {
+      const result = await BackupFiles.save({ contents, filename })
+      if (!result.cancelled && (!result.saved || (result.bytes !== undefined && result.bytes !== bytes))) {
+        throw new Error('Backup verification failed')
+      }
+      return result
+    } catch {
+      throw new BackupExportError('Backup could not be verified. Try saving to Downloads.')
+    }
   }
 
   // A live web update can briefly run inside an older APK without the native file bridge. Android
@@ -44,28 +58,31 @@ export async function saveBackupFile(contents: string, filename: string): Promis
     if (navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: 'Fitness Hub backup' })
-        return { saved: true }
+        return { saved: true, delivery: 'share' }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return { cancelled: true }
-        // Fall through if this WebView exposes Share but cannot open it.
+        // Native WebViews must not fall back to unreliable blob downloads.
       }
     }
   }
 
+  if (Capacitor.isNativePlatform()) {
+    throw new BackupExportError('Update the Android app to export backups.')
+  }
+
   const blob = new Blob([contents], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
   try {
-    const anchor = document.createElement('a')
     anchor.href = url
     anchor.download = filename
     anchor.hidden = true
     document.body.append(anchor)
     anchor.click()
-    anchor.remove()
-    return { saved: true }
+    return { saved: true, delivery: 'download' }
   } finally {
-    // Revoking in the same tick can cancel the download in some browsers.
-    window.setTimeout(() => URL.revokeObjectURL(url), 2000)
+    // Keep the link and blob alive while mobile browsers confirm and consume the download.
+    window.setTimeout(() => { anchor.remove(); URL.revokeObjectURL(url) }, 60_000)
   }
 }
 

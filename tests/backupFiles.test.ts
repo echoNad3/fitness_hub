@@ -1,15 +1,32 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { Capacitor } from '@capacitor/core'
 import {
   backupByteLength,
   backupFilename,
   MAX_BACKUP_BYTES,
   normalizeBackupContents,
+  saveBackupFile,
 } from '../src/backupFiles.ts'
 
 test('backup filenames are stable and filesystem-safe', () => {
   assert.equal(backupFilename(new Date('2026-08-02T23:45:00Z')), 'fitness-hub-backup-2026-08-02.json')
+})
+
+test('empty or oversized exports fail before creating a download', async () => {
+  await assert.rejects(saveBackupFile('', 'backup.json'), /empty or too large/)
+  await assert.rejects(saveBackupFile('a'.repeat(MAX_BACKUP_BYTES + 1), 'backup.json'), /empty or too large/)
+})
+
+test('an Android shell without the file bridge never uses a blob download', async () => {
+  const original = Capacitor.isNativePlatform
+  Capacitor.isNativePlatform = () => true
+  try {
+    await assert.rejects(saveBackupFile('{"sessions":[]}', 'backup.json'), /Update the Android app/)
+  } finally {
+    Capacitor.isNativePlatform = original
+  }
 })
 
 test('backup size checks use UTF-8 bytes and imports tolerate a BOM', () => {

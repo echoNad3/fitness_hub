@@ -124,3 +124,14 @@ test('muscle colors stay separate from UI status colors', () => {
 test('quiet small text meets normal-text contrast on card surfaces', () => {
   assert.ok(contrastRatio(themeColor('--quiet'), themeColor('--surface')) >= 4.5)
 })
+
+test('filled action labels and category text meet normal-text contrast', () => {
+  assert.ok(contrastRatio(themeColor('--white'), themeColor('--accent-action')) >= 4.5)
+  assert.ok(contrastRatio(themeColor('--danger-ink'), themeColor('--danger')) >= 4.5)
+  assert.ok(contrastRatio(themeColor('--muted'), themeColor('--surface-2')) >= 4.5)
+  const accent = themeColor('--accent-action')
+  const softWhite = '#' + accent.slice(1).match(/../g)!.map((channel) =>
+    Math.round(255 * 0.82 + parseInt(channel, 16) * 0.18).toString(16).padStart(2, '0'),
+  ).join('')
+  assert.ok(contrastRatio(softWhite, accent) >= 4.5)
+})

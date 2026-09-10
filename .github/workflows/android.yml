@@ -55,11 +55,11 @@ jobs:
       - name: Install Android 36 platform
         run: sdkmanager 'platforms;android-36'
 
-      - name: Build debug APK
+      - name: Test backup file writes and build debug APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug -PappBuildNumber=${{ github.run_number }}
+          ./gradlew testDebugUnitTest assembleDebug -PappBuildNumber=${{ github.run_number }}
 
       - name: Write checksum and release notes
         run: |

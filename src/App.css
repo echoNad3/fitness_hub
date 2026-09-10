@@ -463,8 +463,8 @@ label.choice:focus-within {
 .recovery-create {
   justify-content: center;
   color: var(--white);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-action);
+  border-color: var(--accent-action);
 }
 
 .recovery-create > svg {
@@ -537,12 +537,12 @@ label.choice:focus-within {
 
 .dialog-actions .primary-action {
   color: var(--white);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-action);
+  border-color: var(--accent-action);
 }
 
 .dialog-actions .danger-action {
-  color: var(--white);
+  color: var(--danger-ink);
   background: var(--danger);
   border-color: var(--danger);
 }

@@ -52,6 +52,7 @@ import { getStored, removeStored, setStored } from './storage'
 import { haptics } from './haptics'
 import { Dialog } from './Dialog'
 import {
+  BackupExportError,
   backupByteLength,
   backupFilename,
   hasNativeBackupFiles,
@@ -171,6 +172,8 @@ type WeightDialog = {
   groupId: string
   variantId: string
   value: string
+  perHand: boolean
+  error?: string
   // When set, the dialog edits the pending "increase weight by" amount instead of the absolute weight.
   increase?: boolean
 }
@@ -3585,7 +3588,7 @@ function App() {
           <span className="ws-num">{numLabel}</span>
           <span className="ws-name">{variant.name}</span>
           {isExpanded ? (
-            <span className="ws-cat" style={{ color: muscle }}>
+            <span className="ws-cat">
               {categoryLabel(variant.category)}
             </span>
           ) : entry.result ? (
@@ -3645,6 +3648,7 @@ function App() {
                           groupId: group.id,
                           variantId: variant.id,
                           increase: true,
+                          perHand: variant.perHand,
                           value: entry.increaseDelta === undefined ? '' : String(entry.increaseDelta),
                         })
                       }
@@ -3706,7 +3710,7 @@ function App() {
                       type="button"
                       disabled={readOnly}
                       onClick={() =>
-                        setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight) })
+                        setWeightDialog({ sessionId: session.id, groupId: group.id, variantId: variant.id, value: String(entry.weight), perHand: variant.perHand })
                       }
                     >
                       <strong>{formatWeight(entry.weight)}</strong>
@@ -4322,7 +4326,8 @@ function App() {
     }
 
     const parsed = Number(weightDialog.value)
-    if (!Number.isFinite(parsed) || parsed < 0) {
+    if (!weightDialog.value.trim() || !Number.isFinite(parsed) || parsed < 0) {
+      setWeightDialog({ ...weightDialog, error: 'Enter a weight of 0 kg or more.' })
       void haptics.reject()
       return
     }
@@ -4447,10 +4452,12 @@ function App() {
       if (result.cancelled) return
       if (!result.saved) throw new Error('Backup was not saved')
       void haptics.confirm()
-      setBackupMessage({ target: 'export', text: 'Backup saved.' })
-    } catch {
+      setBackupMessage({ target: 'export', text: result.delivery === 'download'
+        ? 'Backup download started.' : result.delivery === 'share' ? 'Backup shared.'
+          : result.bytes !== undefined ? 'Backup saved and verified.' : 'Backup saved.' })
+    } catch (error) {
       void haptics.reject()
-      setBackupMessage({ target: 'export', text: 'Could not save the backup.', error: true })
+      setBackupMessage({ target: 'export', text: error instanceof BackupExportError ? error.message : 'Could not save the backup.', error: true })
     } finally {
       setBackupBusy(null)
     }
@@ -4592,6 +4599,11 @@ function App() {
               activeProgramId={data.activeProgramId}
               picker={progressPicker}
               onPickerChange={setProgressPicker}
+              onOpenWorkout={(sessionId) => {
+                const session = data.sessions.find((item) => item.id === sessionId)
+                if (session) openSession(session.workoutId, session.id, false)
+              }}
+              onBackToWorkout={() => goBack({ name: 'main' })}
             />
           </Suspense>
         </Page>
@@ -4623,15 +4635,21 @@ function App() {
         )}
         {weightDialog && (
           <Dialog title={weightDialog.increase ? 'Increase weight by' : 'Edit weight'}>
-            <input
-              className="number-input"
-              inputMode="decimal"
-              type="number"
-              min="0"
-              step="1.25"
-              value={weightDialog.value}
-              onChange={(event) => setWeightDialog({ ...weightDialog, value: event.target.value })}
-            />
+            <label className="ex-field">
+              <span>{weightDialog.increase ? 'Increase (kg)' : 'Weight (kg)'}{weightDialog.perHand ? ' per hand' : ' total'}</span>
+              <input
+                className="number-input"
+                inputMode="decimal"
+                type="number"
+                min="0"
+                step="any"
+                aria-invalid={Boolean(weightDialog.error)}
+                aria-describedby={weightDialog.error ? 'weight-error' : undefined}
+                value={weightDialog.value}
+                onChange={(event) => setWeightDialog({ ...weightDialog, value: event.target.value, error: '' })}
+              />
+            </label>
+            {weightDialog.error && <p className="auth-error" id="weight-error" role="alert">{weightDialog.error}</p>}
             <div className="dialog-actions">
               <button type="button" onClick={() => setWeightDialog(null)}>
                 Cancel

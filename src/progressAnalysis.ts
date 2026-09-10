@@ -96,6 +96,7 @@ export type ProgressPoint = {
   value: number
   load: number
   reps: number
+  perHand: boolean
   result: ResultStatus
 }
 
@@ -214,7 +215,8 @@ export function buildProgressSeries(
         const entry = session.groupEntries[group.id]?.entries[variant.id]
         if (!entry?.result) continue
         const reps = entry.reps ?? variant.reps
-        const load = totalExerciseLoad(entry.weight, entry.perHand ?? variant.perHand)
+        const perHand = entry.perHand ?? variant.perHand
+        const load = totalExerciseLoad(entry.weight, perHand)
         const value = options.metric === 'load' ? load : estimateOneRepMax(load, reps)
         if (value === null) continue
         const programId = session.programId ?? 'legacy'
@@ -235,6 +237,7 @@ export function buildProgressSeries(
           value,
           load,
           reps,
+          perHand,
           result: entry.result,
         })
         series.set(exerciseId, current)

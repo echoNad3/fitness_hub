@@ -76,13 +76,32 @@ function VariantFields({
   const [setupDraft, setSetupDraft] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState<string | null>(null)
   const [weightDraft, setWeightDraft] = useState<string | null>(null)
+  const [targetDraft, setTargetDraft] = useState<{ field: 'sets' | 'reps'; value: string } | null>(null)
+  const [targetError, setTargetError] = useState('')
   const setsRef = useRef(sets)
   const repsRef = useRef(reps)
   setsRef.current = sets
   repsRef.current = reps
   const holdStepper = useHoldStepper()
 
+  const commitTarget = () => {
+    if (!targetDraft) return
+    const value = Number(targetDraft.value)
+    if (!targetDraft.value.trim() || !Number.isInteger(value) || value < 1 || value > MAX_EXERCISE_COUNT) {
+      setTargetError('Enter a whole number from 1 to 999. Your previous target was kept.')
+      void haptics.reject()
+    } else {
+      if (value !== variant[targetDraft.field]) {
+        onPatch({ [targetDraft.field]: value })
+        void haptics.selection()
+      }
+      setTargetError('')
+    }
+    setTargetDraft(null)
+  }
+
   const adjustSets = (delta: number) => {
+    setTargetError('')
     const next = Math.min(MAX_EXERCISE_COUNT, Math.max(1, setsRef.current + delta))
     if (next === setsRef.current) return false
     setsRef.current = next
@@ -91,6 +110,7 @@ function VariantFields({
   }
 
   const adjustReps = (delta: number) => {
+    setTargetError('')
     const next = Math.min(MAX_EXERCISE_COUNT, Math.max(1, repsRef.current + delta))
     if (next === repsRef.current) return false
     repsRef.current = next
@@ -186,7 +206,10 @@ function VariantFields({
             <button type="button" aria-label="Decrease sets" {...holdStepper.bind(() => adjustSets(-1))}>
               <Icon name="minus" size={18} />
             </button>
-            <strong>{sets}</strong>
+            <input className="target-number" aria-label="Sets" type="number" inputMode="numeric" min={1} max={999} step={1}
+              value={targetDraft?.field === 'sets' ? targetDraft.value : sets}
+              onChange={(event) => { setTargetError(''); setTargetDraft({ field: 'sets', value: event.target.value }) }}
+              onBlur={commitTarget} onKeyDown={blurOnEnter} />
             <button type="button" aria-label="Increase sets" {...holdStepper.bind(() => adjustSets(1))}>
               <Icon name="plus" size={18} />
             </button>
@@ -198,7 +221,10 @@ function VariantFields({
             <button type="button" aria-label="Decrease reps" {...holdStepper.bind(() => adjustReps(-1))}>
               <Icon name="minus" size={18} />
             </button>
-            <strong>{reps}</strong>
+            <input className="target-number" aria-label="Reps" type="number" inputMode="numeric" min={1} max={999} step={1}
+              value={targetDraft?.field === 'reps' ? targetDraft.value : reps}
+              onChange={(event) => { setTargetError(''); setTargetDraft({ field: 'reps', value: event.target.value }) }}
+              onBlur={commitTarget} onKeyDown={blurOnEnter} />
             <button type="button" aria-label="Increase reps" {...holdStepper.bind(() => adjustReps(1))}>
               <Icon name="plus" size={18} />
             </button>
@@ -206,6 +232,7 @@ function VariantFields({
         </div>
       </div>
 
+      {targetError && <p className="auth-error" role="alert">{targetError}</p>}
       <label className="ex-field">
         <span>Setup</span>
         <input

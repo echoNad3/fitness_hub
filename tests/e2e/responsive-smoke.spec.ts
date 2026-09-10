@@ -189,6 +189,7 @@ test('haptics follow the app interaction policy', async ({ page }) => {
   await page.locator('.page-head').getByRole('button', { name: 'Back' }).click()
 
   await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
+  await page.getByRole('button', { name: /^Filters/ }).click()
   await page.getByRole('button', { name: 'Program: Current program' }).click()
   await page.getByRole('dialog', { name: 'Choose program' }).getByRole('button', { name: 'Current program' }).click()
   expect(await hapticCalls(page)).toEqual([])
@@ -432,7 +433,7 @@ test('JSON backups download and can be selected repeatedly before a confirmed im
   expect(downloadPath).not.toBeNull()
   const downloaded = JSON.parse(await (await import('node:fs/promises')).readFile(downloadPath!, 'utf8'))
   expect(Array.isArray(downloaded.sessions)).toBe(true)
-  await expect(page.getByText('Backup saved.')).toBeVisible()
+  await expect(page.getByText('Backup download started.')).toBeVisible()
 
   const backup = {
     name: 'fitness-hub-backup.json',
@@ -456,6 +457,56 @@ test('JSON backups download and can be selected repeatedly before a confirmed im
   await expect(page.getByText('Backup imported.')).toBeVisible()
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('fitness-hub-v1') ?? '{}').restSeconds)).toBe(123)
   await expectNoHorizontalOverflow(page)
+})
+
+test('numeric workout controls do not overlap and blank weight cannot erase a saved weight', async ({ page }, testInfo) => {
+  await page.getByRole('button', { name: /Start workout/ }).click()
+  await page.getByRole('button', { name: /Up next Workout A/ }).click()
+  await expect(page.locator('.ws-name').first()).toHaveCSS('text-overflow', 'ellipsis')
+  const weight = page.locator('.ws-item.open .ws-weight')
+  await expect(weight).toContainText('32')
+  await weight.click()
+  const dialog = page.getByRole('dialog', { name: 'Edit weight' })
+  const input = dialog.getByRole('spinbutton', { name: 'Weight (kg) per hand' })
+  await input.fill('')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(input).toHaveAttribute('aria-invalid', 'true')
+  await expect(dialog.getByRole('alert')).toContainText('Enter a weight')
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(weight).toContainText('32')
+  await weight.click()
+  await input.fill('-1')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(dialog.getByRole('alert')).toBeVisible()
+  await input.fill('0')
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(weight.locator('strong')).toHaveText('0 kg')
+  await page.getByRole('button', { name: 'Edit workout' }).click()
+  const editor = page.locator('.ws-item.editing.open')
+  await expect(editor.getByRole('spinbutton', { name: 'Sets', exact: true })).toBeVisible()
+  const boxes = await editor.locator('.ws-editor-row button, .target-number').evaluateAll((controls) =>
+    controls.map((control) => { const r = control.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height } }),
+  )
+  expect(boxes).toHaveLength(6)
+  for (let i = 0; i < boxes.length; i++) {
+    expect(boxes[i].width).toBeGreaterThanOrEqual(48)
+    expect(boxes[i].height).toBeGreaterThanOrEqual(48)
+    for (const other of boxes.slice(i + 1)) {
+      expect(boxes[i].right <= other.x || other.right <= boxes[i].x || boxes[i].bottom <= other.y || other.bottom <= boxes[i].y).toBe(true)
+    }
+  }
+  const sets = editor.getByRole('spinbutton', { name: 'Sets', exact: true })
+  await sets.fill('7')
+  await sets.press('Enter')
+  await expect(sets).toHaveValue('7')
+  await sets.fill('')
+  await sets.press('Enter')
+  await expect(editor.getByRole('alert')).toBeVisible()
+  await expect(sets).toHaveValue('7')
+  await editor.getByRole('button', { name: 'Increase sets' }).click()
+  await expect(sets).toHaveValue('8')
+  await expectNoHorizontalOverflow(page)
+  await page.screenshot({ path: testInfo.outputPath('editor.png'), fullPage: true })
 })
 
 test('workouts can end early or complete with clear return-home feedback', async ({ page }) => {
@@ -697,7 +748,7 @@ test('large histories render in fast pages without changing totals', async ({ pa
   await expect(page.getByRole('button', { name: /Show older workouts 100 of 120 shown/ })).toBeVisible()
 })
 
-test('progress keeps load and estimated 1RM attempts aligned on phone layouts', async ({ page }) => {
+test('progress keeps load and estimated 1RM attempts aligned on phone layouts', async ({ page }, testInfo) => {
   await page.evaluate(() => {
     const now = Date.now()
     const makeSession = (
@@ -756,7 +807,10 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Progress', exact: true })).toBeVisible()
-  await expect(page.locator('.progress-controls').getByRole('button')).toHaveCount(10)
+  await expect(page.locator('.progress-controls')).toBeHidden()
+  expect((await page.locator('.progress-chart').boundingBox())!.y).toBeLessThan(500)
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  await expect(page.locator('.progress-controls').getByRole('button')).toHaveCount(12)
   await expect(page.locator('.progress-controls select, .progress-summary select')).toHaveCount(0)
 
   await page.getByRole('button', { name: /Program: Current program/ }).click()
@@ -796,6 +850,14 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await expect(page.getByText('36 kg', { exact: true })).toBeVisible()
   await expect(page.getByText('+4 kg', { exact: true })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await page.getByRole('button', { name: /^Filters/ }).click()
+  await page.locator('.progress-point-control').first().focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('region', { name: 'Selected attempt' })).toContainText('32 kg per hand · 7 reps')
+  await page.getByRole('button', { name: 'Next attempt' }).click()
+  await expect(page.getByRole('region', { name: 'Selected attempt' })).toContainText('34 kg per hand · 8 reps')
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.screenshot({ path: testInfo.outputPath('progress.png'), fullPage: true })
 
   await page.getByRole('button', { name: 'Estimated 1RM' }).click()
   await expect(page.locator('.progress-point')).toHaveCount(3)
@@ -810,6 +872,7 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()
   await page.getByRole('dialog', { name: 'Choose exercise' }).getByRole('button', { name: 'Incline Dumbbell Press' }).click()
 
+  await page.getByRole('button', { name: /^Filters/ }).click()
   await page.getByRole('button', { name: 'Last 3 months' }).click()
   await expect(page.locator('.progress-point')).toHaveCount(2)
   await expect(page.locator('.progress-series-path')).toHaveCount(1)
@@ -817,4 +880,12 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await page.getByRole('button', { name: 'Back to Home' }).click()
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
+  await expect(page.locator('.progress-controls')).toBeHidden()
+  await expect(page.getByRole('button', { name: /Exercise: Incline Dumbbell Press/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Estimated 1RM' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.progress-point')).toHaveCount(2)
+  await page.getByRole('button', { name: 'Open workout' }).click()
+  await expect(page.locator('.ws-screen')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'End workout early' })).toHaveCount(0)
 })

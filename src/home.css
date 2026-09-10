@@ -179,7 +179,7 @@
   padding: 18px 18px;
   color: var(--white);
   text-align: left;
-  background: var(--accent);
+  background: var(--accent-action);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--soft-shadow);
@@ -216,7 +216,7 @@
   padding: 16px 16px;
   color: var(--white);
   text-align: left;
-  background: var(--accent);
+  background: var(--accent-action);
   border: 0;
   border-radius: var(--radius-card);
   cursor: pointer;
@@ -367,7 +367,7 @@
 
 .home-tile.update .home-tile-icon {
   color: var(--white);
-  background: var(--accent);
+  background: var(--accent-action);
 }
 
 .home-resume,

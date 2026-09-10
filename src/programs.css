@@ -81,8 +81,8 @@
   justify-content: center;
   gap: var(--space-2);
   color: var(--white);
-  background: var(--accent);
-  border: 1px solid var(--accent);
+  background: var(--accent-action);
+  border: 1px solid var(--accent-action);
   border-radius: var(--radius-control);
   font-size: var(--fs-label);
   font-weight: var(--fw-bold);
@@ -127,8 +127,8 @@
 
 .program-overview-actions .primary-action {
   color: var(--white);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-action);
+  border-color: var(--accent-action);
 }
 
 .program-day-count {

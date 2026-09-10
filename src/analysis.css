@@ -1,6 +1,7 @@
 /* Progress reuses the workout editor's filters so controls stay familiar across the app. */
 
 .progress-summary,
+.progress-toolbar,
 .progress-controls,
 .progress-card {
   padding: var(--space-4);
@@ -41,6 +42,57 @@
 
 .progress-controls .ex-segment button {
   font-size: var(--fs-label);
+}
+
+.progress-controls[hidden] {
+  display: none;
+}
+
+.progress-toolbar {
+  gap: var(--space-2);
+}
+
+.progress-filter-toggle {
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  text-align: left;
+  cursor: pointer;
+}
+
+.progress-filter-toggle > span:first-child {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.progress-filter-toggle strong {
+  color: var(--text);
+  font-size: var(--fs-label);
+}
+
+.progress-filter-toggle small {
+  font-size: var(--fs-meta);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.progress-filter-toggle[aria-expanded='true'] .progress-picker-chevron {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.progress-measure button {
+  font-size: var(--fs-label);
+  min-height: var(--tap);
 }
 
 .progress-picker-trigger {
@@ -260,6 +312,147 @@
   min-height: 180px;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--fs-label);
+  line-height: 1.4;
+  text-align: center;
+}
+
+.progress-weight-context {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+.progress-point-control {
+  cursor: pointer;
+}
+
+.progress-point-hit {
+  fill: transparent;
+  stroke: transparent;
+}
+
+.progress-point-control[aria-pressed='true'] .progress-point {
+  stroke: var(--text);
+  stroke-width: 2.5;
+}
+
+.progress-point-control:focus-visible {
+  outline: none;
+}
+
+.progress-point-control:focus-visible .progress-point-hit {
+  stroke: var(--focus);
+  stroke-width: 2;
+}
+
+.progress-attempt {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.progress-attempt-nav {
+  display: grid;
+  grid-template-columns: var(--tap) 1fr var(--tap);
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+.progress-nav-button {
+  width: var(--tap);
+  height: var(--tap);
+  color: var(--accent-text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: var(--fs-heading);
+}
+
+.progress-nav-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.progress-attempt-detail {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+.progress-attempt-detail strong {
+  color: var(--text);
+  font-size: var(--fs-label);
+}
+
+.progress-attempt-detail .result-done { color: var(--success); }
+.progress-attempt-detail .result-failed { color: var(--danger); }
+
+.progress-text-action {
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-3);
+  color: var(--accent-text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.progress-attempts summary {
+  min-height: var(--tap);
+  padding: var(--space-3) 0;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  cursor: pointer;
+}
+
+.progress-attempt-list {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 360px;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.progress-attempt-list button {
+  display: grid;
+  gap: var(--space-1);
+  min-height: var(--tap);
+  padding: var(--space-3);
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  text-align: left;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
+.progress-attempt-list button[aria-pressed='true'] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.progress-attempt-list strong { color: var(--text); }
+
+.progress-filter-toggle:focus-visible,
+.progress-nav-button:focus-visible,
+.progress-text-action:focus-visible,
+.progress-attempts summary:focus-visible,
+.progress-attempt-list button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .progress-loading {
