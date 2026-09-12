@@ -112,7 +112,7 @@ export type ProgressSeries = {
 }
 
 type ProgressOptions = {
-  category: Category
+  category?: Category
   metric: ProgressMetric
   period: ProgressPeriod
   programId?: string | 'all'
@@ -211,7 +211,7 @@ export function buildProgressSeries(
     if (!template) continue
     for (const group of template.groups) {
       for (const variant of group.variants) {
-        if (variant.category !== options.category) continue
+        if (options.category && variant.category !== options.category) continue
         const entry = session.groupEntries[group.id]?.entries[variant.id]
         if (!entry?.result) continue
         const reps = entry.reps ?? variant.reps

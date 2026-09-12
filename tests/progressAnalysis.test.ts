@@ -20,7 +20,7 @@ test('Progress preferences survive navigation, reject invalid values, and reset 
     setItem: (key: string, value: string) => values.set(key, value),
   } })
   try {
-    const preferences = { category: 'BACK' as const, metric: 'estimated-1rm' as const,
+    const preferences = { metric: 'estimated-1rm' as const,
       period: '3-months' as const, exerciseId: 'row', programId: 'all' }
     saveProgressPreferences('plan-a', preferences)
     assert.deepEqual(loadProgressPreferences('plan-a'), preferences)
@@ -29,7 +29,7 @@ test('Progress preferences survive navigation, reject invalid values, and reset 
     const key = [...values.keys()][0]
     values.set(key, JSON.stringify({ activeProgramId: 'plan-a', category: 'invalid', metric: 9, period: 'bad', exerciseId: {} }))
     assert.deepEqual(loadProgressPreferences('plan-a'), {
-      category: 'CHEST', metric: 'load', period: 'all', exerciseId: '', programId: 'plan-a',
+      metric: 'load', period: 'all', exerciseId: '', programId: 'plan-a',
     })
     values.set(key, 'broken JSON')
     assert.equal(loadProgressPreferences('plan-a').period, 'all')
@@ -140,7 +140,7 @@ test('load and estimated 1RM keep the same logged 1–30 rep attempts, including
   assert.equal(oneRm[0].points[2].result, 'failure')
 })
 
-test('period and muscle filters keep only matching history', () => {
+test('period and optional muscle filters keep only matching history', () => {
   const sessions = [session('old', 200, 30, 7, 'success'), session('recent', 20, 32, 7, 'success')]
   const recent = buildProgressSeries(templates, sessions, {
     category: 'CHEST',
@@ -149,6 +149,13 @@ test('period and muscle filters keep only matching history', () => {
     now: NOW,
   })
   assert.deepEqual(recent[0].points.map((point) => point.sessionId), ['recent'])
+
+  const everyMuscle = buildProgressSeries(templates, sessions, {
+    metric: 'load',
+    period: 'all',
+    now: NOW,
+  })
+  assert.deepEqual(everyMuscle[0].points.map((point) => point.sessionId), ['old', 'recent'])
 
   const otherMuscle = buildProgressSeries(templates, sessions, {
     category: 'BACK',

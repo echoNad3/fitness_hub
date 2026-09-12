@@ -189,14 +189,14 @@ test('haptics follow the app interaction policy', async ({ page }) => {
   await page.locator('.page-head').getByRole('button', { name: 'Back' }).click()
 
   await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
-  await page.getByRole('button', { name: /^Filters/ }).click()
-  await page.getByRole('button', { name: 'Program: Current program' }).click()
-  await page.getByRole('dialog', { name: 'Choose program' }).getByRole('button', { name: 'Current program' }).click()
+  await page.getByRole('button', { name: /Progress range: Current program/ }).click()
+  const rangeDialog = page.getByRole('dialog', { name: 'Progress range' })
+  await rangeDialog.getByRole('button', { name: 'Current program' }).click()
   expect(await hapticCalls(page)).toEqual([])
 
-  await page.getByRole('button', { name: 'Program: Current program' }).click()
-  await page.getByRole('dialog', { name: 'Choose program' }).getByRole('button', { name: 'All programs' }).click()
+  await rangeDialog.getByRole('button', { name: 'All programs' }).click()
   expect(await hapticCalls(page)).toEqual([10])
+  await rangeDialog.getByRole('button', { name: 'Apply' }).click()
 
   await clearHapticCalls(page)
   await page.locator('.page-head').getByRole('button', { name: 'Back' }).click()
@@ -791,12 +791,30 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
         },
       }
     }
+    const makeRowSession = (id: string, ageDays: number, weight: number, reps: number) => {
+      const createdAt = now - ageDays * 24 * 60 * 60 * 1000
+      return {
+        id,
+        workoutId: 'workout-a',
+        createdAt,
+        finishedAt: createdAt + 60 * 60 * 1000,
+        groupEntries: {
+          'chest-supported-row-machine': {
+            activeVariantId: 'chest-supported-row-machine',
+            entries: {
+              'chest-supported-row-machine': { weight, reps, perHand: false, result: 'success' },
+            },
+          },
+        },
+      }
+    }
     localStorage.setItem(
       'fitness-hub-v1',
       JSON.stringify({
         sessions: [
           makeSession('progress-old', 150, 32, 7, 'success'),
           makeFlySession('progress-fly', 120, 9, 11),
+          makeRowSession('progress-row', 60, 45, 10),
           makeSession('progress-recent', 20, 34, 8, 'success'),
           makeSession('progress-failed', 10, 36, 8, 'failure'),
         ],
@@ -807,14 +825,17 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
 
   await expect(page.getByRole('heading', { name: 'Progress', exact: true })).toBeVisible()
-  await expect(page.locator('.progress-controls')).toBeHidden()
-  expect((await page.locator('.progress-chart').boundingBox())!.y).toBeLessThan(500)
-  await page.getByRole('button', { name: /^Filters/ }).click()
-  await expect(page.locator('.progress-controls').getByRole('button')).toHaveCount(12)
-  await expect(page.locator('.progress-controls select, .progress-summary select')).toHaveCount(0)
+  const [summaryBox, chartBox] = await Promise.all([
+    page.locator('.progress-summary').boundingBox(),
+    page.locator('.progress-card').boundingBox(),
+  ])
+  expect(summaryBox!.y).toBeLessThan(chartBox!.y)
+  await expect(page.getByRole('button', { name: /Progress range: Current program, All history/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Progress range: Current program, All history/ })).toContainText('Program & date range')
+  await expect(page.locator('.progress-summary select, .progress-card select')).toHaveCount(0)
 
-  await page.getByRole('button', { name: /Program: Current program/ }).click()
-  const programPicker = page.getByRole('dialog', { name: 'Choose program' })
+  await page.getByRole('button', { name: /Progress range: Current program/ }).click()
+  const programPicker = page.getByRole('dialog', { name: 'Progress range' })
   const selectedProgramOption = programPicker.getByRole('button', { name: 'Current program' })
   const unselectedProgramOption = programPicker.getByRole('button', { name: 'All programs' })
   await expect(selectedProgramOption).toHaveAttribute('aria-pressed', 'true')
@@ -834,58 +855,84 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
     })),
   ])
   expect(selectedProgramStyle).not.toEqual(unselectedProgramStyle)
+  await expect(programPicker.getByRole('button', { name: 'Close' })).toHaveCount(0)
+  await expect(programPicker.getByRole('button', { name: 'Apply' })).toBeVisible()
   await programPicker.getByRole('button', { name: 'Cancel' }).click()
 
-  await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()
+  const [summaryTriggerBox, exerciseTriggerBox] = await Promise.all([
+    page.locator('.progress-summary-trigger').boundingBox(),
+    page.locator('.progress-exercise-trigger').boundingBox(),
+  ])
+  expect(summaryTriggerBox).not.toBeNull()
+  expect(exerciseTriggerBox).not.toBeNull()
+  expect(summaryTriggerBox!.height).toBe(exerciseTriggerBox!.height)
+
+  await page.getByRole('button', { name: /Exercise:/ }).click()
   const exercisePicker = page.getByRole('dialog', { name: 'Choose exercise' })
-  await expect(exercisePicker.locator('.progress-picker-option')).toHaveCount(2)
-  await expect(exercisePicker.getByRole('button', { name: 'Cable Fly' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(exercisePicker.locator('.progress-picker-option')).toHaveCount(3)
+  await expect(exercisePicker.getByText('Chest', { exact: true })).toBeVisible()
+  await expect(exercisePicker.getByText('Back', { exact: true })).toBeVisible()
+  await expect(exercisePicker.getByRole('button', { name: /Incline Dumbbell Press/ })).toHaveAttribute('aria-pressed', 'true')
   await expect(exercisePicker.locator('.progress-picker-option.selected')).toHaveCount(1)
   await expect(exercisePicker.locator('.progress-picker-radio, .progress-picker-check')).toHaveCount(0)
   await exercisePicker.getByRole('button', { name: 'Incline Dumbbell Press' }).click()
-  await expect(page.locator('.progress-series-count')).toHaveText('3 attempts')
+  await expect(page.locator('.progress-exercise-trigger')).toContainText('3 attempts')
   await expect(page.locator('.progress-series-path')).toHaveCount(1)
   await expect(page.locator('.progress-point')).toHaveCount(3)
   await expect(page.locator('.progress-point.failed')).toHaveCount(1)
-  await expect(page.getByText('36 kg', { exact: true })).toBeVisible()
+  await expect(page.locator('.progress-latest-attempt')).toContainText('36 kg per hand')
   await expect(page.getByText('+4 kg', { exact: true })).toBeVisible()
   await expectNoHorizontalOverflow(page)
-  await page.getByRole('button', { name: /^Filters/ }).click()
-  await page.locator('.progress-point-control').first().focus()
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('region', { name: 'Selected attempt' })).toContainText('32 kg per hand · 7 reps')
-  await page.getByRole('button', { name: 'Next attempt' }).click()
-  await expect(page.getByRole('region', { name: 'Selected attempt' })).toContainText('34 kg per hand · 8 reps')
+  await expect(page.locator('.progress-point-control, .progress-nav-button')).toHaveCount(0)
+  await expect(page.getByRole('img', { name: /3 attempts: 2 done, 1 failed/ })).toBeVisible()
+  await expect(page.locator('.progress-latest-attempt')).toContainText('36 kg per hand · Failed')
+  await expect(page.locator('.progress-latest-attempt')).not.toContainText('8 reps')
+  await page.getByText('View previous attempts').click()
+  await expect(page.locator('.progress-attempt-list button')).toHaveCount(2)
+  await expect(page.locator('.progress-attempt-list button').first()).toContainText('34 kg per hand')
   await page.evaluate(() => window.scrollTo(0, 0))
   await page.screenshot({ path: testInfo.outputPath('progress.png'), fullPage: true })
 
   await page.getByRole('button', { name: 'Estimated 1RM' }).click()
   await expect(page.locator('.progress-point')).toHaveCount(3)
   await expect(page.locator('.progress-point.failed')).toHaveCount(1)
-  await expect(page.getByText('44.4 kg', { exact: true })).toBeVisible()
+  await expect(page.locator('.progress-latest-attempt')).toContainText('44.4 kg estimated · Failed')
+  await expect(page.locator('.progress-latest-attempt')).not.toContainText('36 kg per hand')
 
   await page.getByRole('button', { name: /Exercise: Incline Dumbbell Press/ }).click()
   await page.getByRole('dialog', { name: 'Choose exercise' }).getByRole('button', { name: 'Cable Fly' }).click()
+  await expect(page.locator('.progress-chart')).toHaveCount(1)
   await expect(page.locator('.progress-point')).toHaveCount(1)
-  await expect(page.getByText('12.3 kg', { exact: true })).toBeVisible()
+  await expect(page.locator('.progress-latest-main > small')).toHaveText('Latest attempt')
+  await expect(page.locator('.progress-latest-attempt')).toContainText('12.3 kg estimated')
+  await expect(page.getByText('View previous attempts')).toHaveCount(0)
 
   await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()
   await page.getByRole('dialog', { name: 'Choose exercise' }).getByRole('button', { name: 'Incline Dumbbell Press' }).click()
 
-  await page.getByRole('button', { name: /^Filters/ }).click()
+  await page.getByRole('button', { name: /Progress range: Current program/ }).click()
   await page.getByRole('button', { name: 'Last 3 months' }).click()
+  await page.getByRole('dialog', { name: 'Progress range' }).getByRole('button', { name: 'Apply' }).click()
   await expect(page.locator('.progress-point')).toHaveCount(2)
   await expect(page.locator('.progress-series-path')).toHaveCount(1)
+
+  await page.getByRole('button', { name: /Exercise: Incline Dumbbell Press/ }).click()
+  await page.getByRole('dialog', { name: 'Choose exercise' }).getByRole('button', { name: 'Cable Fly' }).click()
+  await expect(page.locator('.progress-exercise-trigger')).toContainText('0 attempts')
+  await expect(page.getByRole('img', { name: /No estimated 1RM data in this range/ })).toBeVisible()
+  await expect(page.locator('.progress-empty-chart')).toContainText('No attempts to chart')
+
+  await page.getByRole('button', { name: /Exercise: Cable Fly/ }).click()
+  await page.getByRole('dialog', { name: 'Choose exercise' }).getByRole('button', { name: 'Incline Dumbbell Press' }).click()
 
   await page.getByRole('button', { name: 'Back to Home' }).click()
   await expect(page.getByRole('heading', { name: 'Fitness Hub' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await page.getByRole('button', { name: /Progress Stats and exercises/ }).click()
-  await expect(page.locator('.progress-controls')).toBeHidden()
   await expect(page.getByRole('button', { name: /Exercise: Incline Dumbbell Press/ })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Estimated 1RM' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('.progress-point')).toHaveCount(2)
-  await page.getByRole('button', { name: 'Open workout' }).click()
+  await page.locator('.progress-latest-attempt').click()
   await expect(page.locator('.ws-screen')).toBeVisible()
   await expect(page.getByRole('button', { name: 'End workout early' })).toHaveCount(0)
 })
