@@ -69,8 +69,11 @@ export function ProgressChart({ series, metric, onOpenWorkout }: {
 }) {
   const points = series.points
   const weightLabel = (point: ProgressPoint) => `${point.load} kg ${point.perHand ? 'per hand' : 'total'}`
+  const measureLabel = (point: ProgressPoint) => metric === 'load'
+    ? weightLabel(point)
+    : `${formatProgressValue(point.value)} ${point.perHand ? 'per hand' : 'total'}`
   const pointLabel = (point: ProgressPoint) =>
-    `${formatPointDate(point.createdAt)} · ${weightLabel(point)} · ${point.reps} reps · ${point.result === 'success' ? 'Done' : 'Failed'}`
+    `${formatPointDate(point.createdAt)} · ${measureLabel(point)} · ${point.reps} reps · ${point.result === 'success' ? 'Done' : 'Failed'}`
   const values = points.map((point) => point.value)
   const dates = points.map((point) => point.createdAt)
   const minDate = Math.min(...dates)
@@ -98,11 +101,6 @@ export function ProgressChart({ series, metric, onOpenWorkout }: {
   const chartLabel = metric === 'load' ? 'Logged weight' : 'Estimated one rep max'
   const latest = series.points[series.points.length - 1]
   const change = latest.value - series.points[0].value
-  const latestMeasure = metric === 'load'
-    ? weightLabel(latest)
-    : `${formatProgressValue(latest.value)} estimated`
-  const attemptMeasure = (point: ProgressPoint) => metric === 'load'
-    ? weightLabel(point) : `${formatProgressValue(point.value)} estimated`
   const doneCount = points.filter((point) => point.result === 'success').length
   const failedCount = points.length - doneCount
   const color = muscleColor(series.category)
@@ -159,7 +157,7 @@ export function ProgressChart({ series, metric, onOpenWorkout }: {
         <span className="progress-latest-main">
           <small>Latest attempt</small>
           <strong>{formatPointDate(latest.createdAt)}</strong>
-          <span>{latestMeasure} · <em className={latest.result === 'success' ? 'result-done' : 'result-failed'}>{latest.result === 'success' ? 'Done' : 'Failed'}</em></span>
+          <span>{measureLabel(latest)} · <em className={latest.result === 'success' ? 'result-done' : 'result-failed'}>{latest.result === 'success' ? 'Done' : 'Failed'}</em></span>
         </span>
         {points.length > 1 && <span className="progress-period-change">
           <strong className={change > 0 ? 'up' : change < 0 ? 'down' : undefined}
@@ -175,7 +173,7 @@ export function ProgressChart({ series, metric, onOpenWorkout }: {
         <div className="progress-attempt-list">
           {points.slice(0, -1).reverse().map((point) => (
             <button type="button" key={point.sessionId} onClick={() => onOpenWorkout(point.sessionId)}>
-              <span><strong>{formatPointDate(point.createdAt)}</strong><small>{attemptMeasure(point)}</small></span>
+              <span><strong>{formatPointDate(point.createdAt)}</strong><small>{measureLabel(point)}</small></span>
               <em className={point.result === 'success' ? 'result-done' : 'result-failed'}>{point.result === 'success' ? 'Done' : 'Failed'}</em>
               <span className="progress-picker-chevron" aria-hidden="true" />
             </button>
