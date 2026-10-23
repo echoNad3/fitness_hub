@@ -6,6 +6,8 @@ const projectRoot = fileURLToPath(new URL('../', import.meta.url))
 const playwrightCli = fileURLToPath(new URL('../node_modules/@playwright/test/cli.js', import.meta.url))
 const server = await createServer({
   root: projectRoot,
+  // Source fixtures use root URLs; CI's GitHub Pages build base must not change this dev server.
+  base: '/',
   logLevel: 'error',
   server: { host: '127.0.0.1', port: 4173, strictPort: true },
 })
