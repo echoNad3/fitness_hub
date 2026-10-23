@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   MAX_AUTOMATIC_RECOVERY_COPIES,
+  MAX_ROLLING_RECOVERY_COPIES,
+  MAX_ROLLING_RECOVERY_BYTES,
   RECOVERY_REASONS,
   addRecoverySnapshot,
   automaticRecoveryDue,
@@ -12,6 +14,8 @@ import {
   mergeRecoverySnapshots,
   normalizeRecoverySnapshots,
   parseRecoveryStore,
+  isRecoverySnapshot,
+  isProtectedRecoveryCopy,
 } from '../src/recovery.ts'
 
 const recoverySql = await readFile('supabase/recovery_snapshots.sql', 'utf8')
@@ -142,4 +146,59 @@ test('Supabase accepts every client recovery reason', () => {
   }
   assert.equal(recoverySql.includes('offset 20'), false)
   assert.equal(recoverySql.includes('create trigger trim_app_recovery_deletions_after_write'), false)
+})
+
+test('years of routine copies stay bounded while manual and legacy protected copies survive', () => {
+  const legacy = copy('legacy', 1, 1, 'before-cloud-replace')
+  delete legacy.retention
+  let store = addRecoverySnapshot(emptyRecoveryStore(), legacy).store
+  store = addRecoverySnapshot(store, copy('manual', 2)).store
+  for (let index = 3; index < 2003; index++) {
+    store = addRecoverySnapshot(store, copy(`routine-${index}`, index, index, 'before-workout-edit')).store
+  }
+  assert.equal(store.copies.filter(entry => !isProtectedRecoveryCopy(entry)).length, MAX_ROLLING_RECOVERY_COPIES)
+  assert.equal(store.copies.some(entry => entry.id === 'legacy'), true)
+  assert.equal(store.copies.some(entry => entry.id === 'manual'), true)
+  assert.equal(store.deletedIds.length, 2000 - MAX_ROLLING_RECOVERY_COPIES)
+})
+
+test('large routine copies obey the byte budget and preserve the newest state', () => {
+  let store = emptyRecoveryStore()
+  for (let index = 1; index <= 4; index++) {
+    store = addRecoverySnapshot(store, createRecoverySnapshot(
+      { sessions: [index], padding: 'x'.repeat(7 * 1024 * 1024) },
+      'before-cloud-replace', { id: `large-${index}`, now: index },
+    )).store
+  }
+  assert.equal(store.copies.length, 2)
+  assert.equal(store.copies[0].id, 'large-4')
+  assert.ok(store.copies.reduce((sum, entry) => sum + Buffer.byteLength(JSON.stringify(entry.data)), 0) <= MAX_ROLLING_RECOVERY_BYTES)
+  assert.deepEqual(store.deletedIds, ['large-1', 'large-2'])
+})
+
+test('cloud JSON key reordering preserves validation and deduplication', () => {
+  const original = createRecoverySnapshot({ sessions: [{ id: 1, weight: 5 }], rest: 90 }, 'before-cloud-replace', { id: 'original', now: 1 })
+  const reordered = { ...original, data: { rest: 90, sessions: [{ weight: 5, id: 1 }] } }
+  assert.equal(isRecoverySnapshot(reordered, validData), true)
+  const second = copy('different-state', 2, 2, 'before-cloud-replace')
+  const duplicate = createRecoverySnapshot(reordered.data, 'before-cloud-replace', { id: 'repeat', now: 3 })
+  const result = addRecoverySnapshot({ copies: [second, original], deletedIds: [] }, duplicate)
+  assert.equal(result.created, false)
+})
+
+test('startup rotation retains deletion records instead of allowing old copies to return', () => {
+  const copies = Array.from({ length: 25 }, (_, index) => copy(`copy-${index}`, index + 1, index, 'before-cloud-replace'))
+  const store = parseRecoveryStore(JSON.stringify({ copies, deletedIds: ['deleted-offline'] }), validData)
+  assert.equal(store.copies.length, 20)
+  assert.equal(store.deletedIds.length, 6)
+  assert.equal(store.deletedIds.includes('copy-0'), true)
+})
+
+test('a backwards phone clock cannot rotate away the backup being created', () => {
+  let store = emptyRecoveryStore()
+  for (let index = 1; index <= 20; index++) store = addRecoverySnapshot(store, copy(`copy-${index}`, index + 100, index, 'before-cloud-replace')).store
+  store = addRecoverySnapshot(store, copy('newest-with-old-clock', 1, 999, 'before-cloud-replace')).store
+  assert.equal(store.copies[0].id, 'newest-with-old-clock')
+  assert.equal(store.copies.length, 20)
+  assert.equal(store.deletedIds.includes('copy-1'), true)
 })

@@ -113,9 +113,29 @@ test.describe('installed web updates', () => {
   const samePage = (page: Page) => page.locator('html')
   const webVersion = (page: Page) => page.locator('meta[name="test-web-version"]')
 
+  async function savedWorkouts(page: Page) {
+    return page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('fitness-hub-workouts')
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const transaction = db.transaction(['state', 'sessions'], 'readonly')
+      const snapshot = transaction.objectStore('state').get('snapshot')
+      const sessions = transaction.objectStore('sessions').getAll()
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve()
+        transaction.onabort = () => reject(transaction.error)
+      })
+      db.close()
+      const byId = new Map(sessions.result.map(session => [session.id, session]))
+      return JSON.stringify({ ...snapshot.result.data, sessions: snapshot.result.sessionIds.map((id: string) => byId.get(id)) })
+    })
+  }
+
   test('one pull waits for the new web assets, reloads once, and preserves local data', async ({ page }) => {
     await markPage(page)
-    const saved = await page.evaluate(() => localStorage.getItem('fitness-hub-v1'))
+    const saved = await savedWorkouts(page)
     expect(saved).toBeTruthy()
     version = 2
     holdInstall = new Promise<void>((resolve) => { releaseInstall = resolve })
@@ -127,7 +147,7 @@ test.describe('installed web updates', () => {
     await expect(webVersion(page)).toHaveAttribute('content', '1')
     releaseInstall!()
     await expect(webVersion(page)).toHaveAttribute('content', '2')
-    expect(await page.evaluate(() => localStorage.getItem('fitness-hub-v1'))).toBe(saved)
+    expect(await savedWorkouts(page)).toBe(saved)
     await markPage(page)
     await pull(page)
     await expect(page.getByRole('status', { name: 'Refreshing', exact: true })).toHaveCount(0)

@@ -20,19 +20,19 @@ async function installHapticProbe(page: Page) {
 }
 
 async function hapticCalls(page: Page) {
-  return page.evaluate(() =>
+  return page.evaluate(async () =>
     (window as typeof window & { __fitnessHubHaptics: HapticPattern[] }).__fitnessHubHaptics,
   )
 }
 
 async function clearHapticCalls(page: Page) {
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     (window as typeof window & { __fitnessHubHaptics: HapticPattern[] }).__fitnessHubHaptics = []
   })
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
-  const overflow = await page.evaluate(() => ({
+  const overflow = await page.evaluate(async () => ({
     body: document.body.scrollWidth - document.body.clientWidth,
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
   }))
@@ -44,7 +44,7 @@ async function expectAlignedWeekdayLabels(page: Page) {
   const labels = page.locator('.hist-tracker-weekdays span')
   await expect(labels).toHaveCount(7)
 
-  const todayIndex = await page.evaluate(() => new Date().getDay())
+  const todayIndex = await page.evaluate(async () => new Date().getDay())
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const expectedLabels = Array.from(
     { length: 7 },
@@ -52,7 +52,7 @@ async function expectAlignedWeekdayLabels(page: Page) {
   )
   await expect(labels).toHaveText(expectedLabels)
 
-  const centerOffsets = await page.evaluate(() => {
+  const centerOffsets = await page.evaluate(async () => {
     const headings = Array.from(document.querySelectorAll('.hist-tracker-weekdays span'))
     const firstWeek = Array.from(document.querySelectorAll('.hist-day')).slice(0, 7)
     return headings.map((heading, index) => {
@@ -67,6 +67,10 @@ async function expectAlignedWeekdayLabels(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  // UI flows must not depend on GitHub's anonymous API rate limit.
+  await page.route('**/android-release.json*', route => route.fulfill({
+    json: { build: 77, publishedAt: 1_700_000_000_000 },
+  }))
   const errors: string[] = []
   browserErrors.set(page, errors)
   page.on('console', (message) => {
@@ -76,7 +80,7 @@ test.beforeEach(async ({ page }) => {
   })
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
-  await page.evaluate(() => localStorage.clear())
+  await page.evaluate(async () => localStorage.clear())
   await page.reload()
 })
 
@@ -85,9 +89,9 @@ test.afterEach(async ({ page }) => {
 })
 
 test('fresh installs use the exported starter program', async ({ page }) => {
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('fitness-hub-v1'))).not.toBeNull()
-  const starter = await page.evaluate(() => {
-    const stored = JSON.parse(localStorage.getItem('fitness-hub-v1') ?? '{}')
+  await expect.poll(() => page.evaluate(async () => (await import('/src/workoutStorage.ts')).getWorkoutDataRaw())).not.toBeNull()
+  const starter = await page.evaluate(async () => {
+    const stored = JSON.parse((await import('/src/workoutStorage.ts')).getWorkoutDataRaw() ?? '{}')
     return {
       sessions: stored.sessions,
       programs: stored.programs.map((program: { name: string; workoutIds: string[] }) => ({
@@ -215,7 +219,7 @@ test('haptics follow the app interaction policy', async ({ page }) => {
   await page.getByRole('button', { name: /Rest timer Start/ }).click()
   expect(await hapticCalls(page)).toEqual([28])
 
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     localStorage.setItem('fitness-hub-rest-timer', JSON.stringify({
       endsAt: Date.now() + 2_000,
       duration: 2,
@@ -247,7 +251,7 @@ test('main menu refreshes Android update info when returning or pulling down', a
 
   latestBuild = 82
   const restingContentTop = await page.locator('.home-pull-content').evaluate((content) => content.getBoundingClientRect().top)
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     window.scrollTo({ top: 0 })
     const home = document.querySelector('.home')
     if (!home) throw new Error('Home screen is missing')
@@ -274,7 +278,7 @@ test('main menu refreshes Android update info when returning or pulling down', a
   )
   expect(pulledContentTop - restingContentTop).toBeGreaterThan(60)
 
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const home = document.querySelector('.home')
     if (!home) throw new Error('Home screen is missing')
     const event = new Event('touchend', { bubbles: true, cancelable: true })
@@ -455,7 +459,7 @@ test('JSON backups download and can be selected repeatedly before a confirmed im
   await page.getByRole('dialog', { name: 'Import this backup?' }).getByRole('button', { name: 'Import' }).click()
   await expect(page.getByRole('dialog', { name: 'Import this backup?' })).toHaveCount(0)
   await expect(page.getByText('Backup imported.')).toBeVisible()
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('fitness-hub-v1') ?? '{}').restSeconds)).toBe(123)
+  await expect.poll(() => page.evaluate(async () => JSON.parse((await import('/src/workoutStorage.ts')).getWorkoutDataRaw() ?? '{}').restSeconds)).toBe(123)
   await expectNoHorizontalOverflow(page)
 })
 
@@ -516,7 +520,7 @@ test('workouts can end early or complete with clear return-home feedback', async
   await expect(page.getByRole('button', { name: 'End workout early' })).toBeVisible()
   await expect(page.locator('.ws-list + .ws-end-workout')).toBeVisible()
   await expect(page.locator('.ws-head-actions').getByRole('button')).toHaveCount(1)
-  const endingActionSizes = await page.evaluate(() => {
+  const endingActionSizes = await page.evaluate(async () => {
     const early = document.querySelector('.ws-end-workout')?.getBoundingClientRect()
     const timer = document.querySelector('.ws-dock-start')?.getBoundingClientRect()
     return early && timer
@@ -674,12 +678,12 @@ test('programs can be built, edited, activated, and deleted safely', async ({ pa
   await page.getByRole('button', { name: /Recovery copies/ }).click()
   const programRecovery = page.getByRole('button', { name: /Before program change/ }).first()
   await expect(programRecovery).toBeVisible()
-  await expect(programRecovery).toContainText('Protected')
+  await expect(programRecovery).toContainText('Rotating')
   await expectNoHorizontalOverflow(page)
 })
 
 test('renaming current templates leaves historic workout names unchanged', async ({ page }) => {
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const createdAt = Date.now() - 24 * 60 * 60 * 1000
     localStorage.setItem('fitness-hub-v1', JSON.stringify({
       sessions: [{
@@ -706,8 +710,8 @@ test('renaming current templates leaves historic workout names unchanged', async
   await renameWorkout.getByRole('textbox', { name: 'Name' }).fill('Workout Push')
   await renameWorkout.getByRole('button', { name: 'Save' }).click()
 
-  await expect.poll(() => page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem('fitness-hub-v1') || '{}')
+  await expect.poll(() => page.evaluate(async () => {
+    const saved = JSON.parse((await import('/src/workoutStorage.ts')).getWorkoutDataRaw() || '{}')
     const session = saved.sessions?.find((candidate: { id?: string }) => candidate.id === 'historic-name')
     return {
       program: saved.programs?.[0]?.name,
@@ -726,7 +730,7 @@ test('renaming current templates leaves historic workout names unchanged', async
 })
 
 test('large histories render in fast pages without changing totals', async ({ page }) => {
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const now = Date.now()
     const sessions = Array.from({ length: 120 }, (_, index) => ({
       id: `history-${index}`,
@@ -749,7 +753,7 @@ test('large histories render in fast pages without changing totals', async ({ pa
 })
 
 test('progress keeps load and estimated 1RM attempts aligned on phone layouts', async ({ page }, testInfo) => {
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const now = Date.now()
     const makeSession = (
       id: string,
@@ -890,7 +894,7 @@ test('progress keeps load and estimated 1RM attempts aligned on phone layouts', 
   await page.getByText('View previous attempts').click()
   await expect(page.locator('.progress-attempt-list button')).toHaveCount(2)
   await expect(page.locator('.progress-attempt-list button').first()).toContainText('34 kg per hand')
-  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.evaluate(async () => window.scrollTo(0, 0))
   await page.screenshot({ path: testInfo.outputPath('progress.png'), fullPage: true })
 
   await page.getByRole('button', { name: 'Estimated 1RM' }).click()
