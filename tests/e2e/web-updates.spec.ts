@@ -133,6 +133,47 @@ test.describe('installed web updates', () => {
     })
   }
 
+  test('full storage migration keeps a saved account signed in in the production bundle', async ({ page }) => {
+    const data = JSON.parse(await savedWorkouts(page))
+    const userId = '11111111-1111-4111-8111-111111111111'
+    const quotaBlocked = await page.evaluate(({ data, userId }) => {
+      localStorage.setItem('fitness-hub-v1', JSON.stringify(data))
+      localStorage.setItem('fitness-hub-v1-updated-at', String(Date.now()))
+      localStorage.setItem('fitness-hub-v1-synced-account', userId)
+      localStorage.setItem('fitness-hub-recovery-v1', JSON.stringify({ copies: [], deletedIds: [] }) + ' '.repeat(256_000))
+      localStorage.setItem('sb-jrsowjbxenkrmzzknnab-auth-token', JSON.stringify({
+        access_token: 'test-access-token', refresh_token: 'test-refresh-token',
+        token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: userId, email: 'bundle-test@example.com', aud: 'authenticated', role: 'authenticated' },
+      }))
+      for (let size = 1_048_576; size >= 1; size = Math.floor(size / 2)) {
+        while (true) {
+          const filler = localStorage.getItem('quota-filler') ?? ''
+          try { localStorage.setItem('quota-filler', filler + 'x'.repeat(size)) } catch { break }
+        }
+      }
+      try { localStorage.setItem('quota-probe', 'x'); return false } catch { return true }
+    }, { data, userId })
+    expect(quotaBlocked).toBe(true)
+    await page.route('https://jrsowjbxenkrmzzknnab.supabase.co/**', route => {
+      const request = route.request()
+      if (new URL(request.url()).pathname.endsWith('/app_state')) {
+        return route.fulfill({ json: request.method() === 'PATCH'
+          ? { updated_at: request.postDataJSON().updated_at }
+          : { data, updated_at: new Date(Date.now() - 60_000).toISOString() } })
+      }
+      return route.fulfill({ json: [] })
+    })
+    await page.reload()
+    await page.getByRole('button', { name: /^Account/ }).click()
+    const account = page.getByRole('dialog', { name: 'Account', exact: true })
+    await expect(account).toContainText('bundle-test@example.com')
+    await expect(account).toContainText('Synced')
+    expect(await page.evaluate(() => localStorage.getItem('fitness-hub-v1'))).toBeNull()
+    expect(await page.evaluate(() => localStorage.getItem('fitness-hub-recovery-v1'))).toBeNull()
+    expect(JSON.parse(await savedWorkouts(page))).toEqual(data)
+  })
+
   test('one pull waits for the new web assets, reloads once, and preserves local data', async ({ page }) => {
     await markPage(page)
     const saved = await savedWorkouts(page)

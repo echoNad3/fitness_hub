@@ -3,13 +3,29 @@ import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, isCloudConfigured } from './clo
 import { saveNewestCloudState } from './cloudWrite'
 import { isProtectedRecoveryCopy, type RecoverySnapshot } from './recovery'
 import { timedCloudFetch } from './cloudRequests'
+import { getStored, removeStored, setStored } from './storage'
 
 const RECOVERY_PAGE_SIZE = 200
 const RECOVERY_PAYLOAD_BATCH = 5
 
 // Null when cloud is not configured, so the app degrades to offline-only.
 export const supabase: SupabaseClient | null = isCloudConfigured()
-  ? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { global: { fetch: timedCloudFetch } })
+  ? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    global: { fetch: timedCloudFetch },
+    auth: {
+      // The production bundle can evaluate the SDK's cached write probe before migration frees
+      // localStorage. A full store still allows reads: never hide a saved session behind that probe.
+      storage: {
+        getItem: getStored,
+        setItem(key, value) {
+          if (!setStored(key, value)) throw new Error('Account session could not be saved on this device.')
+        },
+        removeItem(key) {
+          if (!removeStored(key)) throw new Error('Account session could not be removed from this device.')
+        },
+      },
+    },
+  })
   : null
 
 export type CloudState = {
