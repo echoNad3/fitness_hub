@@ -51,6 +51,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          # The pinned action still defaults to Google's removed legacy tools package.
+          packages: platform-tools
 
       - name: Install Android 36 platform
         run: sdkmanager 'platforms;android-36'
